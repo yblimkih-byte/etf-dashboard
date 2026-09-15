@@ -1,0 +1,5 @@
+# clasp push 대상 = gas/ 폴더의 .gs/.html/appsscript.json 만
+**/**
+!gas/*.gs
+!gas/*.html
+!gas/appsscript.json

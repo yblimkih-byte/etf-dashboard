@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>ETF Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Noto+Sans+KR:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <?!= include('Style'); ?>
+</head>
+<body>
+  <div class="hdr-wrap"><header class="hdr">
+    <div class="hdr-row">
+      <div>
+        <div class="mono">KRX ETF MARKET DATA</div>
+        <h1 class="display">ETF Dashboard</h1>
+      </div>
+      <div class="hdr-meta mono" id="hdrMeta">loading…</div>
+    </div>
+    <nav class="tabs" id="tabs"></nav>
+    <section class="controls" id="controls"></section>
+  </header></div>
+  <main>
+    <section id="view" class="view"><div class="loading">데이터를 불러오는 중…</div></section>
+  </main>
+  <footer class="ftr mono">자료: KRX 정보데이터시스템 Open API · 지수: Yahoo Finance · 단위: 조원(별도 표기 없는 경우) · 순자산총액 기준</footer>
+  <?!= include('App'); ?>
+  <?!= include('Tabs'); ?>
+</body>
+</html>

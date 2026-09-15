@@ -1,0 +1,9 @@
+node_modules/
+test/index.html
+test/store.json
+test/package/
+test/*.tgz
+test/*.png
+.clasprc.json
+*.log
+.DS_Store

@@ -1,0 +1,423 @@
+<script>
+/* ── 코어: 상태·API·컨트롤·탭 레지스트리·차트/표 헬퍼 ───────────────────────── */
+const App = {
+  meta: null, tabs: [], state: { tab: null, date: null, from: null, to: null, mgr: '', filter: 'exBond', year: null },
+  charts: [],
+
+  /* 서버 호출 (로컬 테스트 시 window.MOCK.api 사용). 같은 조회는 세션 내 재요청 없음 */
+  _memo: {},
+  call(action, params) {
+    const key = action + ':' + JSON.stringify(params || {});
+    if (this._memo[key]) return this._memo[key];
+    const pr = new Promise((res, rej) => {
+      const done = raw => { const r = typeof raw === 'string' ? JSON.parse(raw) : raw; r.ok ? res(r.data) : rej(new Error(r.error)); };
+      if (typeof google !== 'undefined' && google.script) google.script.run.withSuccessHandler(done).withFailureHandler(e => rej(e)).api(action, params);
+      else if (window.MOCK) setTimeout(() => done(window.MOCK.api(action, params)), 50);
+      else rej(new Error('서버 연결 불가'));
+    });
+    this._memo[key] = pr; pr.catch(() => { delete this._memo[key]; });
+    return pr;
+  },
+
+  registerTab(t) { this.tabs.push(t); },
+
+  async init() {
+    try {
+      this.meta = await this.call('meta', {});
+    } catch (e) { document.getElementById('view').innerHTML = `<div class="error">${e.message}</div>`; return; }
+    const m = this.meta;
+    if (!m.dates.length) { document.getElementById('hdrMeta').textContent = '데이터 적재 전'; document.getElementById('view').innerHTML = '<div class="loading">아직 적재된 데이터가 없습니다. 시트 메뉴 [ETF Dashboard] › 월말 백필 / 일별 백필을 실행하십시오.</div>'; return; }
+    this.state.date = m.defaultDate;
+    this.state.year = (m.defaultDate || '').slice(0, 4);
+    document.getElementById('hdrMeta').innerHTML = `최종 적재 ${m.lastLoaded || '-'}`;
+    const nav = document.getElementById('tabs');
+    this.tabs.forEach(t => {
+      const b = document.createElement('button'); b.className = 'tab'; b.textContent = t.label; b.dataset.id = t.id;
+      b.onclick = () => this.show(t.id); nav.appendChild(b);
+    });
+    const hash = location.hash.replace('#', '');
+    this.show(this.tabs.some(t => t.id === hash) ? hash : this.tabs[0].id);
+    // 나머지 탭의 기본 조회를 미리 받아 두어 탭 전환이 즉시 되도록 함
+    setTimeout(() => this.tabs.forEach(t => { if (t.id !== this.state.tab && t.action) this.call(t.action, t.params ? t.params(this.state) : {}).catch(() => {}); }), 800);
+  },
+
+  show(id) {
+    this.state.tab = id; location.hash = id;
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.id === id));
+    this.renderControls(); this.load();
+  },
+
+  /* 기준일 선택 목록: 지난 달까지는 '연-월'(월말 스냅샷), 이번 달은 영업일 전체 */
+  dateOptions() {
+    const m = this.meta, cur = m.curMonth;
+    const out = [];
+    m.months.filter(x => x.ym < cur).forEach(x => out.push({ value: x.date, label: x.ym }));
+    m.dates.filter(d => d.slice(0, 7) === cur).forEach(d => out.push({ value: d, label: d }));
+    return out;
+  },
+
+  /* 컨트롤 바: 탭이 선언한 컨트롤만 표시 */
+  renderControls() {
+    const t = this.tab(), el = document.getElementById('controls'), s = this.state, m = this.meta;
+    el.innerHTML = '';
+    const sel = (label, key, options, onChange) => {
+      const w = document.createElement('div'); w.className = 'ctl';
+      w.innerHTML = `<label>${label}</label><select></select>`;
+      const se = w.querySelector('select');
+      options.slice().reverse().forEach(o => { const op = document.createElement('option'); op.value = o.value; op.textContent = o.label; se.appendChild(op); });
+      const vals = options.map(o => o.value);
+      se.value = s[key] && vals.includes(s[key]) ? s[key] : vals[vals.length - 1];
+      s[key] = se.value;
+      se.onchange = () => { s[key] = se.value; if (onChange) onChange(se.value); this.load(); };
+      el.appendChild(w);
+    };
+    (t.controls || []).forEach(c => {
+      if (c === 'date') sel('기준일자', 'date', this.dateOptions(), v => { s.year = v.slice(0, 4); });
+      if (c === 'range') {
+        const daily = m.dates.filter(d => d >= m.dailyFrom).map(d => ({ value: d, label: d }));
+        const dv = daily.map(o => o.value);
+        if (!s.to) s.to = dv.includes(s.date) ? s.date : dv[dv.length - 1];
+        if (!s.from) { const py = m.months.filter(x => x.ym < s.to.slice(0, 4) + '-01').pop(); s.from = py && dv.some(d => d > py.date) ? dv.find(d => d > py.date) : dv[0]; }
+        sel('From', 'from', daily); sel('To', 'to', daily);
+      }
+      if (c === 'year') {
+        const years = [...new Set(m.months.map(x => x.ym.slice(0, 4)))].map(y => ({ value: y, label: y + '년' }));
+        sel('상장 연도', 'year', years, y => { const opts = this.dateOptions().filter(o => o.value.slice(0, 4) === y); if (opts.length && s.date.slice(0, 4) !== y) s.date = opts[opts.length - 1].value; this.renderControls(); });
+      }
+      if (c === 'mgr') {
+        const w = document.createElement('div'); w.className = 'ctl'; w.innerHTML = `<label>개별 운용사</label><select><option value="">선택…</option></select>`;
+        const se = w.querySelector('select'); m.mgrs.forEach(x => { const o = document.createElement('option'); o.value = x; o.textContent = x; se.appendChild(o); });
+        se.value = s.mgr; se.onchange = () => { s.mgr = se.value; this.load(); }; el.appendChild(w);
+      }
+      if (c === 'filter') {
+        const w = document.createElement('div'); w.className = 'ctl'; w.innerHTML = `<label>ETF 유형</label><div class="seg"><button data-v="exBond">채권/금리형 제외</button><button data-v="all">전체</button></div>`;
+        w.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.v === s.filter); b.onclick = () => { s.filter = b.dataset.v; this.renderControls(); this.load(); }; });
+        el.appendChild(w);
+      }
+    });
+  },
+
+  tab() { return this.tabs.find(t => t.id === this.state.tab); },
+  /* 탭 전환 시 정리할 작업 등록(타이머 등) */
+  onUnload(fn) { (this._unload = this._unload || []).push(fn); },
+
+  async load() {
+    const t = this.tab(), view = document.getElementById('view');
+    (this._unload || []).forEach(f => { try { f(); } catch (e) {} }); this._unload = [];
+    this.charts.forEach(c => c.destroy()); this.charts = [];
+    view.innerHTML = '<div class="loading">데이터를 불러오는 중…</div>';
+    const token = this._req = (this._req || 0) + 1;
+    try {
+      const data = await this.call(t.action, t.params ? t.params(this.state) : {});
+      if (token !== this._req) return;                 // 더 최근 요청이 있으면 무시
+      view.innerHTML = ''; t.render(data, view, this);
+    } catch (e) { if (token === this._req) view.innerHTML = `<div class="error">${e.message}</div>`; }
+  },
+
+  /* ── 포맷 ── 금액 단위는 조원(소수 둘째자리에서 반올림, 첫째자리 표기)으로 통일 */
+  eok(v, d) { if (v === null || v === undefined || isNaN(v)) return '-'; const f = d === undefined ? 1 : d; let x = v / 1e12; if (Math.abs(x) < Math.pow(10, -f) / 2) x = 0; return x.toLocaleString('ko-KR', { maximumFractionDigits: f, minimumFractionDigits: f }); },
+  jo(v, d) { return v === null || v === undefined ? '-' : this.eok(v, d) + '조'; },
+  pct(v, d) { if (v === null || v === undefined || isNaN(v)) return '-'; const f = d === undefined ? 1 : d; if (Math.abs(v) < Math.pow(10, -f) / 2) v = 0; return (v > 0 ? '+' : '') + v.toFixed(f) + '%'; },
+  share(v, d) { return v === null || v === undefined || isNaN(v) ? '-' : v.toFixed(d === undefined ? 1 : d) + '%'; },
+  num(v, d) { return v === null || v === undefined ? '-' : (+v).toLocaleString('ko-KR', { maximumFractionDigits: d || 0, minimumFractionDigits: d || 0 }); },
+  signed(v, d) { if (v === null || v === undefined) return '-'; const t = this.eok(v, d); return (v > 0 && !/^-?0\.?0*$/.test(t) ? '+' : '') + t; },
+  cls(v) { return v < -5e10 ? 'neg' : ''; },          // 금액(원): 0.1조 미만 음수는 0.0 으로 표기되므로 색 없음
+  clsP(v) { return v < -0.05 ? 'neg' : ''; },         // 비율(%)
+  color(top) { return this.meta.colors[top] || this.meta.colors['기타']; },
+  BOND_GRAY: '#c4c4cc',   // bar chart race 채권/금리형 막대색 (기타 회색보다 옅게)
+  sw(top) { return `<span class="sw" style="background:${this.color(top)}"></span>`; },
+  swc(color) { return `<span class="sw" style="background:${color}"></span>`; },
+
+  /* ── 표 ── cols: [{h, k|f, l(left), cls, g(그룹명)}]  opts: {total, attr(r)→행 속성 문자열} */
+  table(rows, cols, opts) {
+    opts = opts || {};
+    const hasG = cols.some(c => c.g);
+    let h = `<div class="tbl-scroll"><table class="tbl${opts.compact ? ' compact' : ''}"><thead>`;
+    if (hasG) {   // 1단: 그룹 헤더(연초 대비 / 전월 대비 …), 2단: 항목
+      h += '<tr class="grp-row">';
+      for (let i = 0; i < cols.length;) { const g = cols[i].g || ''; let j = i; while (j < cols.length && (cols[j].g || '') === g) j++; h += `<th colspan="${j - i}" class="${g ? 'grp' : 'nog'}">${g}</th>`; i = j; }
+      h += '</tr>';
+    }
+    const gcls = i => { const g = cols[i].g || ''; if (!g) return ''; const first = i === 0 || (cols[i - 1].g || '') !== g, last = i === cols.length - 1 || (cols[i + 1].g || '') !== g; return (first ? ' g-start' : '') + (last ? ' g-end' : '') + ' g-in'; };
+    h += '<tr>' + cols.map((c, i) => `<th class="${c.l ? 'l' : ''}${gcls(i)}">${c.h}</th>`).join('') + '</tr></thead><tbody>';
+    rows.forEach(r => { h += `<tr ${opts.attr ? opts.attr(r) : ''}>` + cols.map((c, i) => { const v = c.f ? c.f(r) : r[c.k]; return `<td class="${c.l ? 'l' : ''} ${c.cls ? c.cls(r) : ''}${gcls(i)}">${v === undefined || v === null ? '-' : v}</td>`; }).join('') + '</tr>'; });
+    if (opts.total) h += '<tr class="total">' + cols.map((c, i) => { const key = c.g && opts.total[c.g + '|' + c.h] !== undefined ? c.g + '|' + c.h : c.h; return `<td class="${c.l ? 'l' : ''}${gcls(i)}">${opts.total[key] !== undefined ? opts.total[key] : ''}</td>`; }).join('') + '</tr>';
+    return h + '</tbody></table></div>';
+  },
+
+  /* ── 운용사 선택 칩: 클릭 시 onSelect(top|null). 표시 = 고유색 견본 + 운용사명 (범례 겸용) ── */
+  chips(parent, keys, opts) {
+    opts = opts || {};
+    const w = document.createElement('div'); w.className = 'chips';
+    if (opts.hint) { const hn = document.createElement('span'); hn.className = 'chips-hint'; hn.textContent = opts.hint; w.appendChild(hn); }
+    let sel = opts.selected || null;
+    const render = () => { w.querySelectorAll('.chip-m').forEach(b => { if (b.dataset.k === '') { b.classList.toggle('on', !sel); return; } b.classList.toggle('on', b.dataset.k === sel); b.classList.toggle('off', !!sel && b.dataset.k !== sel); }); };
+    if (opts.reset) { const b = document.createElement('button'); b.className = 'chip-m reset'; b.dataset.k = ''; b.textContent = opts.reset === true ? '초기화' : opts.reset; b.onclick = () => { sel = null; render(); if (opts.onSelect) opts.onSelect(null); }; w.appendChild(b); }
+    keys.forEach(k => {
+      const b = document.createElement('button'); b.className = 'chip-m'; b.dataset.k = k;
+      b.innerHTML = `<span class="sw" style="background:${opts.colorFn ? opts.colorFn(k) : this.color(k)}"></span>${opts.labelFn ? opts.labelFn(k) : k}`;
+      b.onclick = () => { sel = sel === k ? null : k; render(); if (opts.onSelect) opts.onSelect(sel); };
+      w.appendChild(b);
+    });
+    render(); parent.appendChild(w);
+    return { el: w, get: () => sel };
+  },
+  /* 표 행 강조: attr 로 data-top 을 넣은 행 중 pred 에 맞는 행을 강조, 나머지는 흐리게 */
+  highlightRows(container, sel) {
+    container.querySelectorAll('tr[data-top]').forEach(tr => { tr.classList.toggle('hl', !!sel && tr.dataset.top === sel); tr.classList.toggle('dim', !!sel && tr.dataset.top !== sel); });
+  },
+  /* 표 행 필터: 선택 운용사 행만 표시, 나머지는 접음 (null 이면 전체) */
+  filterRows(container, sel) {
+    container.querySelectorAll('tr[data-top]').forEach(tr => { tr.classList.toggle('fold', !!sel && tr.dataset.top !== sel); });
+  },
+
+  /* ── 차트 헬퍼 (Chart.js) ── */
+  baseOpts(extra) {
+    Chart.defaults.font.family = getComputedStyle(document.documentElement).getPropertyValue('--font');
+    Chart.defaults.color = '#75758a';
+    return Object.assign({
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, usePointStyle: false, padding: 16 } },
+                 tooltip: { backgroundColor: '#17171c', titleFont: { weight: '500' }, padding: 10, cornerRadius: 6, displayColors: true, boxWidth: 8, boxHeight: 8 } },
+      scales: { x: { grid: { display: false }, border: { color: '#d9d9dd' }, ticks: { maxRotation: 0, autoSkip: true } },
+                y: { grid: { color: '#e5e7eb' }, border: { display: false }, ticks: { callback: v => v.toLocaleString('ko-KR') } } }
+    }, extra || {});
+  },
+  canvas(parent, cls) { const w = document.createElement('div'); w.className = 'chart-wrap ' + (cls || ''); const c = document.createElement('canvas'); w.appendChild(c); parent.appendChild(w); return c; },
+  chart(canvas, cfg) { const ch = new Chart(canvas, cfg); this.charts.push(ch); return ch; },
+
+  /* 값 레이블 플러그인: options.plugins.valueLabels = {fmt(v, ctx), mode:'end'|'inside'|'total', color, only(ctx)} */
+  valueLabels: {
+    id: 'valueLabels',
+    afterDatasetsDraw(chart) {
+      const opt = chart.$labels;   // Chart.js 옵션 리졸버가 함수를 스크립터블로 평가하지 않도록 차트 객체에 직접 보관
+      if (!opt) return;
+      (opt.list || [opt]).forEach(o => App.valueLabels.drawOne(chart, o));
+    },
+    drawOne(chart, o) {
+      if (!o || !o.mode) return;
+      const ctx = chart.ctx; ctx.save(); ctx.font = (o.size || 12) + 'px ' + Chart.defaults.font.family; ctx.textBaseline = 'middle';
+      const horiz = chart.options.indexAxis === 'y';
+      const val = x => (x && typeof x === 'object') ? (horiz ? x.x : x.y) : x;   // catPos 사용 시 {x,y} 객체 데이터 → 값 축 수치
+      const measure = t => Math.max.apply(null, String(t).split('\n').map(l => ctx.measureText(l).width));
+      if (o.mode === 'names') {   // 가로 누적막대: 첫 행(맨 위) 각 구간 위에 데이터셋 이름
+        chart.data.datasets.forEach((ds, di) => {
+          const m = chart.getDatasetMeta(di); if (m.hidden || !m.data[0]) return;
+          const p = m.data[0].getProps(['x', 'y', 'base', 'height'], true), w = Math.abs(p.x - p.base);
+          const txt = o.fmt ? o.fmt(ds.label, di) : ds.label; if (measure(txt) + 4 > w) return;
+          ctx.fillStyle = o.color || '#212121'; ctx.textAlign = 'center'; ctx.fillText(txt, (p.x + p.base) / 2, p.y - p.height / 2 - 9);
+        });
+        ctx.restore(); return;
+      }
+      if (o.mode === 'connect') {   // 가로 누적막대 2행: 구간 경계 점선 + 두 행 사이 증감 레이블 (겹치면 위/아래 띠로 나눔)
+        const placed = [];
+        chart.data.datasets.forEach((ds, di) => {
+          const m = chart.getDatasetMeta(di); if (m.hidden || !m.data[0] || !m.data[1]) return;
+          const a = m.data[0].getProps(['x', 'y', 'base', 'height'], true), b = m.data[1].getProps(['x', 'y', 'base', 'height'], true);
+          const col = typeof m.data[0].options.backgroundColor === 'string' ? m.data[0].options.backgroundColor : '#888';
+          ctx.save(); ctx.strokeStyle = App.fade(col, 0.45); ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(a.x, a.y + a.height / 2); ctx.lineTo(b.x, b.y - b.height / 2); ctx.stroke(); ctx.restore();
+          if (!o.fmt) return;
+          const txt = o.fmt(di); if (!txt) return;
+          const lines = String(txt).split('\n'), lh = (o.size || 11) + 1, tw = measure(txt) + 4, th = lines.length * lh;
+          const gapTop = a.y + a.height / 2, gapBot = b.y - b.height / 2, cy0 = (gapTop + gapBot) / 2;
+          // 가로 위치 = 두 점선(왼쪽·오른쪽 경계)의 중간 높이에서의 중점 → 사다리꼴 중심. 가로로는 옮기지 않음
+          const x = ((a.base + b.base) / 2 + (a.x + b.x) / 2) / 2;
+          // 세로 위치 = 간격 중앙. 이웃과 겹치면 위·아래 띠로 번갈아 배치(최대 3띠)
+          const nb = Math.max(1, Math.min(3, Math.floor((gapBot - gapTop) / (th + 2))));
+          const bands = nb === 1 ? [cy0] : nb === 2 ? [cy0, cy0 + th + 2] : [cy0, cy0 - th - 2, cy0 + th + 2];   // 기본은 정중앙, 겹칠 때만 위/아래
+          const hit = y => placed.some(r => Math.abs(r.x - x) < (r.w + tw) / 2 && Math.abs(r.y - y) < (r.h + th) / 2);
+          let cy = bands.find(y => !hit(y)); if (cy === undefined) cy = bands[placed.length % bands.length];
+          placed.push({ x: x, y: cy, w: tw, h: th });
+          ctx.fillStyle = o.seriesColor ? (App.isDark(col) || !/^#c/i.test(col) ? col : '#75758a') : (o.color || '#212121'); ctx.textAlign = 'center';   // 글자색 = 해당 계열 색(연회색 계열은 진회색)
+          lines.forEach((l, k) => ctx.fillText(l, x, cy + (k - (lines.length - 1) / 2) * lh));
+        });
+        ctx.restore(); return;
+      }
+      if (o.mode === 'right') {   // 세로 누적막대: 마지막 막대 오른쪽에 데이터셋 이름(구간 중앙 높이)
+        const li = chart.data.labels.length - 1;
+        chart.data.datasets.forEach((ds, di) => {
+          const m = chart.getDatasetMeta(di); if (m.hidden || !m.data[li]) return;
+          const p = m.data[li].getProps(['x', 'y', 'base', 'width'], true); if (Math.abs(p.y - p.base) < (o.min || 9)) return;
+          ctx.fillStyle = o.color || '#212121'; ctx.textAlign = 'left'; ctx.fillText(o.fmt ? o.fmt(ds.label, di) : ds.label, p.x + p.width / 2 + 8, (p.y + p.base) / 2);
+        });
+        ctx.restore(); return;
+      }
+      if (o.mode === 'area') {   // 누적 영역(line stacked): 이전 데이터셋 선과 현재 선 사이 중앙에 값
+        const y0 = chart.scales.y.getPixelForValue(0);
+        chart.data.datasets.forEach((ds, di) => {
+          const m = chart.getDatasetMeta(di); if (m.hidden) return;
+          const prev = di ? chart.getDatasetMeta(di - 1) : null;
+          m.data.forEach((el, i) => {
+            const v = val(ds.data[i]); if (!v || (o.only && !o.only(i))) return;
+            const top = el.y, bot = prev && prev.data[i] ? prev.data[i].y : y0; if (Math.abs(bot - top) < (o.min || 12)) return;
+            const bg = typeof ds.backgroundColor === 'string' ? ds.backgroundColor : '#888';
+            const lastI = i === m.data.length - 1;   // 마지막(기준일) 값은 영역 오른쪽 바깥에 표기 → 직전 레이블과 겹치지 않음
+            ctx.fillStyle = lastI ? '#212121' : (o.color || (App.isDark(bg) ? '#fff' : '#212121')); ctx.textAlign = lastI ? 'left' : 'center';
+            ctx.fillText(o.fmt ? o.fmt(v, i, di) : String(v), lastI ? el.x + 6 : el.x, (top + bot) / 2);
+          });
+        });
+        ctx.restore(); return;
+      }
+      if (o.mode === 'total') {   // 스택 합계를 막대 상단(세로) / 우측(가로)에 표시
+        const meta0 = chart.getDatasetMeta(0); if (!meta0 || !meta0.data) { ctx.restore(); return; }
+        meta0.data.forEach((el, i) => {
+          let total = 0, maxEdge = null;
+          chart.data.datasets.forEach((ds, di) => { const m = chart.getDatasetMeta(di); if (m.hidden || !m.data[i]) return; total += +val(ds.data[i]) || 0; const e = m.data[i]; maxEdge = horiz ? Math.max(maxEdge === null ? -Infinity : maxEdge, e.x) : Math.min(maxEdge === null ? Infinity : maxEdge, e.y); });
+          if (o.only && !o.only(i)) return;
+          const txt = o.fmt ? o.fmt(total, i) : String(total);
+          ctx.fillStyle = o.color || '#212121';
+          if (horiz) { ctx.textAlign = 'left'; ctx.fillText(txt, maxEdge + 6, el.y); } else { ctx.textAlign = 'center'; ctx.fillText(txt, el.x, maxEdge - 10); }
+        });
+        ctx.restore(); return;
+      }
+      chart.data.datasets.forEach((ds, di) => {
+        const meta = chart.getDatasetMeta(di); if (meta.hidden) return;
+        meta.data.forEach((el, i) => {
+          const v = val(ds.data[i]); if (v === null || v === undefined || (o.skipZero !== false && !v)) return;
+          if (o.only && !o.only(i, di)) return;
+          const txt = o.fmt ? o.fmt(v, { dataIndex: i, datasetIndex: di, dataset: ds, chart: chart }) : String(v);
+          if (o.mode === 'inside') {   // 막대 안쪽 중앙. 공간이 부족하면 생략
+            const p = el.getProps(['x', 'y', 'base', 'width', 'height'], true);
+            const w = horiz ? Math.abs(p.x - p.base) : Math.abs(p.width || 0), hgt = horiz ? Math.abs(p.height || 0) : Math.abs(p.y - p.base);
+            const lh = (o.size || 12) + 2, measure = t => Math.max.apply(null, String(t).split('\n').map(l => ctx.measureText(l).width));
+            let text = txt, tw = measure(text);
+            const avail = horiz ? w : Math.max(w, 0), lines = () => String(text).split('\n');
+            if (!o.force && (tw + 8 > avail || lines().length * lh > hgt) && o.shortFmt) { text = o.shortFmt(v, { dataIndex: i, datasetIndex: di, dataset: ds, chart: chart }); tw = measure(text); }   // 좁으면 축약형
+            if (!o.force && (tw + 6 > avail || lines().length * lh > hgt + 2)) return;
+            if (o.force && hgt < 8) return;
+            const bg = typeof el.options.backgroundColor === 'string' ? el.options.backgroundColor : '#888';
+            ctx.fillStyle = o.color || (App.isDark(bg) ? '#fff' : '#212121'); ctx.textAlign = 'center';
+            const ls = lines(), cx = horiz ? (p.x + p.base) / 2 : p.x, cy = horiz ? p.y : (p.y + p.base) / 2;
+            ls.forEach((l, k) => ctx.fillText(l, cx, cy + (k - (ls.length - 1) / 2) * lh));
+          } else {   // 'end': 막대 끝 바깥
+            const p = el.getProps(['x', 'y', 'base'], true);
+            ctx.fillStyle = o.color || '#212121';
+            if (horiz) { ctx.textAlign = 'left'; ctx.fillText(txt, p.x + 6, p.y); } else { ctx.textAlign = 'center'; ctx.fillText(txt, p.x, p.y - 10); }
+          }
+        });
+      });
+      ctx.restore();
+    }
+  },
+  fade(hex, a) { const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex || ''); return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})` : hex; },
+  isDark(hex) { const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex || ''); if (!m) return true; const [r, g, b] = [1, 2, 3].map(i => parseInt(m[i], 16)); return (r * 299 + g * 587 + b * 114) / 1000 < 150; },
+
+  /* 막대: labels, datasets[{label, data, colors|color, stack}]
+     opts: {horizontal, stacked, pctAxis, countAxis, noLegend, fmt, unit, max, labels:{mode,fmt,only,size}, intTicks, tickFmt, padTop, xTickOnly(i,label)→bool} */
+  bar(canvas, labels, datasets, opts) {
+    opts = opts || {};
+    const ds = datasets.map(d => ({ label: d.label, data: d.data, backgroundColor: d.colors || d.color || '#17171c', borderRadius: opts.stacked ? 0 : 3, borderSkipped: 'start', borderColor: '#fff', borderWidth: opts.stacked ? 1 : 0, barPercentage: opts.barPct || 0.7, categoryPercentage: opts.catPct || (opts.stacked ? 0.6 : 0.8), stack: d.stack }));
+    const o = this.baseOpts();
+    o.indexAxis = opts.horizontal ? 'y' : 'x';
+    o.plugins.legend.display = datasets.length > 1 && !opts.noLegend;
+    o.plugins.tooltip.callbacks = { label: c => { const v = c.parsed[opts.horizontal ? 'x' : 'y']; return opts.tooltip ? opts.tooltip(c, v) : ` ${c.dataset.label}: ${opts.fmt ? opts.fmt(v) : App.eok(v) + '조원'}`; } };
+    if (opts.noTooltip) o.plugins.tooltip.enabled = false;
+    o.plugins.valueLabels = {};   // 실제 설정은 chart.$labels 에 보관 (아래)
+    if (opts.stacked) { o.scales.x.stacked = true; o.scales.y.stacked = true; }
+    const vax = opts.horizontal ? o.scales.x : o.scales.y, cax = opts.horizontal ? o.scales.y : o.scales.x;
+    if (opts.pctAxis) { vax.ticks.callback = v => v + '%'; if (opts.max) vax.max = opts.max; }
+    else if (opts.countAxis) { vax.ticks.callback = v => v; vax.title = { display: true, text: opts.unit || '개', font: { size: 11 } }; }
+    else { vax.ticks.callback = v => opts.tickFmt ? opts.tickFmt(v) : App.eok(v, 0); vax.title = { display: true, text: opts.unit || '조원', font: { size: 11 } }; }
+    if (opts.intTicks) vax.ticks.precision = 0;
+    if (opts.padTop) { o.layout = { padding: { top: opts.padTop === true ? 18 : opts.padTop } }; vax.grace = '8%'; }
+    if (opts.yWidth) vax.afterFit = sc => { sc.width = opts.yWidth; };
+    if (opts.xTickFmt) cax.ticks = Object.assign(cax.ticks || {}, { autoSkip: false, callback: function (v, i) { return opts.xTickFmt(i, this.getLabelForValue(v)); } });
+    if (opts.padRight) { o.layout = Object.assign(o.layout || {}, { padding: Object.assign((o.layout && o.layout.padding) || {}, { right: opts.padRight }) }); vax.grace = '12%'; }
+    if (opts.hideValueAxis) { vax.display = false; }
+    if (opts.catPos) {   // 카테고리 축을 수치 위치로 배치(그룹 사이 간격 표현): catPos[i] = i번째 막대의 위치, 간격 1 = 기본 행 간격
+      const pos = opts.catPos, names = labels.slice();
+      ds.forEach(d => { d.data = d.data.map((v, i) => ({ [opts.horizontal ? 'x' : 'y']: v, [opts.horizontal ? 'y' : 'x']: pos[i] })); });
+      Object.assign(cax, { type: 'linear', min: pos[0] - 0.5, max: pos[pos.length - 1] + 0.5, reverse: !!opts.horizontal, offset: false, afterBuildTicks: sc => { sc.ticks = pos.map(v => ({ value: v })); } });
+      cax.ticks = Object.assign(cax.ticks || {}, { callback: v => { const i = pos.indexOf(v); return i < 0 ? '' : names[i]; } });
+      o.plugins.tooltip.callbacks.title = items => items.length ? names[items[0].dataIndex] : '';
+    }
+    if (opts.xTickOnly) cax.ticks = Object.assign(cax.ticks || {}, { autoSkip: false, callback: function (v, i) { const l = this.getLabelForValue(v); return opts.xTickOnly(i, l) ? l : ''; } });
+    if (opts.horizontal) {
+      o.scales.y.grid = { display: false }; o.scales.y.ticks = Object.assign({ callback: function (v) { const l = this.getLabelForValue(v); return l.length > 28 ? l.slice(0, 27) + '…' : l; }, autoSkip: false }, opts.catTicks || {}, opts.catPos ? { callback: cax.ticks.callback } : {});
+      o.scales.x.grid = { color: '#e5e7eb' }; o.interaction = { mode: 'nearest', axis: 'y', intersect: false };
+    }
+    const ch = this.chart(canvas, { type: 'bar', data: { labels, datasets: ds }, options: o, plugins: [this.valueLabels] });
+    ch.$labels = opts.labels || null; if (opts.labels) ch.update('none');
+    return ch;
+  },
+  /* 꺾은선: datasets[{label, data, color}] */
+  line(canvas, labels, datasets, opts) {
+    opts = opts || {};
+    const ds = datasets.map((d, i) => ({ label: d.label, data: d.data, borderColor: opts.area ? '#fff' : d.color, backgroundColor: opts.area ? (d.fill || d.color) : d.color, borderWidth: opts.area ? 1 : 2,
+      pointRadius: opts.area ? 0 : (labels.length > 40 ? 0 : 3), pointHoverRadius: opts.area ? 0 : 5, tension: 0, spanGaps: true, yAxisID: 'y', fill: opts.area ? (i ? '-1' : 'origin') : false }));
+    const o = this.baseOpts();
+    o.plugins.legend.display = datasets.length > 1 && !opts.noLegend;
+    if (opts.legendPos) o.plugins.legend.position = opts.legendPos;
+    o.plugins.tooltip.callbacks = { label: c => ` ${c.dataset.label}: ${opts.fmt ? opts.fmt(c.raw) : App.eok(c.raw) + '조원'}` };
+    o.plugins.valueLabels = {};
+    if (opts.pctAxis) o.scales.y.ticks.callback = v => (v > 0 ? '+' : '') + v + '%';
+    else if (opts.area) o.scales.y.ticks.callback = v => v + '%';
+    else o.scales.y.ticks.callback = v => App.eok(v, 0);
+    if (opts.area) { o.scales.y.stacked = true; o.scales.y.max = opts.max || 100; o.scales.y.min = 0; }
+    if (opts.unit) o.scales.y.title = { display: true, text: opts.unit, font: { size: 11 } };
+    if (opts.yWidth) o.scales.y.afterFit = sc => { sc.width = opts.yWidth; };
+    if (opts.hideX) o.scales.x.ticks = Object.assign(o.scales.x.ticks || {}, { display: false });
+    if (opts.alignBars) o.scales.x.offset = true;   // 점을 막대 중앙(카테고리 밴드 중앙)에 배치
+    if (opts.xTickFmt) o.scales.x.ticks = Object.assign(o.scales.x.ticks || {}, { autoSkip: false, callback: function (v, i) { return opts.xTickFmt(i, this.getLabelForValue(v)); } });
+    o.layout = { padding: { top: opts.padTop ? (opts.padTop === true ? 18 : opts.padTop) : 0, right: opts.padRight || 0 } };
+    const ch = this.chart(canvas, { type: 'line', data: { labels, datasets: ds }, options: o, plugins: [this.valueLabels] });
+    ch.$labels = opts.labels || null; if (opts.labels) ch.update('none');
+    return ch;
+  },
+
+  /* ── bar chart race (DOM 기반): 막대가 순위 사이를 미끄러지며 이동, 신규 진입은 아래에서 올라옴 ── */
+  race(parent, frames, opts) {
+    opts = opts || {};
+    const N = opts.n || 10, H = opts.rowH || 30, dur = opts.step || 700;
+    const box = document.createElement('div'); box.className = 'race';
+    box.innerHTML = `<div class="race-bar"><button class="btn race-play">▶ 재생</button><div class="race-ym"></div><input type="range" class="race-range" min="0" max="${frames.length - 1}" value="0"></div><div class="race-stage" style="height:${N * H + 8}px"></div>`;
+    parent.appendChild(box);
+    const stage = box.querySelector('.race-stage'), ym = box.querySelector('.race-ym'), range = box.querySelector('.race-range'), btn = box.querySelector('.race-play');
+    const nodes = {};
+    const maxNav = Math.max.apply(null, frames.map(f => Math.max.apply(null, f.rows.map(r => r.nav))));
+    let timer = null, cur = 0;
+    const draw = (k, instant) => {
+      const f = frames[k]; ym.textContent = f.ym; range.value = k;
+      const fmax = Math.max.apply(null, f.rows.map(r => r.nav)) || 1;   // 프레임별 최대값 기준 폭 (초기 소규모도 보이게)
+      const present = {};
+      f.rows.slice(0, N).forEach(r => {
+        present[r.code] = true;
+        let el = nodes[r.code];
+        if (!el) {   // 신규 진입: 화면 아래에서 올라옴
+          el = document.createElement('div'); el.className = 'race-row'; el.innerHTML = `<div class="race-rank"></div><div class="race-track"><div class="race-fill"></div><div class="race-name"></div></div><div class="race-val"></div>`;
+          el.style.height = H + 'px'; el.style.transform = `translateY(${N * H + 40}px)`; el.style.opacity = '0'; stage.appendChild(el); nodes[r.code] = el;
+          if (!instant) void el.offsetHeight;   // 트랜지션 적용을 위한 reflow
+        }
+        el.style.transition = instant ? 'none' : `transform ${dur * 0.85}ms cubic-bezier(.4,0,.2,1), opacity ${dur * 0.5}ms`;
+        el.querySelector('.race-fill').style.transition = instant ? 'none' : `width ${dur * 0.85}ms cubic-bezier(.4,0,.2,1)`;
+        el.style.transform = `translateY(${(r.rank - 1) * H}px)`; el.style.opacity = '1';
+        el.querySelector('.race-rank').textContent = r.rank;
+        el.querySelector('.race-fill').style.width = (r.nav / fmax * 100) + '%';
+        el.querySelector('.race-fill').style.background = r.bond ? App.BOND_GRAY : App.color(r.top);   // 채권/금리형은 회색
+        el.querySelector('.race-name').textContent = r.name; const nm = el.querySelector('.race-name'); nm.style.color = r.bond ? '#3a3a44' : ''; nm.style.textShadow = r.bond ? 'none' : '';
+        el.querySelector('.race-val').textContent = App.eok(r.nav) + '조';
+      });
+      Object.keys(nodes).forEach(c => { if (!present[c]) { const el = nodes[c]; el.style.transition = instant ? 'none' : `transform ${dur * 0.85}ms, opacity ${dur * 0.5}ms`; el.style.transform = `translateY(${N * H + 40}px)`; el.style.opacity = '0'; setTimeout(() => { if (nodes[c] === el && !el.style.opacity.startsWith('1')) { el.remove(); delete nodes[c]; } }, dur); } });
+      cur = k;
+    };
+    const stop = () => { clearInterval(timer); timer = null; btn.textContent = '▶ 재생'; };
+    btn.onclick = () => { if (timer) return stop(); btn.textContent = '❚❚ 정지'; if (cur >= frames.length - 1) draw(0, true); timer = setInterval(() => { if (cur + 1 >= frames.length) return stop(); draw(cur + 1); }, dur); };
+    range.oninput = () => { stop(); draw(+range.value, true); };
+    draw(Math.max(0, Math.min(frames.length - 1, opts.start === undefined ? frames.length - 1 : opts.start)), true);
+    this.onUnload(stop);
+    return { draw: draw, stop: stop };
+  },
+
+  section(parent, title, note) {
+    const s = document.createElement('div'); s.className = 'section';
+    s.innerHTML = `<div class="section-h"><h2 class="h2">${title}</h2>${note ? `<span class="note">${note}</span>` : ''}</div>`;
+    parent.appendChild(s); return s;
+  },
+  sub(parent, title) { const d = document.createElement('div'); d.className = 'h3'; d.textContent = title; parent.appendChild(d); return d; },
+  div(parent, cls, html) { const d = document.createElement('div'); if (cls) d.className = cls; if (html) d.innerHTML = html; parent.appendChild(d); return d; },
+  tiles(parent, items) { const t = this.div(parent, 'grid grid-' + Math.min(items.length, 4)); t.innerHTML = items.map(x => `<div class="tile"><div class="k">${x[0]}</div><div class="v">${x[1]}</div><div class="d">${x[2] || ''}</div></div>`).join(''); return t; }
+};
+window.addEventListener('DOMContentLoaded', () => App.init());
+</script>

@@ -1,0 +1,25 @@
+# main 브랜치에 gas/ 변경이 push 되면 Apps Script 프로젝트에 자동 반영(clasp push).
+# 사전 준비: GitHub 저장소 Settings › Secrets and variables › Actions 에 CLASPRC_JSON 시크릿 등록
+#           (로컬 PC 에서 `clasp login` 후 생성되는 ~/.clasprc.json 파일 내용 전체)
+# 주의: push 만 수행함. 웹앱 URL 반영(새 버전 배포)은 수동(clasp deploy) 또는 아래 deploy 잡 주석 해제.
+name: Push to Apps Script
+on:
+  push:
+    branches: [main]
+    paths: ['gas/**', '.clasp.json']
+  workflow_dispatch:
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install -g @google/clasp
+      - name: Restore clasp credentials
+        run: echo "$CLASPRC_JSON" > ~/.clasprc.json
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+      - run: clasp push -f
+      # 새 버전을 만들어 기존 웹앱 배포 ID 에 연결(URL 유지). DEPLOYMENT_ID 시크릿 등록 후 주석 해제
+      # - run: clasp deploy -i "${{ secrets.DEPLOYMENT_ID }}" -d "auto ${{ github.sha }}"
