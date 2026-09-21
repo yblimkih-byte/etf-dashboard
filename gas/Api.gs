@@ -4,6 +4,11 @@
  *  새 탭 추가 시: 아래 ACTIONS 에 핸들러 1개 추가 (→ 탭추가_가이드.md)
  */
 function doGet(e) {
+  // 외부 프런트엔드(Vercel)용 JSON 엔드포인트: .../exec?action=meta&p={...}  — action 이 없으면 기존 웹앱 화면
+  if (e && e.parameter && e.parameter.action) {
+    let p = {}; try { p = JSON.parse(e.parameter.p || '{}'); } catch (err) {}
+    return ContentService.createTextOutput(api(String(e.parameter.action), p)).setMimeType(ContentService.MimeType.JSON);
+  }
   const t = HtmlService.createTemplateFromFile('Index');
   return t.evaluate().setTitle('ETF Dashboard')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
