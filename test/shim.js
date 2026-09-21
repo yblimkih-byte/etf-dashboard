@@ -36,7 +36,7 @@
   g.LockService = { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) };
   g.ScriptApp = { getProjectTriggers: () => [], newTrigger: () => ({ timeBased() { return this; }, after() { return this; }, everyDays() { return this; }, atHour() { return this; }, nearMinute() { return this; }, inTimezone() { return this; }, create() { console.log('[trigger created]'); } }), deleteTrigger() {}, EventType: { CLOCK: 'CLOCK' } };
   const pad = n => ('0' + n).slice(-2);
-  g.Utilities = { DigestAlgorithm: { MD5: 'md5' }, computeDigest: (a, str) => { let h = 5381; for (const c of String(str)) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return [h]; }, base64EncodeWebSafe: b => b.map(x => x.toString(36)).join(''), formatDate: (d, tz, f) => { const y = d.getFullYear(), m = pad(d.getMonth() + 1), dd = pad(d.getDate()); return f === 'yyyyMMdd' ? `${y}${m}${dd}` : `${y}-${m}-${dd}`; } };
+  g.Utilities = { DigestAlgorithm: { MD5: 'md5' }, computeDigest: (a, str) => { let h = 5381; for (const c of String(str)) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return [h]; }, base64EncodeWebSafe: b => b.map(x => x.toString(36)).join(''), sleep: () => {}, formatDate: (d, tz, f) => { if (f === 'H') return String(d.getHours()); const y = d.getFullYear(), m = pad(d.getMonth() + 1), dd = pad(d.getDate()); return f === 'yyyyMMdd' ? `${y}${m}${dd}` : `${y}-${m}-${dd}`; } };
   g.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({ setTitle() { return this; }, addMetaTag() { return this; }, setXFrameOptionsMode() { return this; } }) }), createHtmlOutputFromFile: () => ({ getContent: () => '' }), XFrameOptionsMode: { ALLOWALL: 1 } };
 
   /* ── 모의 KRX: 결정적 난수로 ~320종목 생성, 2021-01 이후 성장 ── */

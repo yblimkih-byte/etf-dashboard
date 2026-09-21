@@ -300,27 +300,36 @@ function loadDaily() {
   if (!lock.tryLock(10000)) return;
   const t0 = Date.now(), ok = budget_(t0);
   try {
+    armWatchdog_();   // 강제 종료 대비(정상 종료 시 finally 에서 해제)
+    step_(t0, 'start');
     const props = PropertiesService.getScriptProperties();
     const ctx = ctx_();
     const ix = indexMap_();
+    step_(t0, 'ctx·index 로드');
     const dates = Object.keys(ix).sort();
     let last = props.getProperty(PROP.LAST_DAILY) || (dates.length ? dates[dates.length - 1] : null);
     let d = last ? addDays_(parse_(last), 1) : parse_(CFG.DAILY_FROM);
     const today = parse_(new Date());
     let loaded = 0;
+    let unpublished = null;
     trimOrphanRows_(ix);   // 직전 실행이 시간 초과로 중단된 경우 _index 없는 꼬리 행 제거
+    step_(t0, '잔여 행 점검');
     syncMonthly_(t0, CFG.PRE_SYNC_MS, true);   // 이전 회차에서 이월된 월말 스냅샷 갱신을 먼저 처리 (진행 중인 당월은 제외)
+    step_(t0, '이월 월말 갱신');
 
     while (d <= today && ok()) {
       if (isWeekend_(d)) { d = addDays_(d, 1); continue; }
       const ds = fmt_(d);
+      step_(t0, 'KRX 조회 시작 ' + ds);
       const recs = fetchEtfDaily_(ds);
+      step_(t0, 'KRX 조회 완료 ' + ds + ' (' + recs.length + '건)');
       if (!recs.length) {
         // 최근 3일 이내 빈 응답 = 미게시 가능성 → 중단(다음 실행에 재시도). 그 이전은 휴장으로 간주하고 건너뜀
-        if ((today - d) / 86400000 <= 3) break;
+        if ((today - d) / 86400000 <= 3) { unpublished = ds; break; }
         d = addDays_(d, 1); continue;
       }
       ensureMaster_(recs, ctx, ds);
+      step_(t0, '마스터 확인');
       const prev = last ? readDailyBlock_(last) : null;
       const rows = buildDailyRows_(recs, prev, ds, ctx);
       const sh = sheet_(CFG.SHEET.RAW_DAILY, CFG.RAW_HEADER);
@@ -328,12 +337,15 @@ function loadDaily() {
       sheet_(CFG.SHEET.META, ['기준일자', '시작행', '행수']).appendRow([ds, start, rows.length]);
       appendRows_(sheet_(CFG.SHEET.AGG_SNAP_D, CFG.SNAP_HEADER), summarize_(recs, ctx, ds));   // 일자별 요약(대시보드용) 즉시 적재
       props.setProperty(PROP.LAST_DAILY, ds);
+      step_(t0, '일별 기록 완료 ' + ds + ' (' + rows.length + '행)');
       last = ds; loaded++;
       d = addDays_(d, 1);
     }
     // 월말 스냅샷 동기화: _index 기준 월별 마지막 일자와 raw_월말 비교 → 부족한 월만 갱신 (하드 시한 내에서, 남으면 다음 회차)
     const cut = d <= today && !ok();                       // 예산 초과로 중단 → 당월 스냅샷은 마지막 회차에서만 갱신
     const leftMonths = syncMonthly_(t0, CFG.HARD_MS, cut);
+    step_(t0, '월말 스냅샷 동기화');
+    if (unpublished) scheduleUnpublishedRetry_(unpublished);
     const unfinished = cut || leftMonths > 0;
     if (unfinished) {
       props.setProperty(PROP.PENDING_AGG, '1');
@@ -348,12 +360,14 @@ function loadDaily() {
       }
       props.deleteProperty(PROP.PENDING_AGG);
       try { loadIndices_(last); } catch (e) { log_('지수 적재 실패: ' + e.message, 'WARN'); }
+      step_(t0, '집계 재계산 시작');
       rebuildAggregates_();
+      step_(t0, '집계 재계산 완료');
       if (CFG.KRX_WEB.INVESTOR_ENABLED) { try { loadInvestorNetBuy_(last, ctx); } catch (e) { log_('투자자별 순매수 실패: ' + e.message, 'WARN'); } }
       warmCache_(t0);
       log_('일별 적재 완료: ' + loaded + '영업일, 최종 ' + last);
     }
-  } finally { lock.releaseLock(); }
+  } finally { try { disarmWatchdog_(); } catch (e) {} lock.releaseLock(); }
 }
 
 /** 표준 레코드 → raw 행 */

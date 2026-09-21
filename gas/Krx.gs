@@ -6,8 +6,14 @@
 function krxGet_(path, params) {
   const qs = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
   const url = CFG.KRX.BASE + path + '?' + qs;
-  const res = UrlFetchApp.fetch(url, { headers: { AUTH_KEY: krxKey_() }, muteHttpExceptions: true });
-  const code = res.getResponseCode();
+  let res, code, lastErr = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {   // 일시 오류(연결 실패·5xx)는 3초 뒤 1회 재시도
+    try { res = UrlFetchApp.fetch(url, { headers: { AUTH_KEY: krxKey_() }, muteHttpExceptions: true }); code = res.getResponseCode(); lastErr = null; }
+    catch (e) { lastErr = e; code = 0; }
+    if (code && code < 500) break;
+    if (attempt < 2) Utilities.sleep(3000);
+  }
+  if (lastErr) throw new Error('KRX API 연결 실패: ' + lastErr.message);
   if (code === 401 || code === 403) throw new Error('KRX API 인증 실패(' + code + '): 키 또는 서비스 이용신청 승인 확인');
   if (code !== 200) throw new Error('KRX API HTTP ' + code + ' ' + path);
   const body = JSON.parse(res.getContentText() || '{}');

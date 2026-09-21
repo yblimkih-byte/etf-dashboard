@@ -105,6 +105,38 @@ function cont_loadDaily() { clearTriggers_('cont_loadDaily'); loadDaily(); }
 function cont_backfillMonthly() { clearTriggers_('cont_backfillMonthly'); backfillMonthly(); }
 function cont_backfillDaily() { clearTriggers_('cont_backfillDaily'); backfillDaily(); }
 function cont_rebuildDailySummary() { clearTriggers_('cont_rebuildDailySummary'); rebuildDailySummary(); }
+/** 단계 표식: 시트가 아닌 Cloud 로그(실행 기록)에 남김 → 시간 초과로 강제 종료돼도 어느 단계에서 멈췄는지 확인 가능 */
+function step_(t0, name) { console.log('[step +' + ((Date.now() - t0) / 1000).toFixed(1) + 's] ' + name); }
+
+/** 감시 트리거(v12): 적재 시작 시 1회성 'wd_loadDaily' 를 걸어 두고 정상 종료 시 해제.
+ *  실행이 시간 초과 등으로 강제 종료되면 해제되지 못한 트리거가 WD_MIN 분 뒤 적재를 다시 시도(연속 WD_MAX 회까지) */
+const WD = { FN: 'wd_loadDaily', MIN: 12, MAX: 3, PROP: 'WD_RETRY', RETRY_PROP: 'UNPUB_RETRY', RETRY_MIN: 90, RETRY_MAX: 3 };
+function armWatchdog_() {
+  const n = +(PropertiesService.getScriptProperties().getProperty(WD.PROP) || 0);
+  clearTriggers_(WD.FN);
+  if (n >= WD.MAX) { log_('감시 재시도 한도(' + WD.MAX + '회) 도달 → 다음 정기 실행까지 대기', 'WARN'); return; }
+  ScriptApp.newTrigger(WD.FN).timeBased().after(WD.MIN * 60 * 1000).create();
+}
+function disarmWatchdog_() { clearTriggers_(WD.FN); PropertiesService.getScriptProperties().deleteProperty(WD.PROP); }
+function wd_loadDaily() {
+  clearTriggers_(WD.FN);
+  const props = PropertiesService.getScriptProperties(), n = +(props.getProperty(WD.PROP) || 0) + 1;
+  props.setProperty(WD.PROP, String(n));
+  log_('직전 적재 실행이 비정상 종료됨(시간 초과 추정) → 재시도 ' + n + '/' + WD.MAX, 'WARN');
+  loadDaily();
+}
+/** 전영업일분이 아직 미게시(빈 응답)일 때: 낮 시간(08~16시)에는 RETRY_MIN 분 뒤 재시도를 예약(하루 RETRY_MAX 회) → 19:00 까지 기다리지 않음 */
+function scheduleUnpublishedRetry_(missingDate) {
+  const now = new Date(), hour = +Utilities.formatDate(now, TZ, 'H'), day = Utilities.formatDate(now, TZ, 'yyyy-MM-dd');
+  if (hour < 8 || hour >= 16 || missingDate >= day) return;          // 당일분 미게시는 19:00 정기 실행 몫
+  const props = PropertiesService.getScriptProperties(), cur = String(props.getProperty(WD.RETRY_PROP) || '').split(':');
+  const n = cur[0] === day ? +cur[1] || 0 : 0;
+  if (n >= WD.RETRY_MAX) return;
+  props.setProperty(WD.RETRY_PROP, day + ':' + (n + 1));
+  scheduleContinue_('loadDaily', WD.RETRY_MIN);
+  log_(missingDate + ' 자료 미게시 → ' + WD.RETRY_MIN + '분 뒤 재시도 예약 (' + (n + 1) + '/' + WD.RETRY_MAX + ')');
+}
+
 function clearTriggers_(fnName) {
   ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === fnName) ScriptApp.deleteTrigger(t); });
 }
