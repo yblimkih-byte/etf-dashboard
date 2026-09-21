@@ -138,13 +138,21 @@
     this.tabs.forEach(t => { const r0 = t.render; t.render = function (d, view, a) { r0.call(t, d, view, a);
       view.querySelectorAll(':scope > .section').forEach((s, k) => s.setAttribute('data-src', t.id === 'overview' && k === 1 ? '자료: KRX 정보데이터시스템 · Yahoo Finance(지수) · 순자산총액 기준' : '자료: KRX 정보데이터시스템 · 순자산총액 기준'));
       paint(t, d);
-      // 캠버스 글자는 웹폰트 도착 전에 그려지면 대체 글꼴로 남음 → Pretendard 로드 후 한 번 다시 그림
+      // 캔버스 글자는 웹폰트 도착 전에 그려지면 대체 글꼴로 남음 → Pretendard 로드 후 한 번 다시 그림
       if (document.fonts && document.fonts.load) Promise.all([document.fonts.load("500 12px 'Pretendard Variable'", '가나다0123조원%'), document.fonts.ready]).then(() => a.charts.forEach(c => { try { c.update('none'); } catch (e) {} })).catch(() => {}); }; });
     return Promise.resolve(init0.call(this)).then(() => {
       document.querySelectorAll('#tabs .tab').forEach(b => { b.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${IC[b.dataset.id] || IC.overview}</svg>`); });
       const m = $('hdrMeta'); if (m && this.meta) m.textContent = '최종 적재 ' + (this.meta.lastLoaded || '-');
       sync();
     });
+  };
+  // 기준일 등 조건이 바뀌면 나머지 탭도 같은 조건으로 미리 받아 둠(call() 이 같은 조회를 기억) → 탭 전환 대기 제거
+  const load0 = A.load;
+  A.load = function () {
+    const r = load0.apply(this, arguments);
+    clearTimeout(this._pf);
+    this._pf = setTimeout(() => this.tabs.forEach(t => { if (t.id === this.state.tab || !t.action) return; const p = t.params ? t.params(this.state) : {}; if (Object.keys(p).some(k => p[k] === null || p[k] === undefined)) return; this.call(t.action, p).catch(() => {}); }), 400);
+    return r;
   };
   const sync = () => { const t = A.tab && A.tab(); if (t) { $('topTitle').textContent = t.label; document.title = t.label + ' · ETF Dashboard'; } };
   const show0 = A.show;

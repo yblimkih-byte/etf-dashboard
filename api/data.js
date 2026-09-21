@@ -15,7 +15,8 @@ module.exports = async (req, res) => {
     const text = await r.text();
     let body; try { body = JSON.parse(text); } catch (e) { throw new Error('원본 응답 형식 오류 (웹앱 배포 버전·접근 권한 확인)'); }
     // 정상 응답만 CDN 에 캐시: 10분간 그대로, 이후 하루까지는 이전 값을 즉시 주고 뒤에서 갱신
-    res.setHeader('Cache-Control', body.ok ? 'public, s-maxage=600, stale-while-revalidate=86400' : 'no-store');
+    // meta(선택 가능한 기준일 목록)는 새 적재가 곧바로 보이도록 1분만 캐시
+    res.setHeader('Cache-Control', body.ok ? 'public, s-maxage=' + (action === 'meta' ? 60 : 600) + ', stale-while-revalidate=86400' : 'no-store');
     return res.status(200).json(body);
   } catch (e) {
     res.setHeader('Cache-Control', 'no-store');

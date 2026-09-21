@@ -98,13 +98,38 @@ function rebuildDailySummary() {
 }
 
 /** 집계 후 기본 조회(기준일 미지정) 응답을 미리 캐시에 채움 → 첫 방문자도 즉시 표시 */
-function warmCache_(t0) {
-  const start = t0 || Date.now();
-  ['meta', 'overview', 'byMgr', 'byType', 'shares', 'topEtf', 'race', 'newListings', 'turnover'].forEach(a => {
-    if (Date.now() - start > CFG.WARM_MS) return;
-    try { api(a, {}); } catch (e) {}
-  });
+/** API 캐시 예열(v13). 캐시 키는 파라미터 JSON 그대로이므로 **화면이 실제로 보내는 형태**로 호출해야 적중함
+ *  (v12 까지는 {} 로 예열해 화면 요청({date:…})과 키가 달라 효과가 없었음).
+ *  순서: 최근 영업일 → 기본 기준일(전월말) → 당월의 나머지 일자(최근 순). 시한 내에서만 수행하고,
+ *  CacheService 보존 한도(6시간)에 맞춰 5.5시간 뒤 자기 자신을 다시 예약 → 낮에도 첫 조회가 느려지지 않음 */
+function warmParams_(date, dv, months) {
+  const to = dv.indexOf(date) >= 0 ? date : dv[dv.length - 1];
+  let from = dv[0];
+  if (to) { const py = months.filter(x => x.ym < to.slice(0, 4) + '-01').pop(); const f = py && dv.filter(d => d > py.date)[0]; if (f) from = f; }
+  const list = [['overview', { date: date }], ['byMgr', { date: date }], ['byType', { date: date }], ['shares', { date: date, mgr: '' }], ['topEtf', { date: date }],
+    ['newListings', { date: date, year: date.slice(0, 4), filter: 'exBond' }]];
+  if (to) list.push(['turnover', { from: from, to: to }]);
+  return list;
 }
+function warmAll() {
+  clearTriggers_('cont_warmAll');
+  const t0 = Date.now(), limit = Math.min(CFG.WARM_MS, 4.5 * 60 * 1000);
+  let n = 0, left = 0;
+  try {
+    const m = JSON.parse(api('meta', {})).data;
+    api('race', { n: 20 });
+    const dv = m.dates.filter(d => d >= m.dailyFrom), latest = dv[dv.length - 1] || null, cur = (latest || '').slice(0, 7);
+    const order = [latest, m.defaultDate].concat(dv.filter(d => d.slice(0, 7) === cur).reverse()).filter((d, i, a) => d && a.indexOf(d) === i);
+    order.forEach(d => warmParams_(d, dv, m.months).forEach(x => {
+      if (Date.now() - t0 > limit) { left++; return; }
+      try { api(x[0], x[1]); n++; } catch (e) {}
+    }));
+  } catch (e) { console.log('warmAll 오류: ' + e.message); }
+  console.log('[warmAll] ' + n + '건 예열, 잔여 ' + left + '건, ' + ((Date.now() - t0) / 1000).toFixed(0) + 's');
+  scheduleContinue_('warmAll', left ? 2 : 330);   // 남았으면 곧바로 이어서, 다 했으면 캐시 만료 전에 재예열
+}
+function cont_warmAll() { warmAll(); }
+function warmCache_() { scheduleContinue_('warmAll', 1); }   // 적재 직후: 별도 실행(자체 6분)으로 예열
 
 function writeAgg_(name, header, rows) {
   const sh = sheet_(name, header);
