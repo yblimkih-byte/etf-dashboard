@@ -12,6 +12,7 @@ const App = {
     const pr = new Promise((res, rej) => {
       const done = raw => { const r = typeof raw === 'string' ? JSON.parse(raw) : raw; r.ok ? res(r.data) : rej(new Error(r.error)); };
       if (typeof google !== 'undefined' && google.script) google.script.run.withSuccessHandler(done).withFailureHandler(e => rej(e)).api(action, params);
+      else if (window.API_BASE) fetch(window.API_BASE + '?action=' + encodeURIComponent(action) + '&p=' + encodeURIComponent(JSON.stringify(params || {}))).then(r => { if (!r.ok) throw new Error('서버 응답 오류 (' + r.status + ')'); return r.json(); }).then(done).catch(rej);   // Vercel 등 외부 호스팅
       else if (window.MOCK) setTimeout(() => done(window.MOCK.api(action, params)), 50);
       else rej(new Error('서버 연결 불가'));
     });
