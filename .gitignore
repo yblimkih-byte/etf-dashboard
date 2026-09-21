@@ -7,3 +7,9 @@ test/*.png
 .clasprc.json
 *.log
 .DS_Store
+test/web.html
+test/base/
+test/web_*/
+web/public/
+.vercel
+test/gas_after/

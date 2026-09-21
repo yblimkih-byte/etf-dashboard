@@ -1,0 +1,7 @@
+{
+  "buildCommand": "node web/build.js",
+  "outputDirectory": "web/public",
+  "installCommand": "echo skip",
+  "framework": null,
+  "cleanUrls": true
+}
