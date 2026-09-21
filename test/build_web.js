@@ -12,7 +12,7 @@ const mock = `<script>${fs.readFileSync(path.join(__dirname, 'shim.js'), 'utf8')
 const fav = 'data:image/svg+xml,' + encodeURIComponent(pub('favicon.svg'));
 const nm = p => 'file://' + path.join(__dirname, 'node_modules', p);
 let html = pub('index.html')
-  .replace(/<!--FONTS-->[\s\S]*<!--\/FONTS-->/, () => ['pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css', '@fontsource/noto-serif-kr/600.css', '@fontsource/noto-serif-kr/700.css', '@fontsource/jetbrains-mono/400.css'].filter(f => fs.existsSync(path.join(__dirname, 'node_modules', f))).map(f => `<link rel="stylesheet" href="${nm(f)}">`).join(''))
+  .replace(/<!--FONTS-->[\s\S]*<!--\/FONTS-->/, () => ['pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css', '@fontsource/jetbrains-mono/400.css'].filter(f => fs.existsSync(path.join(__dirname, 'node_modules', f))).map(f => `<link rel="stylesheet" href="${nm(f)}">`).join(''))
   .replace(/<link rel="stylesheet" href="\/app\.css[^>]*>/, () => '<style>' + pub('app.css').replace(/\/favicon\.svg/g, fav) + '</style>')
   .replace("<script>window.API_BASE = '/api/data';</script>", '')
   .replace(/<script src="https:\/\/cdnjs[^"]*"><\/script>/, () => '<script>' + fs.readFileSync(path.join(__dirname, 'node_modules', 'chart.js', 'dist', 'chart.umd.js'), 'utf8') + '</script>')

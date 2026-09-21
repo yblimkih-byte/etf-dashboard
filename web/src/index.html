@@ -5,29 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ETF Dashboard</title>
   <meta name="description" content="KRX 공개데이터 기반 국내 ETF 시장·운용사 점유율 일별 대시보드">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#fafafa">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <!--FONTS-->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
   <!--/FONTS-->
   <link rel="stylesheet" href="/app.css?v=__VER__">
   <script>window.API_BASE = '/api/data';</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body class="web">
-  <div class="nav-wrap"><div class="nav wrap">
-    <a class="brand" href="/" aria-label="ETF Dashboard"><span class="brand-dot"></span>ETF DASHBOARD</a>
+  <aside class="side" id="side">
+    <a class="side-brand" href="/" aria-label="ETF Dashboard">
+      <span class="side-logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 20V11M12 20V4M19 20v-6"/></svg></span>
+      <span class="side-name"><b>ETF Dashboard</b><small>KRX ETF Market Data</small></span>
+    </a>
+    <div class="side-label">대시보드</div>
     <nav class="tabs" id="tabs" aria-label="대시보드 탭"></nav>
-  </div></div>
-  <main class="wrap">
-    <header class="lede" id="lede" aria-live="polite"></header>
-    <div class="ctl-row" id="hdrWrap"><section class="controls" id="controls"></section><div class="hdr-meta" id="hdrMeta">loading…</div></div>
-    <div class="stats" id="stats"></div>
-    <section id="view" class="view"><div class="loading">데이터를 불러오는 중…</div></section>
-  </main>
-  <footer class="ftr"><div class="wrap">자료: KRX 정보데이터시스템 Open API · 지수: Yahoo Finance · 단위: 조원(별도 표기 없는 경우) · 순자산총액 기준 · 매 영업일 08:30 / 19:00 갱신</div></footer>
+    <div class="side-label">자료</div>
+    <ul class="side-info">
+      <li>KRX 정보데이터시스템 Open API</li>
+      <li>Yahoo Finance (지수)</li>
+      <li>단위 조원 · 순자산총액 기준</li>
+    </ul>
+    <div class="side-foot"><span class="dot"></span><span><b id="hdrMeta">loading…</b><small>매 영업일 08:30 / 19:00 갱신</small></span></div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+  <div class="inset">
+    <header class="top" id="hdrWrap">
+      <button class="icon-btn" id="sideBtn" aria-label="사이드바 열기/닫기"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+      <span class="top-sep"></span>
+      <h1 class="top-title" id="topTitle">ETF Dashboard</h1>
+      <section class="controls" id="controls"></section>
+    </header>
+    <main>
+      <p class="lede" id="lede" aria-live="polite"></p>
+      <div class="stats" id="stats"></div>
+      <section id="view" class="view"><div class="loading">데이터를 불러오는 중…</div></section>
+    </main>
+  </div>
   <script src="/app.js?v=__VER__"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@ const { chromium } = require('playwright');
   await p.waitForSelector('.tab', { timeout: 30000 });
   const tabs = ['overview', 'mgr', 'type', 'shares', 'top', 'new', 'turnover'];
   for (const t of tabs) {
-    await p.click(`.tab[data-id="${t}"]`);
+    if (W > 900) await p.click(`.tab[data-id="${t}"]`); else await p.evaluate(id => App.show(id), t);   // 좁은 화면에서는 탭이 서랍 안에 있음
     await p.waitForFunction(() => !document.querySelector('#view .loading'), null, { timeout: 60000 });
     await p.waitForTimeout(1200);
     if (t === 'shares') { await p.selectOption('#controls select:nth-of-type(1) >> nth=0', { index: 0 }).catch(() => {}); const sels = await p.$$('#controls select'); if (sels[1]) { await sels[1].selectOption('키움'); await p.waitForTimeout(1200); } }
