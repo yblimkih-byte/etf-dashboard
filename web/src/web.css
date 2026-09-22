@@ -134,6 +134,8 @@ body.side-off .inset{margin-left:8px}
 
 /* 히트맵 카드 보정 */
 .web .treemap-host{border-color:var(--bd);border-radius:var(--r-sm)}
+.web .tm-mgr{background:#eceef2}
+.web .tm-mhead{background:#eceef2}
 .web .tm-tip{background:#18181b;border-radius:8px}
 
 /* ── 좁은 화면 ── */

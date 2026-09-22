@@ -15,7 +15,7 @@ const ymTick = ym => [String(ym).slice(2, 4), String(ym).slice(4, 7)];
 const deltaLabel = (A, cur, py, shCur, shPy) => `${A.signed(cur - py)}조\n${A.pct(shCur - shPy).replace('%', '%p')}`;
 const Y_W = 56;   // 위아래로 놓는 차트의 Y축 폭 고정(X축 정렬)
 
-/* ── 히트맵(트리맵) 렌더러(v14): 유형(1단) > 개별 ETF(2단). squarify 배치, DOM 박스, 색 = 증감액 발산 스케일 ── */
+/* ── 히트맵(트리맵) 렌더러(v14, v15 운용사 중단 추가): 유형(1단) > 운용사(2단) > 개별 ETF(3단). squarify 배치, DOM 박스, 색 = 증감액 발산 스케일 ── */
 function squarify(items, x, y, w, h) {   // items: [{v,...}] → [{x,y,w,h,item}]
   const out = [], total = items.reduce((s, i) => s + i.v, 0); if (!total || w <= 0 || h <= 0) return out;
   let rest = items.slice(), rx = x, ry = y, rw = w, rh = h; const scale = w * h / total;
@@ -38,23 +38,18 @@ function treemap(A, host, d) {
   const items = d.items.filter(i => i.nav > 0);
   const byType = {}; items.forEach(i => (byType[i.type] = byType[i.type] || []).push(i));
   const order = A.meta.typeOrder.concat(Object.keys(byType).filter(k => A.meta.typeOrder.indexOf(k) < 0)).filter(k => byType[k]);
-  const groups = order.map(k => ({ v: byType[k].reduce((s, i) => s + i.nav, 0), key: k, items: byType[k].sort((a, b) => b.nav - a.nav) }));
-  const W = Math.max(320, host.clientWidth || 1000), H = Math.max(420, Math.round(W * 0.62));
+  const groups = order.map(k => ({ v: byType[k].reduce((s, i) => s + i.nav, 0), key: k, items: byType[k] }));
+  const W = Math.max(320, host.clientWidth || 1000), H = Math.max(480, Math.round(W * 0.7));
   host.style.height = H + 'px';
   const chgs = items.map(i => i.chg).filter(v => v !== null).map(Math.abs).sort((a, b) => a - b);
   const cap = (chgs.length ? chgs[Math.floor(chgs.length * 0.9)] : 0) || 1e12;   // 상위 10% 이상은 최대 채도
   const col = chg => { if (chg === null) return '#d4d4d8'; const t = Math.min(1, Math.abs(chg) / cap); const up = chg >= 0; const r = up ? Math.round(240 - 190 * t) : Math.round(240 - 30 * t), g = up ? Math.round(245 - 100 * t) : Math.round(240 - 190 * t), b = up ? Math.round(240 - 150 * t) : Math.round(240 - 170 * t); return `rgb(${r},${g},${b})`; };
-  const HEAD = 20, PAD = 2;
-  squarify(groups, 0, 0, W, H).forEach(g => {
-    const box = document.createElement('div'); box.className = 'tm-group';
-    box.style.cssText = `left:${g.x + 1}px;top:${g.y + 1}px;width:${Math.max(0, g.w - 2)}px;height:${Math.max(0, g.h - 2)}px`;
-    box.innerHTML = `<div class="tm-head" style="border-color:${tc(g.item.key)}"><span class="sw" style="background:${tc(g.item.key)}"></span>${g.item.key} <small>${A.eok(g.item.v)}조 · ${g.item.items.length}종목</small></div>`;
-    const inner = document.createElement('div'); inner.className = 'tm-body'; box.appendChild(inner);
-    const iw = g.w - 2 - PAD * 2, ih = g.h - 2 - HEAD - PAD * 2;
-    if (iw <= 4 || ih <= 4) { host.appendChild(box); return; }
-    const all = g.item.items.map(i => ({ v: i.nav, it: i }));
-    // 너무 작은 박스는 '기타 n종목'으로 묶음 (면적 < 900px²)
-    const unit = iw * ih / (g.item.v || 1), small = all.filter(x => x.v * unit < 900), big = all.filter(x => x.v * unit >= 900);
+  const HEAD = 20, MHEAD = 16, PAD = 2, MIN_MGR_AREA = 4200;   // 운용사 칸 최소 면적(px²) 미만은 '기타 운용사'로 묶음
+  /* ETF 박스 채우기: 컨테이너(inner, iw×ih)에 list 를 squarify. 작은 박스는 '기타 n종목' */
+  const fillCells = (inner, list, iw, ih) => {
+    const tot = list.reduce((s, i) => s + i.nav, 0); if (!tot || iw <= 4 || ih <= 4) return;
+    const all = list.slice().sort((a, b) => b.nav - a.nav).map(i => ({ v: i.nav, it: i }));
+    const unit = iw * ih / tot, small = all.filter(x => x.v * unit < 900), big = all.filter(x => x.v * unit >= 900);
     if (small.length > 1) big.push({ v: small.reduce((s, x) => s + x.v, 0), it: { name: `기타 ${small.length}종목`, nav: small.reduce((s, x) => s + x.v, 0), chg: small.reduce((s, x) => s + (x.it.chg || 0), 0), others: small.map(x => x.it) } }); else big.push.apply(big, small);
     squarify(big, 0, 0, iw, ih).forEach(c => {
       const it = c.item.it, el = document.createElement('div'); el.className = 'tm-cell';
@@ -63,8 +58,35 @@ function treemap(A, host, d) {
       const chars = Math.max(2, Math.floor(w / 7.2));
       if (w >= 34 && h >= 26) el.innerHTML = `<div class="tm-n">${shortName(it.name, chars)}</div>` + (h >= 40 ? `<div class="tm-c">${it.chg === null ? '-' : A.signed(it.chg)}</div>` : '');
       const tipName = it.others ? it.others.slice(0, 12).map(o => o.name).join(', ') + (it.others.length > 12 ? ` 외 ${it.others.length - 12}종목` : '') : it.name;
-      el.setAttribute('data-tip', `${tipName}\n순자산총액 ${A.eok(it.nav)}조원` + (it.chg === null ? '\n전년말 자료 없음' : `\n${it.isNew ? '상장(' + it.listDd + ') 이후' : '전년말 대비'} ${A.signed(it.chg)}조원`) + (it.mgr ? `\n${it.mgr}` : ''));
+      el.setAttribute('data-tip', `${tipName}\n순자산총액 ${A.eok(it.nav)}조원` + (it.chg === null ? '\n전년말 자료 없음' : `\n${it.isNew ? '상장(' + it.listDd + ') 이후' : '전년말 대비'} ${A.signed(it.chg)}조원`) + (it.mgr && !it.others ? `\n${it.mgr}` : ''));
       inner.appendChild(el);
+    });
+  };
+  squarify(groups, 0, 0, W, H).forEach(g => {
+    const box = document.createElement('div'); box.className = 'tm-group';
+    box.style.cssText = `left:${g.x + 1}px;top:${g.y + 1}px;width:${Math.max(0, g.w - 2)}px;height:${Math.max(0, g.h - 2)}px`;
+    box.innerHTML = `<div class="tm-head" style="border-color:${tc(g.item.key)}"><span class="sw" style="background:${tc(g.item.key)}"></span>${g.item.key} <small>${A.eok(g.item.v)}조 · ${g.item.items.length}종목</small></div>`;
+    const inner = document.createElement('div'); inner.className = 'tm-body'; box.appendChild(inner);
+    const iw = g.w - 2 - PAD * 2, ih = g.h - 2 - HEAD - PAD * 2;
+    if (iw <= 4 || ih <= 4) { host.appendChild(box); return; }
+    // v15: 유형 안을 운용사(중유형)로 나눔. NAV 큰 순, 면적이 작은 운용사는 '기타 운용사'로 묶음
+    const byMgr = {}; g.item.items.forEach(i => { const k = i.mgr || '미상'; (byMgr[k] = byMgr[k] || []).push(i); });
+    const unit = iw * ih / (g.item.v || 1);
+    let mgrs = Object.keys(byMgr).map(k => ({ key: k, v: byMgr[k].reduce((s, i) => s + i.nav, 0), items: byMgr[k] })).sort((a, b) => b.v - a.v);
+    const small = mgrs.filter(m => m.v * unit < MIN_MGR_AREA), big = mgrs.filter(m => m.v * unit >= MIN_MGR_AREA);
+    if (small.length > 1) big.push({ key: `기타 운용사 ${small.length}사`, v: small.reduce((s, m) => s + m.v, 0), items: small.reduce((a, m) => a.concat(m.items), []), etc: true }); else big.push.apply(big, small);
+    mgrs = big;
+    if (mgrs.length === 1) { fillCells(inner, mgrs[0].items, iw, ih); host.appendChild(box); return; }
+    squarify(mgrs, 0, 0, iw, ih).forEach(m => {
+      const mb = document.createElement('div'); mb.className = 'tm-mgr';
+      const mw = Math.max(0, m.w - 2), mh = Math.max(0, m.h - 2);
+      mb.style.cssText = `left:${m.x + 1}px;top:${m.y + 1}px;width:${mw}px;height:${mh}px`;
+      const showHead = mw >= 36 && mh >= MHEAD + 14;
+      const mchg = m.item.items.reduce((s, i) => s + (i.chg || 0), 0);
+      if (showHead) mb.innerHTML = `<div class="tm-mhead" title="${m.item.key} · ${A.eok(m.item.v)}조원 · ${m.item.items.length}종목 · 전년말 대비 ${A.signed(mchg)}조원">${m.item.key}${mw >= 110 ? ` <small>${A.eok(m.item.v)}조</small>` : ''}</div>`;
+      const mi = document.createElement('div'); mi.className = 'tm-mbody'; mi.style.top = (showHead ? MHEAD : 0) + 'px'; mb.appendChild(mi);
+      fillCells(mi, m.item.items, mw - 2, mh - (showHead ? MHEAD : 0) - 2);
+      inner.appendChild(mb);
     });
     host.appendChild(box);
   });
@@ -73,7 +95,7 @@ function treemap(A, host, d) {
   host.onmousemove = e => { const c = e.target.closest('.tm-cell'); if (!c) { tip.style.display = 'none'; return; } tip.textContent = c.getAttribute('data-tip'); tip.style.display = 'block'; const r = host.getBoundingClientRect(); let x = e.clientX - r.left + 14; const y = e.clientY - r.top + 14; if (x + 300 > W) x = Math.max(0, e.clientX - r.left - 314); tip.style.left = x + 'px'; tip.style.top = y + 'px'; };
   host.onmouseleave = () => { tip.style.display = 'none'; };
   const legend = document.createElement('div'); legend.className = 'tm-legend';
-  legend.innerHTML = `<span>전년말 대비 감소</span><i style="background:${col(-cap)}"></i><i style="background:${col(-cap / 2)}"></i><i style="background:${col(0)}"></i><i style="background:${col(cap / 2)}"></i><i style="background:${col(cap)}"></i><span>증가 (±${A.eok(cap)}조원 이상은 최대 채도)</span>`;
+  legend.innerHTML = `<span>전년말 대비 감소</span><i style="background:${col(-cap)}"></i><i style="background:${col(-cap / 2)}"></i><i style="background:${col(0)}"></i><i style="background:${col(cap / 2)}"></i><i style="background:${col(cap)}"></i><span>증가 (±${A.eok(cap)}조원 이상은 최대 채도) · 유형 안은 운용사별(NAV 순, 작은 운용사는 '기타 운용사')</span>`;
   host.parentElement.appendChild(legend);
   let raf; const onResize = () => { if (!host.isConnected) { window.removeEventListener('resize', onResize); return; } cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (Math.abs((host.clientWidth || W) - W) > 40) { window.removeEventListener('resize', onResize); treemap(A, host, d); } }); };
   window.addEventListener('resize', onResize);
@@ -186,8 +208,8 @@ App.registerTab({
     ];
     A.div(s1, '', A.table(d.rows.concat(d.dom), cols, { attr: r => r === d.dom[0] ? 'class="sep"' : '', total: { '구분': '합계', '잔고(조원)': A.eok(d.total), '연초 대비|증감액': A.signed(d.total - d.totalPy), '연초 대비|증감률': A.pct(d.totalPy ? (d.total / d.totalPy - 1) * 100 : null), '비중|기준일': '100.0%', '비중|전년말': '100.0%' } }));
 
-    // v14: 유형 > 개별 ETF 히트맵(트리맵). 넓이 = 기준일 NAV, 색·숫자 = 전년말 대비 NAV 증감
-    const s2 = A.section(root, '유형별 ETF 히트맵', `기준일 ${dlabel(d.date)} · 넓이 = 순자산총액 · 색·숫자 = 전년말(${dlabel(d.ref.py) || '-'}) 대비 증감액(조원, 신규상장은 상장 이후) · 마우스를 올리면 공식명칭`);
+    // v14/v15: 유형 > 운용사 > 개별 ETF 히트맵(트리맵). 넓이 = 기준일 NAV, 색·숫자 = 전년말 대비 NAV 증감
+    const s2 = A.section(root, '유형별 ETF 히트맵', `기준일 ${dlabel(d.date)} · 유형 > 운용사 > ETF · 넓이 = 순자산총액 · 색·숫자 = 전년말(${dlabel(d.ref.py) || '-'}) 대비 증감액(조원, 신규상장은 상장 이후) · 마우스를 올리면 공식명칭`);
     const host = A.div(s2, 'treemap-host'); host.innerHTML = '<div class="loading">히트맵 데이터를 불러오는 중…</div>';
     A.call('treemap', { date: d.date }).then(t => { if (host.isConnected) treemap(A, host, t); }).catch(e => { host.innerHTML = `<div class="error">${e.message}</div>`; });
   }
