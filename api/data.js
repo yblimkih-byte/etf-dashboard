@@ -1,6 +1,6 @@
 /* Vercel 서버 함수: Apps Script JSON 엔드포인트 프록시 + CDN 캐시
    환경변수 GAS_URL = Apps Script 웹앱 /exec 주소 (브라우저에는 노출되지 않음) */
-const ACTIONS = ['meta', 'overview', 'byMgr', 'byType', 'shares', 'topEtf', 'race', 'newListings', 'turnover'];
+const ACTIONS = ['meta', 'overview', 'byMgr', 'byType', 'shares', 'topEtf', 'race', 'newListings', 'turnover', 'treemap'];
 
 module.exports = async (req, res) => {
   const action = String(req.query.action || '');
