@@ -107,7 +107,7 @@ function warmParams_(date, dv, months) {
   let from = dv[0];
   if (to) { const py = months.filter(x => x.ym < to.slice(0, 4) + '-01').pop(); const f = py && dv.filter(d => d > py.date)[0]; if (f) from = f; }
   const list = [['overview', { date: date }], ['byMgr', { date: date }], ['byType', { date: date }], ['shares', { date: date, mgr: '' }], ['topEtf', { date: date }],
-    ['newListings', { date: date, year: date.slice(0, 4), filter: 'exBond' }]];
+    ['newListings', { date: date, year: date.slice(0, 4), filter: 'exBond' }], ['treemap', { date: date }]];
   if (to) list.push(['turnover', { from: from, to: to }]);
   return list;
 }

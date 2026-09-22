@@ -132,6 +132,10 @@ body.side-off .inset{margin-left:8px}
 .web .error{border:1px solid #fecaca;background:#fef2f2;border-radius:var(--r);text-align:left;padding:16px 20px;color:var(--down)}
 .scrim{display:none}
 
+/* 히트맵 카드 보정 */
+.web .treemap-host{border-color:var(--bd);border-radius:var(--r-sm)}
+.web .tm-tip{background:#18181b;border-radius:8px}
+
 /* ── 좁은 화면 ── */
 @media (max-width:1280px){.cards{grid-template-columns:repeat(min(var(--n,4),3),minmax(0,1fr))}}
 @media (max-width:900px){
@@ -146,6 +150,7 @@ body.side-off .inset{margin-left:8px}
   .web .view{gap:12px}
   .web .view>.section{padding:16px 14px 12px;overflow-x:auto}
   .web .view>.section>.section-h{position:sticky;left:0}
+  .web .treemap-host{min-width:760px}
   .web .chart-wrap{min-width:760px}.web .chart-wrap.short,.web .grid .chart-wrap{min-width:0}
   .web .view>.chips{position:static}
   .web .tbl td:first-child,.web .tbl th:first-child{position:sticky;left:0;z-index:1}

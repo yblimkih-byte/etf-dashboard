@@ -50,6 +50,7 @@ const ACTIONS = {
   topEtf: apiTopEtf_,
   race: apiRace_,
   newListings: apiNewListings_,
+  treemap: apiTreemap_,
   turnover: apiTurnover_
 };
 
@@ -216,6 +217,22 @@ function apiByType_(p) {
   const trend = {};
   aggRows_(CFG.SHEET.AGG_TYPE).forEach(r => { const m = ymstr_(r[0]); if (wanted.indexOf(m) < 0) return; const t = trend[m] = trend[m] || {}; t[String(r[2])] = (t[String(r[2])] || 0) + toNum_(r[4]); });
   return { date: date, ref: ref, total: total, totalPy: totalPy, rows: rows, dom: domRows, trend: wanted.filter(m => trend[m]).map(m => Object.assign({ ym: m, isBase: prevYE && m === prevYE.ym }, trend[m])) };
+}
+
+/** 유형 > 개별 ETF 트리맵 (v14). 넓이 = 기준일 NAV, 증감 = 전년말(신규상장은 상장 이후) 대비 NAV 증가액 */
+function apiTreemap_(p) {
+  const months = aggMarket_();
+  const date = p.date || defaultDate_(months);
+  const ref = refDates_(date, months);
+  const ctx = ctx_();
+  const cur = snapshot_(date), py = {};
+  if (ref.py) snapshot_(ref.py).forEach(r => py[r.code] = r.nav);
+  const items = cur.filter(r => r.nav > 0).map(r => {
+    const g = groupOf_(r, ctx), ld = listDdOf_(r.code, ctx), isNew = !!(ref.py && ld && ld > ref.py);
+    const base = isNew ? 0 : (py[r.code] !== undefined ? py[r.code] : null);
+    return { code: r.code, name: r.name, mgr: g.short, top: g.top, type: g.f2, nav: r.nav, base: base, chg: base === null ? null : r.nav - base, isNew: isNew, listDd: ld || '' };
+  });
+  return { date: date, ref: ref, total: items.reduce((s, i) => s + i.nav, 0), items: items };
 }
 
 /** 상위 5개사 및 시장 전체의 유형별 비중 (+ 선택 운용사) — 일자별 요약 사용 */
