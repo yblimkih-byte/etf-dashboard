@@ -10,10 +10,19 @@ module.exports = async (req, res) => {
   let p = '{}';
   try { p = JSON.stringify(JSON.parse(String(req.query.p || '{}'))); } catch (e) {}
   if (p.length > 2000) return res.status(400).json({ ok: false, error: '요청이 너무 큼' });
-  try {
-    const r = await fetch(base + '?action=' + encodeURIComponent(action) + '&p=' + encodeURIComponent(p), { redirect: 'follow' });
+  // v109: Apps Script 가 동시 실행 한도·일시 오류로 HTML 페이지를 돌려주는 경우가 있어 1회 재시도
+  const url = base + '?action=' + encodeURIComponent(action) + '&p=' + encodeURIComponent(p);
+  const once = async () => {
+    const r = await fetch(url, { redirect: 'follow' });
     const text = await r.text();
-    let body; try { body = JSON.parse(text); } catch (e) { throw new Error('원본 응답 형식 오류 (웹앱 배포 버전·접근 권한 확인)'); }
+    try { return JSON.parse(text); } catch (e) {
+      const snip = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+      throw new Error('원본 응답 형식 오류 (HTTP ' + r.status + ': ' + snip + ')');
+    }
+  };
+  try {
+    let body;
+    try { body = await once(); } catch (e1) { console.warn('[retry]', action, e1.message); await new Promise(r => setTimeout(r, 1200)); body = await once(); }
     // 정상 응답만 CDN 에 캐시: 10분간 그대로, 이후 하루까지는 이전 값을 즉시 주고 뒤에서 갱신
     // meta(선택 가능한 기준일 목록)는 새 적재가 곧바로 보이도록 1분만 캐시
     res.setHeader('Cache-Control', body.ok ? 'public, s-maxage=' + (action === 'meta' ? 60 : 600) + ', stale-while-revalidate=86400' : 'no-store');

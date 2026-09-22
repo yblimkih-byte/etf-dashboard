@@ -146,12 +146,35 @@
       sync();
     });
   };
-  // 기준일 등 조건이 바뀌면 나머지 탭도 같은 조건으로 미리 받아 둠(call() 이 같은 조회를 기억) → 탭 전환 대기 제거
+  // v109: Apps Script 는 동시 요청이 몰리면 HTML 오류 페이지를 돌려줌(프록시 502) → ① 동시 요청 3건 제한 ② 실패 시 자동 재시도 ③ 선조회는 한 건씩 차례로
+  const MAX_CONC = 3; let running = 0; const waitq = [];
+  const acquire = () => new Promise(r => { if (running < MAX_CONC) { running++; r(); } else waitq.push(r); });
+  const release = () => { const n = waitq.shift(); if (n) n(); else running--; };
+  const fetch0 = window.fetch.bind(window);
+  window.fetch = function (url) {
+    if (!(typeof url === 'string' && window.API_BASE && url.indexOf(window.API_BASE) === 0)) return fetch0.apply(window, arguments);
+    const args = arguments;
+    return acquire().then(() => fetch0.apply(window, args)).then(r => { release(); return r; }, e => { release(); throw e; });
+  };
+  const retryable = e => /\((502|503|504|500)\)|Failed to fetch|NetworkError|Load failed|network/i.test(String(e && e.message || e));
+  const call0 = A.call;
+  A.call = function (action, params) {
+    const self = this, delays = [1500, 3000, 5000, 8000];
+    const attempt = n => call0.call(self, action, params).catch(e => {
+      if (n >= delays.length || !retryable(e)) throw e;
+      return new Promise(r => setTimeout(r, delays[n])).then(() => attempt(n + 1));
+    });
+    return attempt(0);
+  };
+  // 기준일 등 조건이 바뀌면 나머지 탭도 같은 조건으로 미리 받아 둠(call() 이 같은 조회를 기억) → 탭 전환 대기 제거. 현재 탭 이후 한 건씩
   const load0 = A.load;
   A.load = function () {
     const r = load0.apply(this, arguments);
-    clearTimeout(this._pf);
-    this._pf = setTimeout(() => this.tabs.forEach(t => { if (t.id === this.state.tab || !t.action) return; const p = t.params ? t.params(this.state) : {}; if (Object.keys(p).some(k => p[k] === null || p[k] === undefined)) return; this.call(t.action, p).catch(() => {}); }), 400);
+    clearTimeout(this._pf); const gen = (this._pfGen = (this._pfGen || 0) + 1);
+    this._pf = setTimeout(() => {
+      const list = this.tabs.filter(t => t.id !== this.state.tab && t.action).map(t => [t.action, t.params ? t.params(this.state) : {}]).filter(([, p]) => !Object.keys(p).some(k => p[k] === null || p[k] === undefined));
+      list.reduce((ch, [a, p]) => ch.then(() => gen === this._pfGen ? this.call(a, p).catch(() => {}) : null), Promise.resolve(r).catch(() => {}));
+    }, 400);
     return r;
   };
   const sync = () => { const t = A.tab && A.tab(); if (t) { $('topTitle').textContent = t.label; document.title = t.label + ' · ETF Dashboard'; } };

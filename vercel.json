@@ -3,5 +3,10 @@
   "outputDirectory": "web/public",
   "installCommand": "echo skip",
   "framework": null,
-  "cleanUrls": true
+  "cleanUrls": true,
+  "functions": {
+    "api/data.js": {
+      "maxDuration": 60
+    }
+  }
 }
