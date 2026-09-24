@@ -24,6 +24,8 @@
     deleteRows(start, n) { this.rows.splice(start - 1, n); return this; }
     clearContents() { this.rows = []; return this; }
     setFrozenRows() { return this; }
+    getMaxColumns() { return this._maxc || 26; }
+    deleteColumns(c, n) { this._maxc = (this._maxc || 26) - n; return this; }
   }
   const ss = {
     getSheetByName: n => store[n] || null,

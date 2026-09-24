@@ -126,7 +126,12 @@
       if (document.fonts && document.fonts.load) Promise.all([document.fonts.load("500 12px 'Pretendard Variable'", '가나다0123조원%'), document.fonts.ready]).then(() => a.charts.forEach(c => { try { c.update('none'); } catch (e) {} })).catch(() => {}); }; });
     return Promise.resolve(init0.call(this)).then(() => {
       document.querySelectorAll('#tabs .tab').forEach(b => { b.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${IC[b.dataset.id] || IC.overview}</svg>`); });
-      const m = $('hdrMeta'); if (m && this.meta) m.textContent = '최종 적재 ' + (this.meta.lastLoaded || '-');
+      const m = $('hdrMeta'); if (m && this.meta) {   // v17: 적재 상태(미게시 사유·오류·확인 시각)
+        const ll = this.loadLine(this.meta), foot = m.closest('.side-foot'), sm = foot && foot.querySelector('small');
+        m.textContent = ll.head;
+        if (sm) { sm.textContent = ll.note || ('매 영업일 08:30 / 19:00 갱신' + (ll.at ? ' · 확인 ' + ll.at : '')); sm.classList.toggle('ld-note', !!ll.note); }
+        if (foot) { foot.classList.toggle('warn', ll.warn); foot.title = ll.head + (ll.note ? '\n' + ll.note : '') + (ll.at ? '\n확인 ' + ll.at : ''); }
+      }
       sync();
     });
   };

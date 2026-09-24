@@ -92,6 +92,16 @@ const CFG = {
     'SMART': '신한자산운용', 'WOORI': '우리자산운용', '대신343': '대신자산운용', '흥국': '흥국자산운용', '네비게이터': '한국투자신탁운용'
   },
 
+  // ── KRX 휴장일(주말 제외) v17 ──────────────────────────
+  // 2026년분은 공개 휴장일 목록과 실제 적재 결과(비적재 평일)를 대조해 확정. 매년 12월 KRX 공지 후 다음 해 분을 추가.
+  // 목록에 없는 임시 휴장은 '뒤 영업일 자료 게시 + 그날 KOSPI 일봉 없음'으로 자동 판별. 목록에 있어도 KRX 자료가 있으면 적재함(목록 오류 대비)
+  KRX_HOLIDAYS: {
+    '2026-01-01': '신정', '2026-02-16': '설 연휴', '2026-02-17': '설 연휴', '2026-02-18': '설 연휴',
+    '2026-03-02': '삼일절 대체휴일', '2026-05-01': '노동절', '2026-05-05': '어린이날', '2026-05-25': '부처님오신날 대체휴일',
+    '2026-06-03': '지방선거', '2026-07-17': '제헌절', '2026-08-17': '광복절 대체휴일', '2026-09-24': '추석 연휴',
+    '2026-09-25': '추석 연휴', '2026-10-05': '개천절 대체휴일', '2026-10-09': '한글날', '2026-12-25': '성탄절', '2026-12-31': '연말 휴장'
+  },
+
   // 유형 축 (범례_유형 '유형최종2' 값 순서)
   TYPE_ORDER: ['국내주식형', '해외주식형', '채권형', '파생형', '혼합채권형', '기타'],
 
@@ -107,7 +117,11 @@ const CFG = {
 };
 
 /** Script Properties 키 */
-const PROP = { KRX_KEY: 'KRX_AUTH_KEY', LAST_DAILY: 'LAST_DAILY_DATE', BACKFILL_CURSOR: 'BACKFILL_CURSOR', SNAP_CURSOR: 'SNAP_CURSOR', PENDING_AGG: 'PENDING_AGG', CACHE_VER: 'CACHE_VER' };
+const PROP = { KRX_KEY: 'KRX_AUTH_KEY', LAST_DAILY: 'LAST_DAILY_DATE', BACKFILL_CURSOR: 'BACKFILL_CURSOR', SNAP_CURSOR: 'SNAP_CURSOR', PENDING_AGG: 'PENDING_AGG', CACHE_VER: 'CACHE_VER',
+  LOAD_STATUS: 'LOAD_STATUS',     // v17: 최근 적재 확인 결과(JSON) → 화면 상단 표시
+  LOADING: 'LOADING_SINCE',       // v17: 적재 실행 중 표시(예열이 겹치지 않도록)
+  MONTHLY_MAP: 'MONTHLY_MAP',     // v17: raw_월말 월별 블록 위치 {lr, m:{ym:[일자,시작행,행수]}} → 5만 행 A열 전체 읽기 생략
+  COLS_TRIMMED: 'COLS_TRIMMED' }; // v17: raw 시트 빈 열(I~Z) 정리 완료 표시
 
 function krxKey_() {
   const k = PropertiesService.getScriptProperties().getProperty(PROP.KRX_KEY);

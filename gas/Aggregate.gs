@@ -113,20 +113,34 @@ function warmParams_(date, dv, months) {
 }
 function warmAll() {
   clearTriggers_('cont_warmAll');
+  const since = +(PropertiesService.getScriptProperties().getProperty(PROP.LOADING) || 0);
+  if (since && Date.now() - since < 7 * 60 * 1000) { console.log('[warmAll] 적재 실행 중 → 10분 뒤 예열'); scheduleContinue_('warmAll', 10); return; }   // v17: 적재와 겹치지 않게
   const t0 = Date.now(), limit = Math.min(CFG.WARM_MS, 4.5 * 60 * 1000);
   let n = 0, left = 0;
   try {
     const m = JSON.parse(api('meta', {})).data;
     api('race', { n: 20 });
-    const dv = m.dates.filter(d => d >= m.dailyFrom), latest = dv[dv.length - 1] || null, cur = (latest || '').slice(0, 7);
-    const order = [latest, m.defaultDate].concat(dv.filter(d => d.slice(0, 7) === cur).reverse()).filter((d, i, a) => d && a.indexOf(d) === i);
+    const dv = m.dates.filter(d => d >= m.dailyFrom), latest = dv[dv.length - 1] || null;
+    // v17: 최근 영업일·기본 기준일(전월말)만 예열. 당월의 다른 일자는 처음 조회할 때 계산해 6시간 캐시
+    //      (v13~v16 은 당월 전 일자를 5.5시간마다 다시 예열 → 하루 40~57분 사용, 무료 계정 트리거 한도 90분/일에 근접)
+    const order = [latest, m.defaultDate].filter((d, i, a) => d && a.indexOf(d) === i);
     order.forEach(d => warmParams_(d, dv, m.months).forEach(x => {
       if (Date.now() - t0 > limit) { left++; return; }
       try { api(x[0], x[1]); n++; } catch (e) {}
     }));
   } catch (e) { console.log('warmAll 오류: ' + e.message); }
   console.log('[warmAll] ' + n + '건 예열, 잔여 ' + left + '건, ' + ((Date.now() - t0) / 1000).toFixed(0) + 's');
-  scheduleContinue_('warmAll', left ? 2 : 330);   // 남았으면 곧바로 이어서, 다 했으면 캐시 만료 전에 재예열
+  scheduleWarm_(left ? 2 : 330);   // 남았으면 곧바로 이어서, 다 했으면 캐시 만료(6시간) 전에 재예열
+}
+/** 다음 예열 예약(v17): 22시~다음 날 08:50 에는 쉼(08:30 적재 뒤 예열과 겹치지 않게) → 야간 트리거 실행시간 절약 */
+function scheduleWarm_(min) {
+  const at = new Date(Date.now() + min * 60000), h = +Utilities.formatDate(at, TZ, 'H');
+  if (min <= 2 || (h >= 9 && h < 22)) { scheduleContinue_('warmAll', min); return; }
+  const base = h >= 22 ? new Date(at.getTime() + 10 * 3600000) : at;   // 22시 이후면 다음 날
+  const when = Utilities.parseDate(Utilities.formatDate(base, TZ, 'yyyy-MM-dd') + ' 08:50', TZ, 'yyyy-MM-dd HH:mm');
+  clearTriggers_('cont_warmAll');
+  ScriptApp.newTrigger('cont_warmAll').timeBased().at(when).create();
+  console.log('[warmAll] 다음 예열 ' + Utilities.formatDate(when, TZ, 'MM-dd HH:mm'));
 }
 function cont_warmAll() { warmAll(); }
 function warmCache_() { scheduleContinue_('warmAll', 1); }   // 적재 직후: 별도 실행(자체 6분)으로 예열

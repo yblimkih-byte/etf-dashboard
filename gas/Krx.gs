@@ -31,10 +31,10 @@ function fetchEtfDaily_(dateStr) {
     name: String(pick_(r, F.NAME) || '').trim(),
     nav: toNum_(pick_(r, F.NAV_TOT)),
     trdval: toNum_(pick_(r, F.TRDVAL))
-  })).filter(r => r.code && r.code !== '000000');
+  })).filter(r => r.code && r.code !== '000000' && r.date === dateStr);   // v17: 요청일과 다른 기준일자 행(전일 값 이월 등)은 제외
   // KRX는 휴장일(연말 휴장, 설·추석 등)에도 값이 0인 행을 반환함 → 전 종목 NAV 0이면 비거래일/미게시로 간주
   // (당일 19:00 시점에는 거래대금만 먼저 게시되고 순자산총액이 0인 경우가 있음 → 빈 응답으로 취급해 다음 실행에 재시도)
-  if (!out.some(r => r.nav > 0)) return [];
+  if (!out.some(r => r.nav > 0)) { const e = []; e.raw = rows.length; e.trd = out.filter(r => r.trdval > 0).length; return e; }   // v17: 진단용 원자료 행수
   return out;
 }
 

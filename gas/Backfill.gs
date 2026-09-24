@@ -27,6 +27,7 @@ function backfillMonthly() {
           ensureMaster_(recs, ctx, recs[0].date);
           const rows = recs.map(r => [r.date, r.code, r.name, mgrShortOf_(r.code, ctx, r.name), r.nav, r.trdval, '', '']);
           appendRows_(sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), rows);
+          PropertiesService.getScriptProperties().deleteProperty(PROP.MONTHLY_MAP);   // v17: 월별 위치 캐시 무효화
           log_('월말 백필 ' + key + ' (' + recs[0].date + ', ' + rows.length + '종목)');
         } else log_('월말 백필 ' + key + ' 데이터 없음', 'WARN');
       }
@@ -99,6 +100,7 @@ function repairZeroDays() {
   // 1) raw_월말
   const shM = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), zm = zeroNavDates(shM, 5);
   removed.monthly = zm.dates; delBlocks(shM, zm.dates.map(d => zm.blk[d]));
+  PropertiesService.getScriptProperties().deleteProperty(PROP.MONTHLY_MAP);   // v17: 월별 위치 캐시 무효화
   // 2) raw_일별: _index 블록별로 E 열만 읽어 판정
   const shD = sheet_(CFG.SHEET.RAW_DAILY, CFG.RAW_HEADER), ix = indexMap_();
   const zeroBlocks = [];

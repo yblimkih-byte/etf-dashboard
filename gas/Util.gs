@@ -125,16 +125,62 @@ function wd_loadDaily() {
   log_('직전 적재 실행이 비정상 종료됨(시간 초과 추정) → 재시도 ' + n + '/' + WD.MAX, 'WARN');
   loadDaily();
 }
-/** 전영업일분이 아직 미게시(빈 응답)일 때: 낮 시간(08~16시)에는 RETRY_MIN 분 뒤 재시도를 예약(하루 RETRY_MAX 회) → 19:00 까지 기다리지 않음 */
-function scheduleUnpublishedRetry_(missingDate) {
+/** 전영업일분이 아직 미게시(빈 응답)일 때: 낮 시간(08~16시)에는 RETRY_MIN 분 뒤 재시도를 예약(하루 RETRY_MAX 회) → 19:00 까지 기다리지 않음
+ *  v17: 게시 예정일(expect, 다음 KRX 영업일)이 오늘 이후면(휴장 기간) 재시도하지 않음 — 정기 실행(08:30/19:00)이 계속 확인 */
+function scheduleUnpublishedRetry_(missingDate, expect) {
   const now = new Date(), hour = +Utilities.formatDate(now, TZ, 'H'), day = Utilities.formatDate(now, TZ, 'yyyy-MM-dd');
   if (hour < 8 || hour >= 16 || missingDate >= day) return;          // 당일분 미게시는 19:00 정기 실행 몫
+  if (expect && expect > day) { console.log(missingDate + ' 자료 게시 예정일 ' + expect + ' (휴장) → 낮 재시도 생략'); return; }
   const props = PropertiesService.getScriptProperties(), cur = String(props.getProperty(WD.RETRY_PROP) || '').split(':');
   const n = cur[0] === day ? +cur[1] || 0 : 0;
   if (n >= WD.RETRY_MAX) return;
   props.setProperty(WD.RETRY_PROP, day + ':' + (n + 1));
   scheduleContinue_('loadDaily', WD.RETRY_MIN);
   log_(missingDate + ' 자료 미게시 → ' + WD.RETRY_MIN + '분 뒤 재시도 예약 (' + (n + 1) + '/' + WD.RETRY_MAX + ')');
+}
+
+/** v17: 적재 중 오류(KRX 연결 실패 등)로 끝났을 때 07~21시에는 30분 뒤 재시도(미게시 재시도와 합쳐 하루 RETRY_MAX 회) */
+function retryAfterError_() {
+  const now = new Date(), hour = +Utilities.formatDate(now, TZ, 'H'), day = Utilities.formatDate(now, TZ, 'yyyy-MM-dd');
+  if (hour < 7 || hour >= 21) return;
+  const props = PropertiesService.getScriptProperties(), cur = String(props.getProperty(WD.RETRY_PROP) || '').split(':');
+  const n = cur[0] === day ? +cur[1] || 0 : 0;
+  if (n >= WD.RETRY_MAX) return;
+  props.setProperty(WD.RETRY_PROP, day + ':' + (n + 1));
+  scheduleContinue_('loadDaily', 30);
+  log_('적재 오류 → 30분 뒤 재시도 예약 (' + (n + 1) + '/' + WD.RETRY_MAX + ')', 'WARN');
+}
+
+// ─────────────────────────── KRX 영업일·적재 상태 (v17) ───────────────────────────
+
+const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
+/** CFG.KRX_HOLIDAYS 에 있는 평일 휴장일이면 이름, 아니면 '' */
+function krxHoliday_(ds) { return (CFG.KRX_HOLIDAYS && CFG.KRX_HOLIDAYS[ds]) || ''; }
+/** ds 다음의 KRX 영업일(주말·휴장일 목록 제외) 'yyyy-MM-dd' */
+function nextKrxDay_(ds) {
+  let d = addDays_(parse_(ds), 1);
+  for (let i = 0; i < 20 && (isWeekend_(d) || krxHoliday_(fmt_(d))); i++) d = addDays_(d, 1);
+  return fmt_(d);
+}
+/** 'MM-DD(요일)' */
+function mdDow_(ds) { return ds.slice(5) + '(' + DOW_KO[parse_(ds).getDay()] + ')'; }
+/** 적재 상태 저장/조회 → apiMeta_ 응답(loadStatus)으로 화면 상단에 표시 */
+function setLoadStatus_(o) {
+  try { PropertiesService.getScriptProperties().setProperty(PROP.LOAD_STATUS, JSON.stringify(o)); } catch (e) { console.log('상태 저장 실패: ' + e.message); }
+}
+function loadStatus_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(PROP.LOAD_STATUS) || 'null'); } catch (e) { return null; }
+}
+/** 미게시 일자 설명: '09-23(수)분 KRX 미게시 — 추석 연휴(09-24~09-25) 휴장, 09-28(월) 오전 게시 예상' */
+function pendingNote_(pending, expect, today) {
+  const hol = [];
+  for (let d = addDays_(parse_(pending), 1); fmt_(d) < expect; d = addDays_(d, 1)) { const h = krxHoliday_(fmt_(d)); if (h && !isWeekend_(d)) hol.push({ d: fmt_(d), h: h }); }
+  let s = mdDow_(pending) + '분 KRX 미게시';
+  if (expect > today) {
+    if (hol.length) { const names = hol.map(x => x.h).filter((v, i, a) => a.indexOf(v) === i).join('·'); s += ' — ' + names + '(' + hol[0].d.slice(5) + (hol.length > 1 ? '~' + hol[hol.length - 1].d.slice(5) : '') + ') 휴장'; }
+    s += (hol.length ? ', ' : ' — ') + mdDow_(expect) + ' 오전 게시 예상';
+  } else s += ' — 게시 지연, 자동 재시도 중';
+  return s;
 }
 
 function clearTriggers_(fnName) {

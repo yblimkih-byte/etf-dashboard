@@ -24,10 +24,10 @@ function api(action, params) {
     const cache = CacheService.getScriptCache();
     const key = cacheKey_(action, params);
     const hit = cache.get(key);
-    if (hit) return hit;
+    if (hit) return action === 'meta' ? withLoadStatus_(hit) : hit;
     const out = JSON.stringify({ ok: true, data: fn(params || {}) });
     if (out.length < 95000) cache.put(key, out, 21600);
-    return out;
+    return action === 'meta' ? withLoadStatus_(out) : out;
   } catch (err) {
     return JSON.stringify({ ok: false, error: err.message });
   }
@@ -37,6 +37,16 @@ function cacheKey_(action, params) {
   const ver = PropertiesService.getScriptProperties().getProperty(PROP.CACHE_VER) || '0';
   const h = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(params || {})));
   return 'api:' + ver + ':' + action + ':' + h;
+}
+/** v17: meta 응답에 최신 적재 상태를 덧붙임(캐시와 무관하게 매번 스크립트 속성에서 읽음) → 화면 상단 '최종 적재 · 미게시 사유 · 확인 시각' */
+function withLoadStatus_(json) {
+  try {
+    const o = JSON.parse(json); if (!o.ok || !o.data) return json;
+    const props = PropertiesService.getScriptProperties();
+    o.data.lastLoaded = props.getProperty(PROP.LAST_DAILY) || o.data.lastLoaded;
+    o.data.loadStatus = loadStatus_();
+    return JSON.stringify(o);
+  } catch (e) { return json; }
 }
 /** 데이터 변경 시 호출 → 이후 API 응답 캐시 무효화 */
 function bumpCache_() { PropertiesService.getScriptProperties().setProperty(PROP.CACHE_VER, String(Date.now())); }

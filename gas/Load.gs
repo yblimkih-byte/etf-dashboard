@@ -294,40 +294,50 @@ function rowToRec_(v) {
 
 // ─────────────────────────── 일별 적재 ───────────────────────────
 
-/** 매일 트리거 진입점 (08:30 KST 권장). 미적재 영업일을 오늘까지 순차 적재 */
+/** 매일 트리거 진입점 (08:30 / 19:00 KST). 미적재 KRX 영업일을 어제까지 순차 적재 (v17 재작성)
+ *  - KRX 부터 조회: 적재할 자료가 없으면(미게시·휴장) 시트를 읽지 않고 곧바로 종료 → 시간 초과·트리거 실행시간 절약
+ *  - 빈 응답 일자 판정: 휴장일 목록(CFG.KRX_HOLIDAYS), 또는 '뒤 영업일 자료 게시 + 그날 KOSPI 일봉 없음' → 휴장으로 건너뜀.
+ *    그 밖의 경우는 절대 건너뛰지 않고 '미게시'로 멈춘 뒤 다음 실행에서 다시 확인 (v16 까지는 '3일 지난 빈 응답 = 휴장' 어림 규칙)
+ *  - 결과는 LOAD_STATUS 에 남겨 화면 상단에 표시 (예: '09-23(수)분 KRX 미게시 — 추석 연휴(09-24~09-25) 휴장, 09-28(월) 오전 게시 예상') */
 function loadDaily() {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(10000)) return;
+  if (!lock.tryLock(10000)) { console.log('다른 적재 실행 중 → 이번 실행 생략'); return; }
   const t0 = Date.now(), ok = budget_(t0);
+  const props = PropertiesService.getScriptProperties();
+  const todayS = fmt_(new Date());
+  const st = { at: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm'), last: null, pending: null, expect: null, note: '', skipped: [], error: '' };
+  let last = null;
   try {
     armWatchdog_();   // 강제 종료 대비(정상 종료 시 finally 에서 해제)
+    props.setProperty(PROP.LOADING, String(t0));
     step_(t0, 'start');
-    const props = PropertiesService.getScriptProperties();
-    const ctx = ctx_();
-    const ix = indexMap_();
-    step_(t0, 'ctx·index 로드');
-    const dates = Object.keys(ix).sort();
-    let last = props.getProperty(PROP.LAST_DAILY) || (dates.length ? dates[dates.length - 1] : null);
+    last = props.getProperty(PROP.LAST_DAILY) || indexDates_().pop() || null;
     let d = last ? addDays_(parse_(last), 1) : parse_(CFG.DAILY_FROM);
-    const today = parse_(new Date());
-    let loaded = 0;
-    let unpublished = null;
-    trimOrphanRows_(ix);   // 직전 실행이 시간 초과로 중단된 경우 _index 없는 꼬리 행 제거
-    step_(t0, '잔여 행 점검');
-    syncMonthly_(t0, CFG.PRE_SYNC_MS, true);   // 이전 회차에서 이월된 월말 스냅샷 갱신을 먼저 처리 (진행 중인 당월은 제외)
-    step_(t0, '이월 월말 갱신');
-
-    while (d <= today && ok()) {
+    let loaded = 0, cutByBudget = false, ctx = null;   // ctx: 실제로 적재할 자료가 있을 때만 준비(시트 읽기)
+    while (fmt_(d) < todayS) {                              // 당일분은 다음 영업일 오전에 게시됨 → 어제까지만 조회
+      if (!ok()) { cutByBudget = true; break; }
       if (isWeekend_(d)) { d = addDays_(d, 1); continue; }
       const ds = fmt_(d);
       step_(t0, 'KRX 조회 시작 ' + ds);
       const recs = fetchEtfDaily_(ds);
-      step_(t0, 'KRX 조회 완료 ' + ds + ' (' + recs.length + '건)');
+      step_(t0, 'KRX 조회 완료 ' + ds + ' (' + recs.length + '건' + (recs.length ? '' : ', 원자료 ' + (recs.raw || 0) + '행·거래대금 ' + (recs.trd || 0) + '종목') + ')');
       if (!recs.length) {
-        // 최근 3일 이내 빈 응답 = 미게시 가능성 → 중단(다음 실행에 재시도). 그 이전은 휴장으로 간주하고 건너뜀
-        if ((today - d) / 86400000 <= 3) { unpublished = ds; break; }
-        d = addDays_(d, 1); continue;
+        if (krxHoliday_(ds)) { d = addDays_(d, 1); continue; }                     // 휴장일 목록
+        const why = unlistedHoliday_(d, todayS);                                    // 목록에 없는 임시 휴장인지: 두 가지 근거가 모두 있을 때만
+        if (why) {
+          log_(ds + ' KRX 빈 응답 → 휴장으로 판단해 건너뜀 (' + why + ') — Config.gs KRX_HOLIDAYS 에 추가 권장', 'WARN');
+          st.skipped.push(ds); d = addDays_(d, 1); continue;
+        }
+        st.pending = ds; break;                                                     // 그 밖에는 절대 건너뛰지 않고 대기(다음 실행에서 다시 확인)
       }
+      if (!ctx) {                                                                   // 적재 준비(최초 1회): 마스터·인덱스, 중단된 실행의 잔여 행 정리
+        ctx = ctx_();
+        const ix = indexMap_(), il = Object.keys(ix).sort().pop();
+        if (il && (!last || il > last)) { last = il; props.setProperty(PROP.LAST_DAILY, il); }   // _index 는 기록됐는데 LAST_DAILY 가 뒤처진 경우
+        trimOrphanRows_(ix);
+        step_(t0, '적재 준비(ctx·index·잔여 행)');
+      }
+      if (last && ds <= last) { d = addDays_(d, 1); continue; }                     // 이미 적재된 일자
       ensureMaster_(recs, ctx, ds);
       step_(t0, '마스터 확인');
       const prev = last ? readDailyBlock_(last) : null;
@@ -341,33 +351,90 @@ function loadDaily() {
       last = ds; loaded++;
       d = addDays_(d, 1);
     }
-    // 월말 스냅샷 동기화: _index 기준 월별 마지막 일자와 raw_월말 비교 → 부족한 월만 갱신 (하드 시한 내에서, 남으면 다음 회차)
-    const cut = d <= today && !ok();                       // 예산 초과로 중단 → 당월 스냅샷은 마지막 회차에서만 갱신
-    const leftMonths = syncMonthly_(t0, CFG.HARD_MS, cut);
+    st.last = last;
+    if (st.pending) { st.expect = nextKrxDay_(st.pending); st.note = pendingNote_(st.pending, st.expect, todayS); }
+    else if (cutByBudget) st.note = '적재 진행 중 — 이어서 실행';
+    setLoadStatus_(st);
+    if (st.pending) scheduleUnpublishedRetry_(st.pending, st.expect);
+    // 월말 스냅샷·집계: 새로 적재했거나 이전 회차에서 넘어온 작업이 있을 때만 (없으면 큰 시트를 읽지 않고 종료)
+    if (!loaded && !props.getProperty(PROP.PENDING_AGG)) {
+      maintainSheets_(t0);
+      step_(t0, '적재할 자료 없음 → 종료' + (st.pending ? ' · ' + st.note : ''));
+      return;
+    }
+    const leftMonths = syncMonthly_(t0, CFG.HARD_MS, cutByBudget);   // 예산 초과로 중단 → 당월 스냅샷은 마지막 회차에서만 갱신
     step_(t0, '월말 스냅샷 동기화');
-    if (unpublished) scheduleUnpublishedRetry_(unpublished);
-    const unfinished = cut || leftMonths > 0;
-    if (unfinished) {
+    if (cutByBudget || leftMonths > 0) {
       props.setProperty(PROP.PENDING_AGG, '1');
       log_('일별 적재 진행 중: ' + loaded + '영업일, 최종 ' + last + (leftMonths ? ', 월말 갱신 잔여 ' + leftMonths + '개월' : '') + ' (이어서 실행 예약)');
       scheduleContinue_('loadDaily', 1); return;   // 집계는 마지막 회차에서만
     }
-    if (loaded || props.getProperty(PROP.PENDING_AGG)) {
-      if (Date.now() - t0 > CFG.AGG_START_MS) {   // 집계(전체 raw_월말 스캔)는 여유가 있을 때만 → 없으면 다음 회차에서 단독 수행
-        props.setProperty(PROP.PENDING_AGG, '1');
-        log_('일별 적재 완료(' + loaded + '영업일, 최종 ' + last + ') → 집계는 다음 회차에서 실행');
-        scheduleContinue_('loadDaily', 1); return;
-      }
-      props.deleteProperty(PROP.PENDING_AGG);
-      try { loadIndices_(last); } catch (e) { log_('지수 적재 실패: ' + e.message, 'WARN'); }
-      step_(t0, '집계 재계산 시작');
-      rebuildAggregates_();
-      step_(t0, '집계 재계산 완료');
-      if (CFG.KRX_WEB.INVESTOR_ENABLED) { try { loadInvestorNetBuy_(last, ctx); } catch (e) { log_('투자자별 순매수 실패: ' + e.message, 'WARN'); } }
-      warmCache_(t0);
-      log_('일별 적재 완료: ' + loaded + '영업일, 최종 ' + last);
+    if (Date.now() - t0 > CFG.AGG_START_MS) {   // 집계(전체 raw_월말 스캔)는 여유가 있을 때만 → 없으면 다음 회차에서 단독 수행
+      props.setProperty(PROP.PENDING_AGG, '1');
+      log_('일별 적재 완료(' + loaded + '영업일, 최종 ' + last + ') → 집계는 다음 회차에서 실행');
+      scheduleContinue_('loadDaily', 1); return;
     }
-  } finally { try { disarmWatchdog_(); } catch (e) {} lock.releaseLock(); }
+    props.deleteProperty(PROP.PENDING_AGG);
+    try { loadIndices_(last); } catch (e) { log_('지수 적재 실패: ' + e.message, 'WARN'); }
+    step_(t0, '집계 재계산 시작');
+    rebuildAggregates_();
+    step_(t0, '집계 재계산 완료');
+    if (CFG.KRX_WEB.INVESTOR_ENABLED) { try { loadInvestorNetBuy_(last, ctx || ctx_()); } catch (e) { log_('투자자별 순매수 실패: ' + e.message, 'WARN'); } }
+    warmCache_(t0);
+    log_('일별 적재 완료: ' + loaded + '영업일, 최종 ' + last);
+  } catch (e) {
+    st.last = last; st.error = String((e && e.message) || e).slice(0, 200); setLoadStatus_(st);
+    log_('적재 오류: ' + st.error, 'ERROR');
+    try { retryAfterError_(); } catch (x) {}
+    throw e;
+  } finally { try { disarmWatchdog_(); } catch (e) {} try { props.deleteProperty(PROP.LOADING); } catch (e) {} lock.releaseLock(); }
+}
+
+/** 휴장일 목록에 없는 날의 빈 응답이 '임시 휴장'인지 판정 (v17). 휴장으로 볼 근거 문구 또는 '' 반환.
+ *  ① 뒤 영업일 KRX 자료가 이미 게시됐고 ② KOSPI(Yahoo) 일봉이 그날만 없을 때(뒤 날짜는 있음)만 휴장으로 판단.
+ *  KOSPI 일봉이 그날 있으면 거래일 → 절대 건너뛰지 않음. Yahoo 조회가 안 되면 뒤 영업일 3일치가 게시된 뒤에만 건너뜀 */
+function unlistedHoliday_(d, todayS) {
+  const ds = fmt_(d);
+  let later = 0, e = addDays_(d, 1);
+  for (let n = 0; n < 3 && fmt_(e) < todayS; e = addDays_(e, 1)) {
+    if (isWeekend_(e) || krxHoliday_(fmt_(e))) continue;
+    n++;
+    if (fetchEtfDaily_(fmt_(e)).length) later++; else break;
+  }
+  if (!later) return '';
+  const k = kospiDays_(ds, todayS);
+  if (k) return !k.days[ds] && k.max > ds ? '뒤 영업일 자료 게시 · KOSPI 일봉 없음' : '';
+  return later >= 3 ? '뒤 3영업일 자료 게시 · KOSPI 조회 불가' : '';
+}
+/** KOSPI 거래일(Yahoo 일봉) {days:{날짜:1}, max:'yyyy-MM-dd'} — ds 7일 전 ~ 오늘. 조회 실패 시 null */
+function kospiDays_(ds, todayS) {
+  try {
+    const k = fetchYahoo_(CFG.YAHOO.KOSPI, fmt_(addDays_(parse_(ds), -7)), todayS), keys = Object.keys(k).sort();
+    if (!keys.length) return null;
+    const days = {}; keys.forEach(x => days[x] = 1);
+    return { days: days, max: keys[keys.length - 1] };
+  } catch (e) { return null; }
+}
+
+/** v17: 한가한 실행(적재할 자료 없음)에서 1회성 시트 정리 */
+function maintainSheets_(t0) {
+  if (PropertiesService.getScriptProperties().getProperty(PROP.COLS_TRIMMED)) return;
+  if (Date.now() - t0 > 60 * 1000) return;   // 시간 여유가 있을 때만
+  try { trimRawColumns(); } catch (e) { PropertiesService.getScriptProperties().setProperty(PROP.COLS_TRIMMED, 'fail ' + fmt_(new Date())); log_('시트 빈 열 정리 실패(메뉴에서 다시 실행 가능): ' + e.message, 'WARN'); }
+}
+/** raw_일별·raw_월말·agg_일별요약의 쓰지 않는 열(새 시트 기본 26열 중 헤더 뒤 빈 열) 삭제.
+ *  스프레드시트 셀 한도(1,000만 셀) 여유 확보 — 2026-09-24 기준 약 778만 셀(raw_일별 19.8만 행×26열) → 정리 후 약 290만.
+ *  값이 있는 열은 건드리지 않음(헤더 뒤에 값이 있으면 그 시트는 건너뜀). 메뉴에서도 실행 가능 */
+function trimRawColumns() {
+  const S = CFG.SHEET, out = [];
+  [[S.RAW_DAILY, CFG.RAW_HEADER.length], [S.RAW_MONTHLY, CFG.RAW_HEADER.length], [S.AGG_SNAP_D, CFG.SNAP_HEADER.length]].forEach(x => {
+    const sh = ss_().getSheetByName(x[0]), w = x[1]; if (!sh) return;
+    const max = sh.getMaxColumns(), used = sh.getLastColumn();
+    if (used > w) { out.push(x[0] + ' ' + used + '열까지 값 있음 → 건너뜀'); return; }
+    if (max > w) { sh.deleteColumns(w + 1, max - w); out.push(x[0] + ' ' + max + '→' + w + '열'); }
+  });
+  PropertiesService.getScriptProperties().setProperty(PROP.COLS_TRIMMED, fmt_(new Date()));
+  log_('시트 빈 열 정리: ' + (out.join(', ') || '대상 없음'));
 }
 
 /** 표준 레코드 → raw 행 */
@@ -399,26 +466,42 @@ function buildDailyRows_(recs, prev, ds, ctx) {
 
 // ─────────────────────────── 월말 스냅샷 ───────────────────────────
 
+/** raw_월말 월별 블록 위치 {ym: [최근일자, 시작행, 끝행]} (v17).
+ *  스크립트 속성(MONTHLY_MAP)에 보관하고, 시트 행 수(lr)가 달라졌을 때만 A열(5만여 행)을 다시 읽음 → 적재 때마다 하던 전체 읽기 생략 */
+function monthlyMap_(sh) {
+  const lr = sh.getLastRow();
+  try { const c = JSON.parse(PropertiesService.getScriptProperties().getProperty(PROP.MONTHLY_MAP) || 'null'); if (c && c.lr === lr && c.m) return c.m; } catch (e) {}
+  const m = {};
+  if (lr >= 2) sh.getRange(2, 1, lr - 1, 1).getValues().forEach((v, i) => {
+    const d = v[0] instanceof Date ? fmt_(v[0]) : String(v[0]), k = ym_(d);
+    if (!m[k]) m[k] = [d, i + 2, i + 2];
+    m[k][2] = i + 2; if (d > m[k][0]) m[k][0] = d;
+  });
+  saveMonthlyMap_(m, lr);
+  return m;
+}
+function saveMonthlyMap_(m, lr) {
+  try { PropertiesService.getScriptProperties().setProperty(PROP.MONTHLY_MAP, JSON.stringify({ lr: lr, m: m })); } catch (e) { console.log('MONTHLY_MAP 저장 실패: ' + e.message); }
+}
+
 /** 해당 월의 기존 스냅샷을 삭제하고 최신 일자 행으로 교체 (월중에는 '당월 최근일' 스냅샷 역할) */
 function upsertMonthly_(rows, ds) {
   const sh = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER);
-  const target = ym_(ds);
-  const lr = sh.getLastRow();
-  if (lr >= 2) {
-    const col = sh.getRange(2, 1, lr - 1, 1).getValues();
-    let s = -1, e = -1;
-    for (let i = 0; i < col.length; i++) {
-      const v = col[i][0] instanceof Date ? fmt_(col[i][0]) : String(col[i][0]);
-      if (ym_(v) === target) { if (s < 0) s = i; e = i; }
+  const target = ym_(ds), m = monthlyMap_(sh), cur = m[target];
+  if (cur) {
+    if (cur[0] >= ds) return;                                // 이미 더 최근 스냅샷 존재
+    const s = cur[1], e = cur[2], n = e - s + 1;
+    if (n === rows.length) {                                  // 행수 동일 → 제자리 덮어쓰기(빠름)
+      sh.getRange(s, 1, rows.length, rows[0].length).setValues(rows);
+      m[target] = [ds, s, e]; saveMonthlyMap_(m, sh.getLastRow()); return;
     }
-    if (s >= 0) {
-      const existing = col[s][0] instanceof Date ? fmt_(col[s][0]) : String(col[s][0]);
-      if (existing >= ds) return;               // 이미 더 최근 스냅샷 존재
-      if (e - s + 1 === rows.length) { sh.getRange(s + 2, 1, rows.length, rows[0].length).setValues(rows); return; }  // 행수 동일 → 제자리 덮어쓰기(빠름)
-      sh.deleteRows(s + 2, e - s + 1);
-    }
+    sh.deleteRows(s, n);
+    Object.keys(m).forEach(k => { if (m[k][1] > e) { m[k][1] -= n; m[k][2] -= n; } });
+    delete m[target];
   }
-  appendRows_(sh, rows);
+  const start = appendRows_(sh, rows);
+  m[target] = [ds, start, start + rows.length - 1];
+  saveMonthlyMap_(m, sh.getLastRow());
 }
 
 /**
@@ -428,11 +511,9 @@ function upsertMonthly_(rows, ds) {
 function syncMonthly_(t0, limitMs, skipCurrent) {
   const ix = indexMap_(), lastOf = {};
   Object.keys(ix).forEach(d => { const k = ym_(d); if (!lastOf[k] || d > lastOf[k]) lastOf[k] = d; });
-  const sh = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), have = {};
-  const lr = sh.getLastRow();
-  if (lr >= 2) sh.getRange(2, 1, lr - 1, 1).getValues().forEach(v => { const d = v[0] instanceof Date ? fmt_(v[0]) : String(v[0]); const k = ym_(d); if (!have[k] || d > have[k]) have[k] = d; });
+  const have = monthlyMap_(sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER));
   const months = Object.keys(lastOf).sort(), current = months[months.length - 1];
-  const todo = months.filter(k => (!have[k] || have[k] < lastOf[k]) && !(skipCurrent && k === current));
+  const todo = months.filter(k => (!have[k] || have[k][0] < lastOf[k]) && !(skipCurrent && k === current));
   let left = 0, cost = CFG.SYNC_COST_MS;   // 직전 갱신 소요시간(초기값 보수적) → 남은 시간 안에 끝낼 수 없으면 다음 회차로
   todo.forEach(k => {
     const el = Date.now() - t0;

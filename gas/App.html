@@ -30,7 +30,9 @@ const App = {
     if (!m.dates.length) { document.getElementById('hdrMeta').textContent = '데이터 적재 전'; document.getElementById('view').innerHTML = '<div class="loading">아직 적재된 데이터가 없습니다. 시트 메뉴 [ETF Dashboard] › 월말 백필 / 일별 백필을 실행하십시오.</div>'; return; }
     this.state.date = m.defaultDate;
     this.state.year = (m.defaultDate || '').slice(0, 4);
-    document.getElementById('hdrMeta').innerHTML = `최종 적재 ${m.lastLoaded || '-'}`;
+    const ll = this.loadLine(m), hm = document.getElementById('hdrMeta');
+    hm.innerHTML = `${ll.head}${ll.at ? ` · 확인 ${ll.at}` : ''}` + (ll.note ? `<br><span class="ld-note${ll.warn ? ' warn' : ''}"></span>` : '');
+    if (ll.note) hm.querySelector('.ld-note').textContent = ll.note;
     const nav = document.getElementById('tabs');
     this.tabs.forEach(t => {
       const b = document.createElement('button'); b.className = 'tab'; b.textContent = t.label; b.dataset.id = t.id;
@@ -42,6 +44,12 @@ const App = {
     setTimeout(() => this.tabs.forEach(t => { if (t.id !== this.state.tab && t.action) this.call(t.action, t.params ? t.params(this.state) : {}).catch(() => {}); }), 800);
   },
 
+  /** v17: 적재 상태 — 최종 적재일 + 미게시 사유(예: '09-23(수)분 KRX 미게시 — 추석 연휴(09-24~09-25) 휴장, 09-28(월) 오전 게시 예상') 또는 오류 + 마지막 확인 시각 */
+  loadLine(m) {
+    const s = m.loadStatus || null;
+    const note = s ? (s.error ? '적재 오류: ' + s.error : (s.note || '')) : '';
+    return { head: '최종 적재 ' + (m.lastLoaded || '-'), note: note, warn: !!(s && (s.error || s.pending)), at: s && s.at ? s.at.slice(5) : '' };
+  },
   show(id) {
     this.state.tab = id; location.hash = id;
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.id === id));

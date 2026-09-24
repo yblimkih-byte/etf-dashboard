@@ -18,6 +18,7 @@ function onOpen() {
     .addItem('운용사 보정 (범례_운용사 반영)', 'repairUnknownMgr')
     .addItem('상장일 보정 (최초 등장일)', 'repairListDates')
     .addItem('일별 요약 재작성', 'rebuildDailySummary')
+    .addItem('시트 빈 열 정리 (셀 한도 여유 확보)', 'trimRawColumns')
     .addToUi();
 }
 
