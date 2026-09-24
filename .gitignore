@@ -13,3 +13,4 @@ test/web_*/
 web/public/
 .vercel
 test/gas_after/
+test/shots_*/

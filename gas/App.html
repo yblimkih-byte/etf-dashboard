@@ -45,6 +45,7 @@ const App = {
   show(id) {
     this.state.tab = id; location.hash = id;
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.id === id));
+    const t = this.tab(); document.body.classList.toggle('narrow-tab', !!(t && t.narrow));   // 개관 등 폭을 제한하는 탭
     this.renderControls(); this.load();
   },
 

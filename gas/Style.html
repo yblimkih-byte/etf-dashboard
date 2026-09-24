@@ -126,4 +126,13 @@ table.tbl.compact{width:auto}
 .tm-legend{display:flex;align-items:center;gap:4px;margin-top:10px;font-size:12px;color:var(--ink-2)}
 .tm-legend i{display:inline-block;width:28px;height:12px;border:1px solid var(--rule-2)}
 .tm-legend span{margin:0 6px}
+/* v16: 개관 탭 폭 제한, 신규상장 운용사 표 접기, 목록 상단 고정 */
+body.narrow-tab .view{max-width:1040px}
+.fold-head td{cursor:pointer;color:var(--ink-2)}
+.fold-head:hover td{background:#fafaf8}
+.fold-btn{display:inline-block;width:14px;margin-right:4px;font-size:11px;color:var(--ink-2)}
+.fold-item td{color:var(--ink-2)}
+.sticky-sec .section-h{position:sticky;top:var(--hdr-h,0px);z-index:5;background:var(--canvas);padding-top:6px;margin-bottom:0}
+.sticky-chips{position:sticky;top:calc(var(--hdr-h,0px) + 44px);z-index:5;background:var(--canvas);padding:6px 0 2px;border-bottom:1px solid var(--rule-2);margin-bottom:8px}
+.tm-c{white-space:nowrap}
 </style>

@@ -25,7 +25,6 @@ body.web{background:var(--bg);color:var(--fg);font:14px/1.5 var(--font);font-fea
 .web .tab.active{background:var(--muted-bg);color:var(--fg);font-weight:600}
 .web .tab.active svg{color:var(--fg)}
 .web .tab:focus-visible,.icon-btn:focus-visible{outline:2px solid #a1a1aa;outline-offset:1px}
-.side-info{list-style:none;margin:0;padding:0 8px;font-size:13px;color:var(--mut);line-height:1.9;white-space:nowrap}
 .side-foot{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px;border-radius:var(--r-sm);white-space:nowrap}
 .side-foot .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18);flex:none;margin:0 4px}
 .side-foot b{display:block;font-size:13px;font-weight:600}.side-foot small{font-size:12px;color:var(--mut)}
@@ -52,7 +51,7 @@ body.side-off .inset{margin-left:8px}
 .web main{max-width:none;width:100%;margin:0;padding:20px 24px 32px;display:flex;flex-direction:column;gap:16px}
 
 /* 설명 문장 */
-.lede{margin:0;font-size:14px;line-height:1.6;color:var(--mut);word-break:keep-all;min-height:22px}
+.lede{margin:0;font-size:14px;line-height:1.7;color:var(--mut);word-break:keep-all;min-height:22px}
 .lede b{color:var(--fg);font-weight:600}.lede .neg{color:var(--down)}
 .lede.wait{color:transparent;background:var(--muted-bg);border-radius:6px;width:60%}
 
@@ -74,12 +73,6 @@ body.side-off .inset{margin-left:8px}
 .cd-f .l2{color:var(--mut)}
 .cd.focus{border-color:#a1a1aa;box-shadow:0 0 0 1px #a1a1aa}
 .ico{width:14px;height:14px;flex:none}
-.pos{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--sh-xs);padding:18px 22px 8px}
-.pos-h{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:baseline}
-.pos-h span:first-child{font-size:15px;font-weight:600}
-.pos-h span:last-child{font-size:13px;color:var(--mut)}
-.pos svg{display:block;width:100%;height:auto;overflow:visible;margin-top:4px}
-.pos text{font-family:var(--font)}
 
 /* ── 섹션 = 카드 ── */
 .web .view{padding-top:0;display:flex;flex-direction:column;gap:16px}
@@ -137,6 +130,18 @@ body.side-off .inset{margin-left:8px}
 .web .tm-mgr{background:#eceef2}
 .web .tm-mhead{background:#eceef2}
 .web .tm-tip{background:#18181b;border-radius:8px}
+
+/* v110: 개관 탭 폭 제한, 신규상장 운용사 표 접기, 목록 상단 고정 */
+body.narrow-tab.web main{max-width:1040px;margin:0 auto;width:100%}
+.web .fold-head td{cursor:pointer;color:var(--mut)}
+.web .fold-head:hover td{background:var(--muted-bg)}
+.web .fold-btn{display:inline-block;width:14px;margin-right:4px;font-size:11px;color:var(--mut)}
+.web .fold-item td{color:var(--mut)}
+.web .view>.section.sticky-sec{overflow:visible}
+.web .sticky-sec .section-h{position:sticky;top:var(--hdr-h,52px);z-index:5;background:var(--card,#fff);padding-top:6px;margin-bottom:0}
+.web .sticky-chips{position:sticky;top:calc(var(--hdr-h,52px) + 44px);z-index:5;background:var(--card,#fff);padding:6px 0 2px;border-bottom:1px solid var(--bd);margin-bottom:8px}
+.web .lede{white-space:pre-line}
+.web .lede .ld{display:block}
 
 /* ── 좁은 화면 ── */
 @media (max-width:1280px){.cards{grid-template-columns:repeat(min(var(--n,4),3),minmax(0,1fr))}}

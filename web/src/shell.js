@@ -14,30 +14,13 @@
   const bd = (v, txt) => (v === null || v === undefined || isNaN(v)) ? null : { s: /^[-+]?0\.0/.test(txt) ? 0 : v, t: txt };   // 추세 배지
 
   /* 점유율 위치 눈금: 기준일(채운 점)·전년말(빈 점)을 한 축에 — 운용사 간 거리와 이동 방향 */
-  function posStrip(rows, colors) {
-    const R = rows.filter(r => r.mgr !== '기타'), W = 1000, H = 96, L = 8, Rr = 40, y = 56;
-    const max = Math.ceil(Math.max.apply(null, R.map(r => Math.max(r.ms, r.msPy))) / 5) * 5, x = v => L + (W - L - Rr) * v / max;
-    let g = `<line x1="${L}" y1="${y}" x2="${W - Rr}" y2="${y}" stroke="#d4d4d8" stroke-width="1"/>`;
-    for (let t = 0; t <= max; t += 5) g += `<line x1="${x(t)}" y1="${y}" x2="${x(t)}" y2="${y + 5}" stroke="#d4d4d8"/><text x="${x(t)}" y="${y + 19}" font-size="11" fill="#a1a1aa" text-anchor="middle">${t}%</text>`;
-    const S = R.slice().sort((a, b) => a.ms - b.ms); let lastX = -99, up = false;
-    S.forEach(r => {
-      const c = colors[r.mgr] || '#8A8A96', cx = x(r.ms), f = r.mgr === FOCUS;
-      up = cx - lastX < 86 ? !up : false; lastX = cx;                      // 이웃과 가까우면 레이블을 위·아래로 번갈아
-      const ly = up ? y - 34 : y - 14;
-      g += `<line x1="${x(r.msPy)}" y1="${y}" x2="${cx}" y2="${y}" stroke="${c}" stroke-width="3"/>` +
-        `<circle cx="${x(r.msPy)}" cy="${y}" r="4" fill="#fff" stroke="${c}" stroke-width="1.5"/>` +
-        `<circle cx="${cx}" cy="${y}" r="${f ? 7 : 5}" fill="${c}"/>` + (up ? `<line x1="${cx}" y1="${y - 8}" x2="${cx}" y2="${ly + 4}" stroke="${c}" stroke-width="1"/>` : '') +
-        `<text x="${cx}" y="${ly}" font-size="${f ? 13.5 : 12}" font-weight="${f ? 700 : 500}" fill="${f ? '#18181b' : '#52525b'}" text-anchor="middle">${esc(r.mgr)} ${r.ms.toFixed(1)}%</text>`;
-    });
-    return `<div class="pos"><div class="pos-h"><span>M/S 위치</span><span>● 기준일 &nbsp;○ 전년말 &nbsp;선 = 연초 이후 이동</span></div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="상위 5개사 점유율 위치">${g}</svg></div>`;
-  }
 
   /* 탭별 헤드: { desc, cards: [{k, c(색 점), f(강조), v, txt, b(배지), l1, l2}], extra } — 모두 API 응답 값으로만 구성 */
   const HEAD = {
     overview(d) {
       const M = d.monthly, m = M[M.length - 1], p = M[M.length - 2], py = d.prevYE, ytd = chg(m.nav, py.nav), mom = p ? chg(m.nav, p.nav) : null;
       const idx = [['KOSPI', m.kYtd, m.k], ['S&P500', m.sYtd, m.s], ['NASDAQ100', m.qYtd, m.q]].filter(x => x[1] !== null && x[1] !== undefined && !isNaN(x[1]));
-      return { desc: `국내 ETF 시장 순자산 <b>${jo(m.nav)}</b>, 연초 대비 ${sg(ytd, A.pct(ytd))}.` + (idx.length ? ` 같은 기간 ${idx.map(x => x[0] + ' ' + sg(x[1], A.pct(x[1]))).join(', ')}.` : ''),
+      return { lines: [`국내 ETF 시장 순자산 <b>${jo(m.nav)}</b>, 연초 대비 ${sg(ytd, A.pct(ytd))}`].concat(idx.length ? [`같은 기간 ${idx.map(x => x[0] + ' ' + sg(x[1], A.pct(x[1]))).join(', ')}`] : []),
         cards: [{ k: 'ETF 시장 총 NAV', v: U(A.eok(m.nav), '조원'), b: bd(ytd, A.pct(ytd)), l1: `연초 대비 ${sj(m.nav - py.nav)}`, l2: `${A.num(m.n)}종목 · 전년말 ${A.eok(py.nav)}조원` },
           { k: '전월 대비', v: mom === null ? '-' : A.pct(mom), neg: mom < 0, b: null, l1: p ? `${sj(m.nav - p.nav)}` : '', l2: p ? `전월말 ${esc(p.ym)} ${A.eok(p.nav)}조원` : '' },
           { k: '종목 수', v: U(A.num(m.n), '종목'), b: null, l1: `연초 대비 ${m.n - py.n >= 0 ? '+' : ''}${A.num(m.n - py.n)}종목`, l2: `전년말 ${A.num(py.n)}종목` }]
@@ -45,24 +28,23 @@
     },
     mgr(d) {
       const R = d.rows.filter(r => r.mgr !== '기타').slice().sort((a, b) => b.nav - a.nav), f = R.find(r => r.mgr === FOCUS);
-      let desc = `1위 ${esc(R[0].mgr)} M/S <b>${A.share(R[0].ms)}</b>, 1·2위 합산 ${A.share(R[0].ms + R[1].ms)}.`;
+      const lines = [`1·2위 ${esc(R[0].mgr)} ${A.share(R[0].ms)} · ${esc(R[1].mgr)} ${A.share(R[1].ms)}, 합산 ${A.share(R[0].ms + R[1].ms)}`];
       if (f) { const rank = R.indexOf(f) + 1, dv = f.ms - f.msPy, ahead = R[rank - 2];
-        desc = `${FOCUS} M/S <b>${A.share(f.ms)}</b>(연초 대비 ${sg(dv, pp(dv))})로 상위 5개사 중 ${rank}위.` + (ahead ? ` ${rank - 1}위 ${esc(ahead.mgr)}와의 격차 ${(ahead.ms - f.ms).toFixed(1)}%p.` : '') + ` 1·2위 ${esc(R[0].mgr)}·${esc(R[1].mgr)} 합산 ${A.share(R[0].ms + R[1].ms)}.`; }
-      return { desc, cards: d.rows.filter(r => r.mgr !== '기타').map(r => ({ k: esc(r.mgr) + ' M/S', c: A.meta.colors[r.mgr], f: r.mgr === FOCUS, v: U(r.ms.toFixed(1), '%'), b: bd(r.ms - r.msPy, pp(r.ms - r.msPy)),
-          l1: `잔고 ${A.eok(r.nav)}조원`, l2: `연초 대비 ${sj(r.nav - r.navPy)}` })),
-        extra: posStrip(d.rows, A.meta.colors) };
+        lines.unshift(`${FOCUS} M/S <b>${A.share(f.ms)}</b>, 연초 대비 ${sg(dv, pp(dv))}, 상위 5개사 중 ${rank}위` + (ahead ? ` (${rank - 1}위 ${esc(ahead.mgr)}와 ${(ahead.ms - f.ms).toFixed(1)}%p)` : '')); }
+      return { lines, cards: d.rows.filter(r => r.mgr !== '기타').map(r => ({ k: esc(r.mgr) + ' M/S', c: A.meta.colors[r.mgr], f: r.mgr === FOCUS, v: U(r.ms.toFixed(1), '%'), b: bd(r.ms - r.msPy, pp(r.ms - r.msPy)),
+          l1: `잔고 ${A.eok(r.nav)}조원`, l2: `연초 대비 ${sj(r.nav - r.navPy)}` })) };
     },
     type(d) {
       const R = d.rows.slice().sort((a, b) => b.share - a.share), t = R[0], g = d.rows.slice().sort((a, b) => (b.share - b.sharePy) - (a.share - a.sharePy)), up = g[0], dn = g[g.length - 1], ov = d.dom.find(x => x.dom === '해외');
-      return { desc: `${esc(t.type)}이 <b>${A.share(t.share)}</b>로 최대. 연초 대비 비중 확대 1위는 ${esc(up.type)}(${sg(1, pp(up.share - up.sharePy))}), 축소 1위는 ${esc(dn.type)}(${sg(dn.share - dn.sharePy, pp(dn.share - dn.sharePy))}).` + (ov ? ` 해외 자산 비중 ${A.share(ov.share)}.` : ''),
+      return { lines: [`최대 유형 ${esc(t.type)} <b>${A.share(t.share)}</b>` + (ov ? `, 해외 자산 비중 ${A.share(ov.share)}` : ''), `연초 대비 비중 확대 ${esc(up.type)} ${sg(1, pp(up.share - up.sharePy))}, 축소 ${esc(dn.type)} ${sg(dn.share - dn.sharePy, pp(dn.share - dn.sharePy))}`],
         cards: d.rows.map(r => ({ k: esc(r.type), v: U(A.eok(r.nav), '조원'), b: bd(r.share - r.sharePy, pp(r.share - r.sharePy)), l1: `비중 ${A.share(r.share)} · ${A.num(r.n)}종목`, l2: `연초 대비 ${sj(r.nav - r.navPy)}` })) };
     },
     shares(d) {
       const mk = d.groups['시장 전체'], who = d.selected && d.groups[d.selected] ? d.selected : FOCUS, g = d.groups[who];
-      if (!mk || !g) return { desc: '' };
+      if (!mk || !g) return { lines: [] };
       const topOf = x => x.types.slice().sort((a, b) => b.share - a.share)[0], a = topOf(mk), b = topOf(g);
       const gap = g.types.map(t => ({ type: t.type, s: t.share, d: t.share - (mk.types.find(m => m.type === t.type) || { share: 0 }).share })).sort((x, y) => y.d - x.d), lo = gap[gap.length - 1];
-      return { desc: `${esc(who)}의 최대 유형은 ${esc(b.type)} <b>${A.share(b.share)}</b>. 시장 평균 대비 ${esc(gap[0].type)} ${sg(1, pp(gap[0].d))}, ${esc(lo.type)} ${sg(lo.d, pp(lo.d))}. 시장 전체 최대 유형은 ${esc(a.type)} ${A.share(a.share)}.`,
+      return { lines: [`${esc(who)} 최대 유형 ${esc(b.type)} <b>${A.share(b.share)}</b> (시장 전체 ${esc(a.type)} ${A.share(a.share)})`, `시장 대비 ${esc(gap[0].type)} ${sg(1, pp(gap[0].d))}, ${esc(lo.type)} ${sg(lo.d, pp(lo.d))}`],
         cards: [{ k: esc(who) + ' 총 NAV', v: U(A.eok(g.total), '조원'), l1: `${A.num(g.n)}종목`, l2: `시장 전체의 ${A.share(g.total / mk.total * 100)}` },
           { k: '최대 유형', v: esc(b.type), txt: 1, l1: `비중 ${A.share(b.share)}`, l2: `시장 전체 ${esc(a.type)} ${A.share(a.share)}` },
           { k: '시장 대비 과대', v: esc(gap[0].type), txt: 1, b: bd(gap[0].d, pp(gap[0].d)), l1: `${esc(who)} ${A.share(gap[0].s)}`, l2: '시장 전체 유형 비중과의 차이' },
@@ -70,13 +52,13 @@
     },
     top(d) {
       const t = d.top[0], n = d.top.length, f = d.byMgr.find(x => x.top === FOCUS), c = d.topTotal / d.total * 100;
-      return { desc: `상위 ${n}개 ETF가 시장 순자산의 <b>${A.share(c)}</b>. 1위 ${esc(t.name)} ${jo(t.nav)}.` + (f ? ` 상위 ${n}개 중 ${FOCUS} ${f.n}종목(${A.share(f.share)}).` : ''),
+      return { lines: [`상위 ${n}개 ETF = 시장 순자산의 <b>${A.share(c)}</b>, 1위 ${esc(t.name)} ${jo(t.nav)}`].concat(f ? [`상위 ${n}개 중 ${FOCUS} ${f.n}종목 (${A.share(f.share)})`] : []),
         cards: d.byMgr.map(x => ({ k: esc(x.top), c: A.meta.colors[x.top], f: x.top === FOCUS, v: U(x.n, '종목'), l1: `NAV ${A.eok(x.nav)}조원`, l2: `상위 ${n}개 합계의 ${A.share(x.share)}` })) };
     },
     new(d) {
-      if (!d.items.length) return { desc: `${esc(d.year)}년 상장 종목 중 조건에 해당하는 종목 없음.` };
+      if (!d.items.length) return { lines: [`${esc(d.year)}년 상장 종목 중 조건에 해당하는 종목 없음`] };
       const m = d.byMgr.slice().sort((a, b) => b.nav - a.nav)[0], big = d.items.slice().sort((a, b) => b.nav - a.nav)[0];
-      return { desc: `${esc(d.year)}년 신규상장 <b>${A.num(d.items.length)}종목</b>, NAV 합계 ${jo(d.total)}.` + (d.filter === 'exBond' ? ' 채권/금리형 제외 기준.' : ''),
+      return { lines: [`${esc(d.year)}년 신규상장 <b>${A.num(d.items.length)}종목</b>, NAV 합계 ${jo(d.total)}` + (d.filter === 'exBond' ? ' (채권/금리형 제외)' : '')].concat(m ? [`NAV 1위 운용사 ${esc(m.mgr)} ${A.eok(m.nav)}조원` + (big ? `, 최대 종목 ${esc(big.name)} ${A.eok(big.nav)}조원` : '')] : []),
         cards: [{ k: '신규상장', v: U(A.num(d.items.length), '종목'), l1: esc(d.year) + '년 상장', l2: d.filter === 'exBond' ? '채권/금리형 제외' : '전체 유형' },
           { k: 'NAV 합계', v: U(A.eok(d.total), '조원'), l1: `종목당 평균 ${A.eok(d.total / d.items.length, 2)}조원`, l2: '기준일 순자산총액' }]
           .concat(m ? [{ k: 'NAV 1위 운용사', v: esc(m.mgr), txt: 1, l1: `${A.eok(m.nav)}조원`, l2: `신규상장 NAV 의 ${A.share(m.nav / d.total * 100)}` }] : [])
@@ -84,7 +66,7 @@
     },
     turnover(d) {
       const t = d.top[0];
-      return { desc: `${esc(d.from)} ~ ${esc(d.to)} ETF 거래대금 <b>${jo(d.marketSum)}</b>, 일평균 ${jo(d.marketSum / d.days)}.`,
+      return { lines: [`ETF 거래대금 <b>${jo(d.marketSum)}</b> (${A.num(d.days)}영업일), 일평균 ${jo(d.marketSum / d.days)}`].concat(t ? [`1위 ${esc(t.name)} ${A.eok(t.sum)}조원 (${A.share(t.sum / d.marketSum * 100)})`] : []),
         cards: [{ k: '기간 합계', v: U(A.eok(d.marketSum), '조원'), l1: `${esc(d.from)} ~ ${esc(d.to)}`, l2: `${A.num(d.days)}영업일` },
           { k: '일평균', v: U(A.eok(d.marketSum / d.days, 2), '조원'), l1: '기간 합계 ÷ 영업일', l2: `${A.num(d.days)}영업일 기준` }]
           .concat(t ? [{ k: '거래대금 1위', v: esc(t.name), txt: 1, l1: `${A.eok(t.sum)}조원`, l2: `시장의 ${A.share(t.sum / d.marketSum * 100)}` }] : [])
@@ -92,10 +74,12 @@
     }
   };
   function paint(t, d) {
-    let h = { desc: '' };
+    let h = { lines: [] };
     try { if (HEAD[t.id]) h = HEAD[t.id](d); } catch (e) { /* 생성 실패 시 카드 없이 표시 */ }
-    const dt = d && (d.date || d.to) || '';
-    lede.className = 'lede'; lede.innerHTML = (h.desc || '') + (dt ? ` <span style="white-space:nowrap">· 기준 ${esc(dt)}</span>` : '');
+    const dt = d && (d.date || d.to) || '', per = d && d.from ? `${esc(d.from)} ~ ${esc(d.to)}` : dt ? esc(dt) : '';
+    // v110: 한 줄 문장 대신 짧은 줄 2~3개 + 기준일
+    lede.className = 'lede'; lede.innerHTML = (h.lines || []).map(l => `<span class="ld">· ${l}</span>`).join('') + (per ? `<span class="ld">· 기준 (${per})</span>` : '');
+    document.body.classList.toggle('narrow-tab', !!t.narrow);
     const C = h.cards || [], n = C.length === 6 ? 3 : Math.min(C.length, 5);
     stats.innerHTML = (C.length ? `<div class="cards" style="--n:${n}">` + C.map(x => `<div class="cd${x.f ? ' focus' : ''}"><div class="cd-h"><div class="cd-k">${x.c ? `<i style="background:${x.c}"></i>` : ''}${x.k}</div>${x.b ? `<span class="bdg${x.b.s < 0 ? ' neg' : ''}">${x.b.s < 0 ? DN : UP}${x.b.t}</span>` : ''}</div>` +
       `<div class="cd-v${x.txt ? ' txt' : ''}${x.neg ? ' neg' : ''}"${x.txt ? ` title="${x.v}"` : ''}>${x.v}</div><div class="cd-f"><div class="l1">${x.l1 || '&nbsp;'}</div><div class="l2">${x.l2 || '&nbsp;'}</div></div></div>`).join('') + '</div>' : '') + (h.extra || '');
