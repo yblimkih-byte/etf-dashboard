@@ -106,8 +106,9 @@ function warmParams_(date, dv, months) {
   const to = dv.indexOf(date) >= 0 ? date : dv[dv.length - 1];
   let from = dv[0];
   if (to) { const py = months.filter(x => x.ym < to.slice(0, 4) + '-01').pop(); const f = py && dv.filter(d => d > py.date)[0]; if (f) from = f; }
-  const list = [['overview', { date: date }], ['byMgr', { date: date }], ['byType', { date: date }], ['shares', { date: date, mgr: '' }], ['topEtf', { date: date }],
-    ['newListings', { date: date, year: date.slice(0, 4), filter: 'exBond' }], ['treemap', { date: date }]];
+  // v19: 화면은 byMgr·byType·treemap 에 ref('py' 기본)를 붙여 호출하므로 같은 파라미터로 예열(캐시 키 일치). 경영진 요약 탭도 이 7건을 그대로 씀
+  const list = [['overview', { date: date }], ['byMgr', { date: date, ref: 'py' }], ['byType', { date: date, ref: 'py' }], ['shares', { date: date, mgr: '' }], ['topEtf', { date: date }],
+    ['newListings', { date: date, year: date.slice(0, 4), filter: 'exBond' }], ['treemap', { date: date, ref: 'py' }]];
   if (to) list.push(['turnover', { from: from, to: to }]);
   return list;
 }

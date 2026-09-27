@@ -187,3 +187,5 @@ body.web.focus-on .tbl tr[data-top="한투"] td{background:#f5f1ea}
 .cd-k .cd-i{display:inline-flex;width:14px;height:14px;border:1px solid var(--bd);border-radius:50%;font-size:9px;line-height:12px;justify-content:center;color:var(--mut);cursor:help;flex:none}
 @media print{.cd{background:#fff;box-shadow:none}.web .view>.section{box-shadow:none;break-inside:avoid}.web main{padding:0}.tbl-tools,.chips,.race-bar{display:none!important}body.web{background:#fff}}
 .web .section.sum-sec{display:none}
+/* v19: 요약 탭(폭 1040)은 카드 3열로 제목 잘림 방지 */
+body.narrow-tab.web .cards{grid-template-columns:repeat(min(var(--n,4),3),minmax(0,1fr))}
