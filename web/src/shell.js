@@ -16,7 +16,7 @@
   /* 점유율 위치 눈금: 기준일(채운 점)·전년말(빈 점)을 한 축에 — 운용사 간 거리와 이동 방향 */
 
   // v19: 지표 정의(카드 제목 옆 ⓘ 툴팁)
-  const DEF = { nav: 'NAV = KRX 게시 순자산총액(원) 합계. 조원 단위, 소수 둘째 자리에서 반올림', ms: 'M/S = 운용사 NAV ÷ 시장 전체 NAV × 100. 운용사 구분은 범례_운용사 시트(브랜드 기준)', ytd: '연초 대비 = 전년말(12월 말 스냅샷) 대비', ref: '비교 기준(전년말·전분기말·전월말·전년동월)은 상단 "비교 기준"에서 선택', mom: '전월 대비 = 전월말 스냅샷 대비', turn: '거래대금 = 일별 거래대금 누계의 구간 차분(KRX 게시값)', small: '소규모 = 기준일 NAV 50억원 미만 (상장폐지 요건 근접 확인용)', idx: '지수 = Yahoo Finance 일봉 종가, 연초 대비 = 전년말 종가 대비' };
+  const DEF = { nav: 'NAV = KRX 게시 순자산총액(원) 합계. 조원 단위, 소수 둘째 자리에서 반올림', ms: 'M/S = 운용사 NAV ÷ 시장 전체 NAV × 100. 운용사 구분은 범례_운용사 시트(브랜드 기준)', ytd: '연초 대비 = 전년말(12월 말 스냅샷) 대비', ref: '비교 기준(전년말·전분기말·전월말·전년동월)은 상단 "비교 기준"에서 선택', mom: '전월 대비 = 전월말 스냅샷 대비', turn: '거래대금 = 일별 거래대금 누계의 구간 차분(KRX 게시값)', idx: '지수 = Yahoo Finance 일봉 종가, 연초 대비 = 전년말 종가 대비' };
   /* 탭별 헤드: { desc, cards: [{k, c(색 점), f(강조), v, txt, b(배지), l1, l2, d(정의)}], extra } — 모두 API 응답 값으로만 구성 */
   const HEAD = {
     summary(d) {
@@ -25,8 +25,7 @@
         { k: '시장 NAV', d: DEF.nav, v: U(A.eok(S.m.nav), '조원'), b: bd(S.m.ytd && S.m.ytd.pct, A.pct(S.m.ytd && S.m.ytd.pct)), l1: `연초 대비 ${sj(S.m.nav - (S.py ? S.py.nav : 0))}`, l2: `${A.num(S.m.n)}종목` },
         { k: `${F} NAV`, d: DEF.nav, c: A.meta.colors[F], f: true, v: U(A.eok(S.f.nav), '조원'), b: bd(S.f.ytd && S.f.ytd.pct, A.pct(S.f.ytd && S.f.ytd.pct)), l1: `${RL} 대비 ${sj(S.f.nav - S.f.navPy)}`, l2: `상위 5개사 중 ${S.rank}위` },
         { k: `${F} M/S`, d: DEF.ms + '. ' + DEF.ref, c: A.meta.colors[F], f: true, v: U(S.f.ms.toFixed(1), '%'), b: bd(S.f.ms - (S.f.msPy || 0), pv(S.f.ms - (S.f.msPy || 0))), l1: S.ahead ? `${S.rank - 1}위 ${esc(S.ahead.mgr)}와 ${(S.ahead.ms - S.f.ms).toFixed(1)}%p` : '1위', l2: S.cs.length ? `주요 기여 ${esc(S.cs[0].type)} ${pv(S.cs[0].d)}` : '' },
-        { k: '상위50 내 ' + F, v: U(S.top50.n, '종목'), l1: `NAV ${A.eok(S.top50.nav)}조원`, l2: `상위 50 합계의 ${A.share(S.top50.share)}` },
-        { k: '소규모', d: DEF.small, v: U(S.small.length, '종목'), neg: S.small.length > 0, l1: `${F} 라인업 ${S.mine.length}종목 중`, l2: 'NAV 50억원 미만' }] };
+        { k: '상위50 내 ' + F, v: U(S.top50.n, '종목'), l1: `NAV ${A.eok(S.top50.nav)}조원`, l2: `상위 50 합계의 ${A.share(S.top50.share)}` }] };
     },
     overview(d) {
       const M = d.monthly, m = M[M.length - 1], p = M[M.length - 2], py = d.prevYE, ytd = chg(m.nav, py.nav), mom = p ? chg(m.nav, p.nav) : null;
@@ -89,9 +88,8 @@
   function paint(t, d) {
     let h = { lines: [] };
     try { if (HEAD[t.id]) h = HEAD[t.id](d); } catch (e) { /* 생성 실패 시 카드 없이 표시 */ }
-    const dt = d && (d.date || d.to) || '', per = d && d.from ? `${esc(d.from)} ~ ${esc(d.to)}` : dt ? esc(dt) : '';
-    // v110: 한 줄 문장 대신 짧은 줄 2~3개 + 기준일
-    lede.className = 'lede'; lede.innerHTML = (h.lines || []).map(l => `<span class="ld">· ${l}</span>`).join('') + (per ? `<span class="ld">· 기준 (${per})</span>` : '');
+    // v110: 한 줄 문장 대신 짧은 줄 2~3개 (v114: '기준 (일자)' 줄은 상단 기준일자 선택과 중복이라 제거)
+    lede.className = 'lede'; lede.innerHTML = (h.lines || []).map(l => `<span class="ld">· ${l}</span>`).join('');
     document.body.classList.toggle('narrow-tab', !!t.narrow);
     const C = h.cards || [], n = C.length === 6 ? 3 : Math.min(C.length, 5);
     stats.innerHTML = (C.length ? `<div class="cards" style="--n:${n}">` + C.map(x => `<div class="cd${x.f ? ' focus' : ''}"><div class="cd-h"><div class="cd-k">${x.c ? `<i style="background:${x.c}"></i>` : ''}${x.k}${x.d ? `<span class="cd-i" title="${esc(x.d)}">i</span>` : ''}</div>${x.b ? `<span class="bdg${x.b.s < 0 ? ' neg' : ''}">${x.b.s < 0 ? DN : UP}${x.b.t}</span>` : ''}</div>` +

@@ -58,8 +58,8 @@ main{max-width:1280px;margin:0 auto;padding:0 32px 64px}
 .chart-wrap.tall{height:460px}
 .chart-wrap.short{height:240px}
 table.tbl{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
-.tbl th{font-family:var(--mono);font-size:11px;letter-spacing:.3px;text-transform:uppercase;color:var(--ink-2);font-weight:400;text-align:right;padding:8px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
-.tbl td{padding:9px 10px;border-bottom:1px solid var(--rule-2);text-align:right;white-space:nowrap}
+.tbl th{font-family:var(--mono);font-size:11px;letter-spacing:.3px;text-transform:uppercase;color:var(--ink-2);font-weight:400;text-align:right;padding:8px 10px;border-bottom:1px solid var(--rule);white-space:nowrap;line-height:16px}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--rule-2);text-align:right;white-space:nowrap;line-height:20px}   /* v21: 행 높이를 정수(px)로 고정 — 소수 line-height 때문에 확대 배율에서 행 간격이 1px씩 달라 보이던 현상 제거 */
 .tbl th:first-child,.tbl td:first-child,.tbl .l{text-align:left}
 .tbl tr.total td{border-top:1px solid var(--rule);font-weight:500}
 .tbl-scroll{overflow-x:auto}

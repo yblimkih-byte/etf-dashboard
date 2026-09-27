@@ -217,7 +217,15 @@ function apiByMgr_(p) {
   // v19: M/S 변동 기여도 분해 — 운용사 M/S 변동(%p) = Σ유형 [유형 NAV/시장 NAV (기준일) − 유형 NAV/시장 NAV (비교 기준)]
   const kT = r => topOf_(r.top) + '|' + r.f2, cT = sumBy_(S, kT), pT = sumBy_(Py, kT);
   const types = CFG.TYPE_ORDER.concat(Object.keys(cT).concat(Object.keys(pT)).map(k => k.split('|')[1]).filter((k, i, a) => CFG.TYPE_ORDER.indexOf(k) < 0 && a.indexOf(k) === i));
-  const contrib = groups.map(g => ({ mgr: g, items: types.map(t => { const c = total ? (cT[g + '|' + t] || 0) / total * 100 : 0, b = totalPy ? (pT[g + '|' + t] || 0) / totalPy * 100 : 0; return { type: t, cur: c, py: b, d: totalPy ? c - b : null }; }) }));
+  // v21: 기여를 점유율 효과(유형 내 점유율 변동 × 기준일 유형 비중)와 구성 효과(시장 내 유형 비중 변동 × 비교기준 점유율)로 분해. comp + mix = d
+  const tT = {}, tP = {}; Object.keys(cT).forEach(k => { const t = k.split('|')[1]; tT[t] = (tT[t] || 0) + cT[k]; }); Object.keys(pT).forEach(k => { const t = k.split('|')[1]; tP[t] = (tP[t] || 0) + pT[k]; });
+  const contrib = groups.map(g => ({ mgr: g, items: types.map(t => {
+    const c = total ? (cT[g + '|' + t] || 0) / total * 100 : 0, b = totalPy ? (pT[g + '|' + t] || 0) / totalPy * 100 : 0;
+    const wC = total ? (tT[t] || 0) / total : 0, wP = totalPy ? (tP[t] || 0) / totalPy : 0;                       // 시장 내 유형 비중
+    const sC = tT[t] ? (cT[g + '|' + t] || 0) / tT[t] : 0, sP = tP[t] ? (pT[g + '|' + t] || 0) / tP[t] : 0;     // 유형 내 운용사 점유율
+    return { type: t, cur: c, py: b, d: totalPy ? c - b : null, wCur: wC * 100, wPy: wP * 100, sCur: sC * 100, sPy: sP * 100,
+      comp: totalPy ? (sC - sP) * wC * 100 : null, mix: totalPy ? (wC - wP) * sP * 100 : null };
+  }) }));
   // 월별 M/S 추이 (agg_운용사월별)
   const trend = {};
   aggRows_(CFG.SHEET.AGG_MGR).forEach(r => { const m = ymstr_(r[0]); if (m > ym_(date)) return; const t = trend[m] = trend[m] || {}; const g = topOf_(String(r[2])); t[g] = (t[g] || 0) + toNum_(r[3]); });

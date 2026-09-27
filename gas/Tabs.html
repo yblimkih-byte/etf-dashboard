@@ -105,8 +105,7 @@ function treemap(A, host, d) {
   window.addEventListener('resize', onResize);
 }
 
-/* 0. 경영진 요약 (v19) — 한 화면에 시장·한투·원인·라인업 점검. 서버 액션 추가 없이 기존 조회 7건을 묶어 구성 */
-const SMALL_NAV = 5e9;   // 소규모 경고 기준: NAV 50억원 미만
+/* 0. 경영진 요약 (v19) — 한 화면에 시장·한투·원인·상위50·신규상장. 서버 액션 추가 없이 기존 조회 6건을 묶어 구성 (v21: 소규모 종목 점검 제거) */
 function summaryModel(A, d) {
   const F = A.FOCUS, RL = A.refLabel(d.mgr), pp = v => A.pct(v).replace('%', '%p');
   const M = d.ov.monthly, m = M[M.length - 1], py = d.ov.prevYE, mkt = d.mgr, rows = mkt.rows.filter(r => r.mgr !== '기타').slice().sort((a, b) => b.nav - a.nav), f = rows.find(r => r.mgr === F) || rows[0];
@@ -115,7 +114,6 @@ function summaryModel(A, d) {
   const tp = d.type.rows.slice().sort((a, b) => (b.share - b.sharePy) - (a.share - a.sharePy)), tUp = tp[0], tDn = tp[tp.length - 1];
   const top50 = d.top.byMgr.find(x => x.top === F) || { n: 0, nav: 0, share: 0 };
   const nlF = d.nl.items.filter(i => i.top === F), nlTot = d.nl.items.length;
-  const all = d.tm.items.filter(i => i.nav > 0), mine = all.filter(i => i.top === F), small = mine.filter(i => i.nav < SMALL_NAV).sort((a, b) => a.nav - b.nav), smallAll = all.filter(i => i.nav < SMALL_NAV).length;
   const mk = d.sh.groups['시장 전체'], g = d.sh.groups[F], gap = g && mk ? g.types.map(t => ({ type: t.type, s: t.share, d: t.share - (mk.types.find(x => x.type === t.type) || { share: 0 }).share })).sort((a, b) => b.d - a.d) : [];
   const lines = [
     `시장: 국내 ETF 순자산 <b>${A.eok(m.nav)}조원</b>(${A.num(m.n)}종목), 연초 대비 ${A.pct(m.ytd && m.ytd.pct)}(${A.signed(m.nav - (py ? py.nav : 0))}조원), 전월 대비 ${A.pct(m.mom && m.mom.pct)}` + (m.kYtd !== null && m.kYtd !== undefined ? ` · KOSPI 연초 대비 ${A.pct(m.kYtd)}` : ''),
@@ -123,19 +121,18 @@ function summaryModel(A, d) {
     cs.length ? `M/S 변동 원인(유형별 기여, ${RL} 대비): ${cs.slice(0, 3).map(i => `${i.type} ${pp(i.d)}`).join(', ')}` : '',
     `시장 유형 이동: 비중 확대 ${tUp.type} ${pp(tUp.share - tUp.sharePy)}, 축소 ${tDn.type} ${pp(tDn.share - tDn.sharePy)}` + (gap.length ? ` · ${F}는 시장 대비 ${gap[0].type} 과대(${pp(gap[0].d)}), ${gap[gap.length - 1].type} 과소(${pp(gap[gap.length - 1].d)})` : ''),
     `상위 50 ETF 내 ${F} ${top50.n}종목 (NAV ${A.eok(top50.nav)}조원, 상위 50 합계의 ${A.share(top50.share)})`,
-    `${d.nl.year}년 신규상장 ${A.num(nlTot)}종목 중 ${F} ${nlF.length}종목, NAV ${A.eok(nlF.reduce((s, i) => s + i.nav, 0), 2)}조원` + (nlF.length ? ` (최대 ${nlF[0].name} ${A.eok(nlF[0].nav, 2)}조원)` : '') + (d.nl.filter === 'exBond' ? ' · 채권/금리형 제외' : ''),
-    `${F} 라인업 ${mine.length}종목 중 NAV 50억원 미만 <b>${small.length}종목</b> (시장 전체 ${smallAll}종목)` + (small.length ? ' — 아래 목록 참조' : '')
+    `${d.nl.year}년 신규상장 ${A.num(nlTot)}종목 중 ${F} ${nlF.length}종목, NAV ${A.eok(nlF.reduce((s, i) => s + i.nav, 0), 2)}조원` + (nlF.length ? ` (최대 ${nlF[0].name} ${A.eok(nlF[0].nav, 2)}조원)` : '') + (d.nl.filter === 'exBond' ? ' · 채권/금리형 제외' : '')
   ].filter(Boolean);
-  return { lines, f, rank, ahead, m, py, cs, top50, nlF, small, mine, gap, mk, g, rows };
+  return { lines, f, rank, ahead, m, py, cs, top50, nlF, gap, mk, g, rows };
 }
 App.registerTab({
   id: 'summary', narrow: true, label: '경영진 요약', controls: ['date', 'ref'],
   load: (s, A) => Promise.all([A.call('byMgr', { date: s.date, ref: s.ref }), A.call('overview', { date: s.date }), A.call('byType', { date: s.date, ref: s.ref }), A.call('topEtf', { date: s.date }),
-    A.call('newListings', { date: s.date, year: s.date.slice(0, 4), filter: 'exBond' }), A.call('treemap', { date: s.date, ref: s.ref }), A.call('shares', { date: s.date, mgr: '' })])
-    .then(r => ({ date: s.date, refLabel: r[0].refLabel, mgr: r[0], ov: r[1], type: r[2], top: r[3], nl: r[4], tm: r[5], sh: r[6] })),
+    A.call('newListings', { date: s.date, year: s.date.slice(0, 4), filter: 'exBond' }), A.call('shares', { date: s.date, mgr: '' })])
+    .then(r => ({ date: s.date, refLabel: r[0].refLabel, mgr: r[0], ov: r[1], type: r[2], top: r[3], nl: r[4], sh: r[5] })),
   render(d, root, A) {
     const F = A.FOCUS, S = summaryModel(A, d), RL = A.refLabel(d.mgr), pp = v => A.pct(v).replace('%', '%p');
-    A.tiles(root, [['ETF 시장 총 NAV', A.jo(S.m.nav) + '원', `연초 대비 ${A.pct(S.m.ytd && S.m.ytd.pct)}`], [`${F} NAV`, A.jo(S.f.nav) + '원', `${RL} 대비 ${A.signed(S.f.nav - S.f.navPy)}조원`], [`${F} M/S`, A.share(S.f.ms), `${RL} 대비 ${pp(S.f.ms - (S.f.msPy || 0))} · ${S.rank}위`], ['소규모(50억 미만)', `${S.small.length}종목`, `${F} 라인업 ${S.mine.length}종목 중`]]);
+    A.tiles(root, [['ETF 시장 총 NAV', A.jo(S.m.nav) + '원', `연초 대비 ${A.pct(S.m.ytd && S.m.ytd.pct)}`], [`${F} NAV`, A.jo(S.f.nav) + '원', `${RL} 대비 ${A.signed(S.f.nav - S.f.navPy)}조원`], [`${F} M/S`, A.share(S.f.ms), `${RL} 대비 ${pp(S.f.ms - (S.f.msPy || 0))} · ${S.rank}위`]]);
     const s0 = A.section(root, `요약 — 기준일 ${dlabel(d.date)}`, `비교 기준 ${RL} · 각 항목의 근거는 해당 탭에서 확인`);
     s0.classList.add('sum-sec');   // 웹 화면은 상단 설명 줄이 같은 내용을 보여 주므로 숨김(web.css)
     A.div(s0, 'sum-lines', '<ul>' + S.lines.map(l => `<li>${l}</li>`).join('') + '</ul>');
@@ -148,9 +145,6 @@ App.registerTab({
         { h: '유형', f: r => A.swc(tc(r.type)) + r.type, l: 1 }, { h: `${F} NAV(조원)`, f: r => A.eok(r.nav) }, { h: `${F} 비중`, f: r => A.share(r.s) }, { h: '시장 비중', f: r => A.share(r.m) }, { h: '차이(%p)', f: r => pp(r.s - r.m), cls: r => A.clsP(r.s - r.m) }
       ], { tools: false, compact: true }));
     }
-    const s3 = A.section(root, `${F} 라인업 점검 — NAV 50억원 미만 ${S.small.length}종목`, '상장폐지 요건(신탁원본액·순자산 50억 미만 지속) 근접 여부 확인용 · 기준일 NAV 순');
-    if (S.small.length) A.div(s3, '', A.table(S.small, [{ h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: '상장일', f: r => r.listDd || '-', l: 1 }, { h: 'NAV(억원)', f: r => A.num(r.nav / 1e8, 0) }, { h: `${RL} 대비(억원)`, f: r => r.chg === null ? '-' : (r.chg > 0 ? '+' : '') + A.num(r.chg / 1e8, 0), cls: r => A.cls(r.chg) }], { attr: r => `data-top="${r.top}"` }));
-    else A.div(s3, 'empty', '해당 종목 없음');
     const s4 = A.section(root, `${d.nl.year}년 신규상장 — ${F} ${S.nlF.length}종목`, d.nl.filter === 'exBond' ? '채권/금리형 제외 · NAV 순' : 'NAV 순');
     if (S.nlF.length) A.div(s4, '', A.table(S.nlF, [{ h: '상장일', k: 'listDd', l: 1 }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: 'NAV(조원)', f: r => r.listed ? navSmall(A, r.nav) : '-' }], { attr: r => `data-top="${r.top}"` }));
     else A.div(s4, 'empty', '해당 종목 없음');
@@ -237,20 +231,31 @@ App.registerTab({
 
     // v19: M/S 변동 기여도 분해 — 운용사 M/S 변동(%p)을 유형별 기여로 나눔 (유형 NAV/시장 NAV 의 변화). 칩으로 운용사 선택
     if (d.contrib && d.contrib.length) {
-      const sc = A.section(root, `M/S 변동 기여도 (유형별, ${RL} 대비)`, '운용사 M/S 변동(%p) = Σ 유형별 기여 · 기여 = 해당 유형 NAV ÷ 시장 전체 NAV 의 변화');
+      const P = v => A.pct(v, 2).replace('%', '%p');   // 기여는 값이 작아 소수 둘째 자리
+      const sc = A.section(root, `M/S 변동 기여도 (유형별, ${RL} 대비)`,
+        `운용사 M/S = Σ유형 [시장 내 유형 비중 × 유형 내 운용사 점유율]. 유형별 기여(%p) = 이 곱의 변화 = 점유율 효과(유형 내 점유율 변동 × 기준일 유형 비중) + 구성 효과(시장 내 유형 비중 변동 × ${RL} 점유율). 유형 내 점유율이 낮아도 그 유형 시장이 커지면 구성 효과로 기여가 +가 됨`);
       const chipBox = A.div(sc); const wrap = A.div(sc); let chart = null;
       const types = d.types || A.meta.typeOrder;
       const draw = sel => {
-        const who = sel || A.FOCUS, row = d.contrib.find(c => c.mgr === who) || d.contrib[0];
+        const who = sel || A.FOCUS, row = d.contrib.find(c => c.mgr === who) || d.contrib[0], tot = row.items.reduce((s, i) => s + (i.d || 0), 0);
         if (chart) { chart.destroy(); A.charts = A.charts.filter(c => c !== chart); }
-        wrap.innerHTML = ''; A.sub(wrap, `${row.mgr} · 합계 ${A.pct(row.items.reduce((s, i) => s + (i.d || 0), 0)).replace('%', '%p')}`);
-        chart = A.bar(A.canvas(wrap, 'short'), row.items.map(i => i.type), [{ label: '기여(%p)', data: row.items.map(i => +((i.d || 0).toFixed(2))), colors: row.items.map(i => (i.d || 0) < 0 ? '#b30000' : A.color(row.mgr)) }],
-          { horizontal: true, noLegend: true, padRight: 48, pctAxis: true, fmt: v => A.pct(v).replace('%', '%p'), labels: { mode: 'end', fmt: v => A.pct(v).replace('%', '%p') } });
+        wrap.innerHTML = ''; A.sub(wrap, `${row.mgr} · M/S 변동 ${P(tot)} = 점유율 효과 ${P(row.items.reduce((s, i) => s + (i.comp || 0), 0))} + 구성 효과 ${P(row.items.reduce((s, i) => s + (i.mix || 0), 0))}`);
+        chart = A.bar(A.canvas(wrap, 'short'), row.items.map(i => i.type), [
+          { label: '점유율 효과', data: row.items.map(i => +((i.comp || 0).toFixed(2))), color: A.color(row.mgr), stack: 'a' },
+          { label: '구성 효과', data: row.items.map(i => +((i.mix || 0).toFixed(2))), color: '#c9c9d1', stack: 'a' }],
+          { horizontal: true, stacked: true, padRight: 48, pctAxis: true, fmt: v => P(v), labels: { mode: 'end', fmt: v => P(v) } });
+        A.div(wrap, '', A.table(row.items, [
+          { h: '유형', f: r => A.swc(tc(r.type)) + r.type, l: 1 },
+          { h: RL, g: '시장 내 유형 비중', f: r => A.share(r.wPy) }, { h: '기준일', g: '시장 내 유형 비중', f: r => A.share(r.wCur) },
+          { h: RL, g: `유형 내 ${row.mgr} 점유율`, f: r => A.share(r.sPy) }, { h: '기준일', g: `유형 내 ${row.mgr} 점유율`, f: r => A.share(r.sCur) },
+          { h: '점유율 효과', g: '기여(%p)', f: r => r.comp === null ? '-' : P(r.comp), cls: r => A.clsP(r.comp) }, { h: '구성 효과', g: '기여(%p)', f: r => r.mix === null ? '-' : P(r.mix), cls: r => A.clsP(r.mix) }, { h: '합계', g: '기여(%p)', f: r => r.d === null ? '-' : P(r.d), cls: r => A.clsP(r.d) }
+        ], { compact: true, tools: false, total: { '유형': '합계', '기여(%p)|점유율 효과': P(row.items.reduce((s, i) => s + (i.comp || 0), 0)), '기여(%p)|구성 효과': P(row.items.reduce((s, i) => s + (i.mix || 0), 0)), '기여(%p)|합계': P(tot) } }));
       };
       A.chips(chipBox, keys, { hint: '운용사 선택', selected: A.FOCUS, onSelect: sel => draw(sel) });
       draw(A.FOCUS);
-      A.div(sc, '', A.table(d.contrib, [{ h: '운용사', f: r => A.sw(r.mgr) + r.mgr, l: 1 }].concat(types.map(t => ({ h: t, g: '유형별 기여(%p)', f: r => { const x = r.items.find(i => i.type === t); return x && x.d !== null ? A.pct(x.d).replace('%', '%p') : '-'; }, cls: r => { const x = r.items.find(i => i.type === t); return x ? A.clsP(x.d) : ''; } })))
-        .concat([{ h: 'M/S 변동 합계', f: r => A.pct(r.items.reduce((s, i) => s + (i.d || 0), 0)).replace('%', '%p'), cls: r => A.clsP(r.items.reduce((s, i) => s + (i.d || 0), 0)) }]), { compact: true, attr: r => `data-top="${r.mgr}"` }));
+      A.sub(sc, '운용사별 유형 기여 합계(점유율 효과 + 구성 효과)');
+      A.div(sc, '', A.table(d.contrib, [{ h: '운용사', f: r => A.sw(r.mgr) + r.mgr, l: 1 }].concat(types.map(t => ({ h: t, g: '유형별 기여(%p)', f: r => { const x = r.items.find(i => i.type === t); return x && x.d !== null ? P(x.d) : '-'; }, cls: r => { const x = r.items.find(i => i.type === t); return x ? A.clsP(x.d) : ''; } })))
+        .concat([{ h: 'M/S 변동 합계', f: r => P(r.items.reduce((s, i) => s + (i.d || 0), 0)), cls: r => A.clsP(r.items.reduce((s, i) => s + (i.d || 0), 0)) }]), { compact: true, tools: false, attr: r => `data-top="${r.mgr}"` }));
     }
 
     const s2 = A.section(root, '월별 M/S 추이', '2021년 이후 · 레이블 3·6·9·12월');
