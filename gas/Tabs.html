@@ -2,7 +2,8 @@
 /* ── 탭 정의. 새 탭 = App.registerTab({...}) 1개 추가 (→ 탭추가_가이드.md) ─────────────
    id: 고유키 / label: 탭 이름 / controls: ['date'|'range'|'year'|'mgr'|'filter'] /
    action: Api.gs ACTIONS 키 / params(state): 서버 파라미터 / render(data, root, A): 화면 그리기          */
-const TYPE_COLORS = { '국내주식형': '#17171c', '해외주식형': '#1863dc', '채권형': '#75758a', '파생형': '#9b60aa', '혼합채권형': '#003c33', '기타': '#c4c4cc', '미분류': '#e5e7eb' };
+/* v19: 유형색 — 명도 계단(검정·청·중회·보라·청록·연회)으로 인접 구간 구분. 혼합채권형은 검정과 가깝던 짙은 녹색 → 청록 */
+const TYPE_COLORS = { '국내주식형': '#17171c', '해외주식형': '#1863dc', '채권형': '#75758a', '파생형': '#9b60aa', '혼합채권형': '#2a9d8f', '기타': '#c4c4cc', '미분류': '#e5e7eb' };
 const DOM_COLORS = { '국내': '#17171c', '해외': '#1863dc' };
 const tc = t => TYPE_COLORS[t] || '#c4c4cc';
 const GROUPS = () => App.meta.top5.concat(['기타']);
@@ -43,22 +44,25 @@ function treemap(A, host, d) {
   host.style.height = H + 'px';
   const chgs = items.map(i => i.chg).filter(v => v !== null).map(Math.abs).sort((a, b) => a - b);
   const cap = (chgs.length ? chgs[Math.floor(chgs.length * 0.9)] : 0) || 1e12;   // 상위 10% 이상은 최대 채도
-  const col = chg => { if (chg === null) return '#d4d4d8'; const t = Math.min(1, Math.abs(chg) / cap); const up = chg >= 0; const r = up ? Math.round(240 - 190 * t) : Math.round(240 - 30 * t), g = up ? Math.round(245 - 100 * t) : Math.round(240 - 190 * t), b = up ? Math.round(240 - 150 * t) : Math.round(240 - 170 * t); return `rgb(${r},${g},${b})`; };
-  const HEAD = 20, MHEAD = 16, PAD = 2, MIN_MGR_AREA = 4200;   // 운용사 칸 최소 면적(px²) 미만은 '기타 운용사'로 묶음
+  // v19: 색 대비 확대 — 증가는 녹색 명도 계단(연녹→진녹), 감소는 적색 명도 계단(연분홍→진적). 0 부근은 중립 회백으로 두어 방향이 없을 때 색이 없음
+  const col = chg => { if (chg === null) return '#d4d4d8'; const t = Math.min(1, Math.abs(chg) / cap); if (t < 0.04) return '#ececef'; const up = chg >= 0; const r = up ? Math.round(226 - 200 * t) : Math.round(250 - 60 * t), g = up ? Math.round(240 - 130 * t) : Math.round(228 - 200 * t), b = up ? Math.round(226 - 170 * t) : Math.round(226 - 190 * t); return `rgb(${r},${g},${b})`; };
+  const HEAD = 20, MHEAD = 16, PAD = 2, MIN_MGR_AREA = 4200, MIN_CELL = 1600;   // 운용사 칸 최소 면적(px²) 미만은 '기타 운용사'로 묶음 · v19: ETF 박스 최소 면적 900→1,600(작은 박스는 '기타 n종목'으로)
   /* ETF 박스 채우기: 컨테이너(inner, iw×ih)에 list 를 squarify. 작은 박스는 '기타 n종목' */
   const fillCells = (inner, list, iw, ih) => {
     const tot = list.reduce((s, i) => s + i.nav, 0); if (!tot || iw <= 4 || ih <= 4) return;
     const all = list.slice().sort((a, b) => b.nav - a.nav).map(i => ({ v: i.nav, it: i }));
-    const unit = iw * ih / tot, small = all.filter(x => x.v * unit < 900), big = all.filter(x => x.v * unit >= 900);
+    const unit = iw * ih / tot, small = all.filter(x => x.v * unit < MIN_CELL), big = all.filter(x => x.v * unit >= MIN_CELL);
     if (small.length > 1) big.push({ v: small.reduce((s, x) => s + x.v, 0), it: { name: `기타 ${small.length}종목`, nav: small.reduce((s, x) => s + x.v, 0), chg: small.reduce((s, x) => s + (x.it.chg || 0), 0), others: small.map(x => x.it) } }); else big.push.apply(big, small);
     squarify(big, 0, 0, iw, ih).forEach(c => {
       const it = c.item.it, el = document.createElement('div'); el.className = 'tm-cell';
       const w = c.w - 1, h = c.h - 1; if (w < 2 || h < 2) return;
-      el.style.cssText = `left:${c.x}px;top:${c.y}px;width:${w}px;height:${h}px;background:${col(it.chg)};color:${Math.abs(it.chg || 0) / cap > 0.55 ? '#fff' : '#17171c'}`;
+      el.style.cssText = `left:${c.x}px;top:${c.y}px;width:${w}px;height:${h}px;background:${col(it.chg)};color:${Math.abs(it.chg || 0) / cap > 0.5 ? '#fff' : '#17171c'}`;
+      if (it.top) el.setAttribute('data-top', it.top);   // v19: 강조 모드(한투 박스 테두리·나머지 흐림)용
       const chars = Math.max(2, Math.floor(w / 7.2));
-      if (w >= 34 && h >= 26) el.innerHTML = `<div class="tm-n">${shortName(it.name, chars)}</div>` + (h >= 40 ? `<div class="tm-c">${A.eok(it.nav)}${it.chg === null ? '' : ` (${A.signed(it.chg)})`}</div>` : '');
+      // v19: 이름은 6자 이상 들어갈 때만 표기(잘린 'KO…' 표기 제거), 그 미만은 툴팁으로만
+      if (w >= 48 && h >= 26 && chars >= 6) el.innerHTML = `<div class="tm-n">${shortName(it.name, chars)}</div>` + (h >= 40 ? `<div class="tm-c">${A.eok(it.nav)}${it.chg === null ? '' : ` (${A.signed(it.chg)})`}</div>` : '');
       const tipName = it.others ? it.others.slice(0, 12).map(o => o.name).join(', ') + (it.others.length > 12 ? ` 외 ${it.others.length - 12}종목` : '') : it.name;
-      el.setAttribute('data-tip', `${tipName}` + (it.mgr && !it.others ? `\n${it.mgr}` : '') + `\nNAV ${A.eok(it.nav)}조원` + (it.chg === null ? '\n전년말 자료 없음' : `\n${it.isNew ? '상장(' + it.listDd + ') 이후' : '전년말 대비'} ${A.signed(it.chg)}조원`));
+      el.setAttribute('data-tip', `${tipName}` + (it.mgr && !it.others ? `\n${it.mgr}` : '') + `\nNAV ${A.eok(it.nav)}조원` + (it.chg === null ? `\n${A.refLabel(d)} 자료 없음` : `\n${it.isNew ? '상장(' + it.listDd + ') 이후' : A.refLabel(d) + ' 대비'} ${A.signed(it.chg)}조원`));
       inner.appendChild(el);
     });
   };
@@ -78,12 +82,12 @@ function treemap(A, host, d) {
     mgrs = big;
     if (mgrs.length === 1) { fillCells(inner, mgrs[0].items, iw, ih); host.appendChild(box); return; }
     squarify(mgrs, 0, 0, iw, ih).forEach(m => {
-      const mb = document.createElement('div'); mb.className = 'tm-mgr';
+      const mb = document.createElement('div'); mb.className = 'tm-mgr'; if (m.item.items[0] && m.item.items[0].top && !m.item.etc) mb.setAttribute('data-top', m.item.items[0].top);
       const mw = Math.max(0, m.w - 2), mh = Math.max(0, m.h - 2);
       mb.style.cssText = `left:${m.x + 1}px;top:${m.y + 1}px;width:${mw}px;height:${mh}px`;
       const showHead = mw >= 36 && mh >= MHEAD + 14;
       const mchg = m.item.items.reduce((s, i) => s + (i.chg || 0), 0);
-      if (showHead) mb.innerHTML = `<div class="tm-mhead" title="${m.item.key} · ${A.eok(m.item.v)}조원 · ${m.item.items.length}종목 · 전년말 대비 ${A.signed(mchg)}조원">${m.item.key}${mw >= 110 ? ` <small>${A.eok(m.item.v)}조</small>` : ''}</div>`;
+      if (showHead) mb.innerHTML = `<div class="tm-mhead" title="${m.item.key} · ${A.eok(m.item.v)}조원 · ${m.item.items.length}종목 · ${A.refLabel(d)} 대비 ${A.signed(mchg)}조원">${m.item.key}${mw >= 110 ? ` <small>${A.eok(m.item.v)}조</small>` : ''}</div>`;
       const mi = document.createElement('div'); mi.className = 'tm-mbody'; mi.style.top = (showHead ? MHEAD : 0) + 'px'; mb.appendChild(mi);
       fillCells(mi, m.item.items, mw - 2, mh - (showHead ? MHEAD : 0) - 2);
       inner.appendChild(mb);
@@ -95,11 +99,63 @@ function treemap(A, host, d) {
   host.onmousemove = e => { const c = e.target.closest('.tm-cell'); if (!c) { tip.style.display = 'none'; return; } tip.textContent = c.getAttribute('data-tip'); tip.style.display = 'block'; const r = host.getBoundingClientRect(); let x = e.clientX - r.left + 14; const y = e.clientY - r.top + 14; if (x + 300 > W) x = Math.max(0, e.clientX - r.left - 314); tip.style.left = x + 'px'; tip.style.top = y + 'px'; };
   host.onmouseleave = () => { tip.style.display = 'none'; };
   const legend = document.createElement('div'); legend.className = 'tm-legend';
-  legend.innerHTML = `<span>전년말 대비 감소</span><i style="background:${col(-cap)}"></i><i style="background:${col(-cap / 2)}"></i><i style="background:${col(0)}"></i><i style="background:${col(cap / 2)}"></i><i style="background:${col(cap)}"></i><span>증가 (±${A.eok(cap)}조원 이상은 최대 채도) · 유형 안은 운용사별(NAV 순, 작은 운용사는 '기타 운용사')</span>`;
+  legend.innerHTML = `<span>${A.refLabel(d)} 대비 감소</span><i style="background:${col(-cap)}"></i><i style="background:${col(-cap / 2)}"></i><i style="background:${col(0)}"></i><i style="background:${col(cap / 2)}"></i><i style="background:${col(cap)}"></i><span>증가 (±${A.eok(cap)}조원 이상은 최대 채도) · 유형 안은 운용사별(NAV 순, 작은 운용사는 '기타 운용사')</span>`;
   host.parentElement.appendChild(legend);
   let raf; const onResize = () => { if (!host.isConnected) { window.removeEventListener('resize', onResize); return; } cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (Math.abs((host.clientWidth || W) - W) > 40) { window.removeEventListener('resize', onResize); treemap(A, host, d); } }); };
   window.addEventListener('resize', onResize);
 }
+
+/* 0. 경영진 요약 (v19) — 한 화면에 시장·한투·원인·라인업 점검. 서버 액션 추가 없이 기존 조회 7건을 묶어 구성 */
+const SMALL_NAV = 5e9;   // 소규모 경고 기준: NAV 50억원 미만
+function summaryModel(A, d) {
+  const F = A.FOCUS, RL = A.refLabel(d.mgr), pp = v => A.pct(v).replace('%', '%p');
+  const M = d.ov.monthly, m = M[M.length - 1], py = d.ov.prevYE, mkt = d.mgr, rows = mkt.rows.filter(r => r.mgr !== '기타').slice().sort((a, b) => b.nav - a.nav), f = rows.find(r => r.mgr === F) || rows[0];
+  const rank = rows.indexOf(f) + 1, ahead = rows[rank - 2], behind = rows[rank];
+  const con = (mkt.contrib || []).find(c => c.mgr === F), cs = con ? con.items.filter(i => i.d !== null).slice().sort((a, b) => Math.abs(b.d) - Math.abs(a.d)) : [];
+  const tp = d.type.rows.slice().sort((a, b) => (b.share - b.sharePy) - (a.share - a.sharePy)), tUp = tp[0], tDn = tp[tp.length - 1];
+  const top50 = d.top.byMgr.find(x => x.top === F) || { n: 0, nav: 0, share: 0 };
+  const nlF = d.nl.items.filter(i => i.top === F), nlTot = d.nl.items.length;
+  const all = d.tm.items.filter(i => i.nav > 0), mine = all.filter(i => i.top === F), small = mine.filter(i => i.nav < SMALL_NAV).sort((a, b) => a.nav - b.nav), smallAll = all.filter(i => i.nav < SMALL_NAV).length;
+  const mk = d.sh.groups['시장 전체'], g = d.sh.groups[F], gap = g && mk ? g.types.map(t => ({ type: t.type, s: t.share, d: t.share - (mk.types.find(x => x.type === t.type) || { share: 0 }).share })).sort((a, b) => b.d - a.d) : [];
+  const lines = [
+    `시장: 국내 ETF 순자산 <b>${A.eok(m.nav)}조원</b>(${A.num(m.n)}종목), 연초 대비 ${A.pct(m.ytd && m.ytd.pct)}(${A.signed(m.nav - (py ? py.nav : 0))}조원), 전월 대비 ${A.pct(m.mom && m.mom.pct)}` + (m.kYtd !== null && m.kYtd !== undefined ? ` · KOSPI 연초 대비 ${A.pct(m.kYtd)}` : ''),
+    `${F}: NAV <b>${A.eok(f.nav)}조원</b>, M/S <b>${A.share(f.ms)}</b>(${RL} 대비 ${pp(f.ms - (f.msPy || 0))}), 상위 5개사 중 ${rank}위` + (ahead ? ` · ${rank - 1}위 ${ahead.mgr}와 ${(ahead.ms - f.ms).toFixed(1)}%p` : '') + (behind ? ` · ${rank + 1}위 ${behind.mgr}와 ${(f.ms - behind.ms).toFixed(1)}%p` : ''),
+    cs.length ? `M/S 변동 원인(유형별 기여, ${RL} 대비): ${cs.slice(0, 3).map(i => `${i.type} ${pp(i.d)}`).join(', ')}` : '',
+    `시장 유형 이동: 비중 확대 ${tUp.type} ${pp(tUp.share - tUp.sharePy)}, 축소 ${tDn.type} ${pp(tDn.share - tDn.sharePy)}` + (gap.length ? ` · ${F}는 시장 대비 ${gap[0].type} 과대(${pp(gap[0].d)}), ${gap[gap.length - 1].type} 과소(${pp(gap[gap.length - 1].d)})` : ''),
+    `상위 50 ETF 내 ${F} ${top50.n}종목 (NAV ${A.eok(top50.nav)}조원, 상위 50 합계의 ${A.share(top50.share)})`,
+    `${d.nl.year}년 신규상장 ${A.num(nlTot)}종목 중 ${F} ${nlF.length}종목, NAV ${A.eok(nlF.reduce((s, i) => s + i.nav, 0), 2)}조원` + (nlF.length ? ` (최대 ${nlF[0].name} ${A.eok(nlF[0].nav, 2)}조원)` : '') + (d.nl.filter === 'exBond' ? ' · 채권/금리형 제외' : ''),
+    `${F} 라인업 ${mine.length}종목 중 NAV 50억원 미만 <b>${small.length}종목</b> (시장 전체 ${smallAll}종목)` + (small.length ? ' — 아래 목록 참조' : '')
+  ].filter(Boolean);
+  return { lines, f, rank, ahead, m, py, cs, top50, nlF, small, mine, gap, mk, g, rows };
+}
+App.registerTab({
+  id: 'summary', narrow: true, label: '경영진 요약', controls: ['date', 'ref'],
+  load: (s, A) => Promise.all([A.call('byMgr', { date: s.date, ref: s.ref }), A.call('overview', { date: s.date }), A.call('byType', { date: s.date, ref: s.ref }), A.call('topEtf', { date: s.date }),
+    A.call('newListings', { date: s.date, year: s.date.slice(0, 4), filter: 'exBond' }), A.call('treemap', { date: s.date, ref: s.ref }), A.call('shares', { date: s.date, mgr: '' })])
+    .then(r => ({ date: s.date, refLabel: r[0].refLabel, mgr: r[0], ov: r[1], type: r[2], top: r[3], nl: r[4], tm: r[5], sh: r[6] })),
+  render(d, root, A) {
+    const F = A.FOCUS, S = summaryModel(A, d), RL = A.refLabel(d.mgr), pp = v => A.pct(v).replace('%', '%p');
+    A.tiles(root, [['ETF 시장 총 NAV', A.jo(S.m.nav) + '원', `연초 대비 ${A.pct(S.m.ytd && S.m.ytd.pct)}`], [`${F} NAV`, A.jo(S.f.nav) + '원', `${RL} 대비 ${A.signed(S.f.nav - S.f.navPy)}조원`], [`${F} M/S`, A.share(S.f.ms), `${RL} 대비 ${pp(S.f.ms - (S.f.msPy || 0))} · ${S.rank}위`], ['소규모(50억 미만)', `${S.small.length}종목`, `${F} 라인업 ${S.mine.length}종목 중`]]);
+    const s0 = A.section(root, `요약 — 기준일 ${dlabel(d.date)}`, `비교 기준 ${RL} · 각 항목의 근거는 해당 탭에서 확인`);
+    s0.classList.add('sum-sec');   // 웹 화면은 상단 설명 줄이 같은 내용을 보여 주므로 숨김(web.css)
+    A.div(s0, 'sum-lines', '<ul>' + S.lines.map(l => `<li>${l}</li>`).join('') + '</ul>');
+    const s1 = A.section(root, '상위 5개사 NAV 및 M/S', `막대 사이 = (증감액, M/S 변동) · 비교 기준 ${RL}`);
+    const byK = {}; d.mgr.rows.forEach(r => byK[r.mgr] = r);
+    twoRowStack(A, A.canvas(s1, 'mid'), d.mgr, GROUPS(), k => byK[k].navPy, k => byK[k].nav, k => A.color(k), true);
+    if (S.g && S.mk) {
+      const s2 = A.section(root, `${F} 유형 구성 vs 시장 전체`, '유형별 NAV 비중(%) · 차이 = 한투 − 시장');
+      A.div(s2, '', A.table(S.g.types.map(t => ({ type: t.type, nav: t.nav, s: t.share, m: (S.mk.types.find(x => x.type === t.type) || { share: 0 }).share })), [
+        { h: '유형', f: r => A.swc(tc(r.type)) + r.type, l: 1 }, { h: `${F} NAV(조원)`, f: r => A.eok(r.nav) }, { h: `${F} 비중`, f: r => A.share(r.s) }, { h: '시장 비중', f: r => A.share(r.m) }, { h: '차이(%p)', f: r => pp(r.s - r.m), cls: r => A.clsP(r.s - r.m) }
+      ], { tools: false, compact: true }));
+    }
+    const s3 = A.section(root, `${F} 라인업 점검 — NAV 50억원 미만 ${S.small.length}종목`, '상장폐지 요건(신탁원본액·순자산 50억 미만 지속) 근접 여부 확인용 · 기준일 NAV 순');
+    if (S.small.length) A.div(s3, '', A.table(S.small, [{ h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: '상장일', f: r => r.listDd || '-', l: 1 }, { h: 'NAV(억원)', f: r => A.num(r.nav / 1e8, 0) }, { h: `${RL} 대비(억원)`, f: r => r.chg === null ? '-' : (r.chg > 0 ? '+' : '') + A.num(r.chg / 1e8, 0), cls: r => A.cls(r.chg) }], { attr: r => `data-top="${r.top}"` }));
+    else A.div(s3, 'empty', '해당 종목 없음');
+    const s4 = A.section(root, `${d.nl.year}년 신규상장 — ${F} ${S.nlF.length}종목`, d.nl.filter === 'exBond' ? '채권/금리형 제외 · NAV 순' : 'NAV 순');
+    if (S.nlF.length) A.div(s4, '', A.table(S.nlF, [{ h: '상장일', k: 'listDd', l: 1 }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: 'NAV(조원)', f: r => r.listed ? navSmall(A, r.nav) : '-' }], { attr: r => `data-top="${r.top}"` }));
+    else A.div(s4, 'empty', '해당 종목 없음');
+  }
+});
 
 /* 1. ETF 시장 개관 */
 App.registerTab({
@@ -149,7 +205,7 @@ App.registerTab({
 /* 공용: 전년말·기준일 2행 가로 누적 막대 (운용사/유형/국내해외)
    - 막대 위(전년말 행): 구간 이름 / 막대 안: 수치만 / 두 행 사이: 점선 연결 + 증감 레이블(좁으면 생략) */
 function twoRowStack(A, canvas, d, keys, getPy, getCur, colorFn, twoLine) {   // twoLine: 'paren'(0.0조/(0.0%)) | true(0.0조/0.0%) | false(한 줄)
-  const rows = [`전년말 ${d.ref && d.ref.py ? dlabel(d.ref.py) : '-'}`, `기준일 ${dlabel(d.date)}`];
+  const rows = [`${A.refLabel(d)} ${d.ref && d.ref.py ? dlabel(d.ref.py) : '-'}`, `기준일 ${dlabel(d.date)}`];
   const totPy = keys.reduce((s, k) => s + (getPy(k) || 0), 0), totCur = keys.reduce((s, k) => s + (getCur(k) || 0), 0);
   const sh = (k, tot, get) => tot ? (get(k) || 0) / tot * 100 : 0;
   const ds = keys.map(k => ({ label: k, color: colorFn(k), stack: 's', data: [getPy(k) || 0, getCur(k) || 0] }));
@@ -166,18 +222,36 @@ function twoRowStack(A, canvas, d, keys, getPy, getCur, colorFn, twoLine) {   //
 
 /* 2. 운용사별 NAV */
 App.registerTab({
-  id: 'mgr', label: '운용사별 NAV', controls: ['date'], action: 'byMgr', params: s => ({ date: s.date }),
+  id: 'mgr', label: '운용사별 NAV', controls: ['date', 'ref'], action: 'byMgr', params: s => ({ date: s.date, ref: s.ref }),
   render(d, root, A) {
-    const keys = GROUPS();
+    const keys = GROUPS(), RL = A.refLabel(d), G = RL + ' 대비';
     const byK = {}; d.rows.forEach(r => byK[r.mgr] = r);
-    const s1 = A.section(root, '상위 5개사 NAV 및 M/S', `막대 사이 = (증감액, M/S 변동)`);
+    const s1 = A.section(root, '상위 5개사 NAV 및 M/S', `막대 사이 = (증감액, M/S 변동) · 비교 기준 ${RL}`);
     twoRowStack(A, A.canvas(s1, 'mid'), d, keys, k => byK[k].navPy, k => byK[k].nav, k => A.color(k), true);
     A.div(s1, '', A.table(d.rows, [
       { h: '운용사', f: r => A.sw(r.mgr) + r.mgr, l: 1 }, { h: '잔고(조원)', f: r => A.eok(r.nav) },
-      { h: '증감액', g: '연초 대비', f: r => A.signed(r.ytd.amt), cls: r => A.cls(r.ytd.amt) }, { h: '증감률', g: '연초 대비', f: r => A.pct(r.ytd.pct), cls: r => A.clsP(r.ytd.pct) },
+      { h: '증감액', g: G, f: r => A.signed(r.ytd.amt), cls: r => A.cls(r.ytd.amt) }, { h: '증감률', g: G, f: r => A.pct(r.ytd.pct), cls: r => A.clsP(r.ytd.pct) },
       { h: '증감액', g: '전월 대비', f: r => A.signed(r.mom.amt), cls: r => A.cls(r.mom.amt) }, { h: '증감률', g: '전월 대비', f: r => A.pct(r.mom.pct), cls: r => A.clsP(r.mom.pct) },
-      { h: '기준일', g: 'M/S', f: r => A.share(r.ms) }, { h: '전년말', g: 'M/S', f: r => A.share(r.msPy) }, { h: '변동(%p)', g: 'M/S', f: r => r.msPy === null ? '-' : A.pct(r.ms - r.msPy).replace('%', '%p'), cls: r => A.clsP(r.ms - (r.msPy || 0)) }
-    ], { total: { '운용사': '시장 전체', '잔고(조원)': A.eok(d.total), '연초 대비|증감액': A.signed(d.total - d.totalPy), '연초 대비|증감률': A.pct(d.totalPy ? (d.total / d.totalPy - 1) * 100 : null), '전월 대비|증감액': A.signed(d.total - d.totalPm), '전월 대비|증감률': A.pct(d.totalPm ? (d.total / d.totalPm - 1) * 100 : null), 'M/S|기준일': '100.0%', 'M/S|전년말': '100.0%' } }));
+      { h: '기준일', g: 'M/S', f: r => A.share(r.ms) }, { h: RL, g: 'M/S', f: r => A.share(r.msPy) }, { h: '변동(%p)', g: 'M/S', f: r => r.msPy === null ? '-' : A.pct(r.ms - r.msPy).replace('%', '%p'), cls: r => A.clsP(r.ms - (r.msPy || 0)) }
+    ], { attr: r => `data-top="${r.mgr}"`, total: { '운용사': '시장 전체', '잔고(조원)': A.eok(d.total), [G + '|증감액']: A.signed(d.total - d.totalPy), [G + '|증감률']: A.pct(d.totalPy ? (d.total / d.totalPy - 1) * 100 : null), '전월 대비|증감액': A.signed(d.total - d.totalPm), '전월 대비|증감률': A.pct(d.totalPm ? (d.total / d.totalPm - 1) * 100 : null), 'M/S|기준일': '100.0%', ['M/S|' + RL]: '100.0%' } }));
+
+    // v19: M/S 변동 기여도 분해 — 운용사 M/S 변동(%p)을 유형별 기여로 나눔 (유형 NAV/시장 NAV 의 변화). 칩으로 운용사 선택
+    if (d.contrib && d.contrib.length) {
+      const sc = A.section(root, `M/S 변동 기여도 (유형별, ${RL} 대비)`, '운용사 M/S 변동(%p) = Σ 유형별 기여 · 기여 = 해당 유형 NAV ÷ 시장 전체 NAV 의 변화');
+      const chipBox = A.div(sc); const wrap = A.div(sc); let chart = null;
+      const types = d.types || A.meta.typeOrder;
+      const draw = sel => {
+        const who = sel || A.FOCUS, row = d.contrib.find(c => c.mgr === who) || d.contrib[0];
+        if (chart) { chart.destroy(); A.charts = A.charts.filter(c => c !== chart); }
+        wrap.innerHTML = ''; A.sub(wrap, `${row.mgr} · 합계 ${A.pct(row.items.reduce((s, i) => s + (i.d || 0), 0)).replace('%', '%p')}`);
+        chart = A.bar(A.canvas(wrap, 'short'), row.items.map(i => i.type), [{ label: '기여(%p)', data: row.items.map(i => +((i.d || 0).toFixed(2))), colors: row.items.map(i => (i.d || 0) < 0 ? '#b30000' : A.color(row.mgr)) }],
+          { horizontal: true, noLegend: true, padRight: 48, pctAxis: true, fmt: v => A.pct(v).replace('%', '%p'), labels: { mode: 'end', fmt: v => A.pct(v).replace('%', '%p') } });
+      };
+      A.chips(chipBox, keys, { hint: '운용사 선택', selected: A.FOCUS, onSelect: sel => draw(sel) });
+      draw(A.FOCUS);
+      A.div(sc, '', A.table(d.contrib, [{ h: '운용사', f: r => A.sw(r.mgr) + r.mgr, l: 1 }].concat(types.map(t => ({ h: t, g: '유형별 기여(%p)', f: r => { const x = r.items.find(i => i.type === t); return x && x.d !== null ? A.pct(x.d).replace('%', '%p') : '-'; }, cls: r => { const x = r.items.find(i => i.type === t); return x ? A.clsP(x.d) : ''; } })))
+        .concat([{ h: 'M/S 변동 합계', f: r => A.pct(r.items.reduce((s, i) => s + (i.d || 0), 0)).replace('%', '%p'), cls: r => A.clsP(r.items.reduce((s, i) => s + (i.d || 0), 0)) }]), { compact: true, attr: r => `data-top="${r.mgr}"` }));
+    }
 
     const s2 = A.section(root, '월별 M/S 추이', '2021년 이후 · 레이블 3·6·9·12월');
     const tot = t => keys.reduce((s, x) => s + (t[x] || 0), 0), last = d.trend.length - 1;
@@ -190,9 +264,10 @@ App.registerTab({
 
 /* 3. 유형별 NAV */
 App.registerTab({
-  id: 'type', label: '유형별 NAV', controls: ['date'], action: 'byType', params: s => ({ date: s.date }),
+  id: 'type', label: '유형별 NAV', controls: ['date', 'ref'], action: 'byType', params: s => ({ date: s.date, ref: s.ref }),
   render(d, root, A) {
-    const s1 = A.section(root, '유형별 NAV 및 비중', `막대 사이 = (증감액, 비중 변동)`);
+    const RL = A.refLabel(d), G = RL + ' 대비';
+    const s1 = A.section(root, '유형별 NAV 및 비중', `막대 사이 = (증감액, 비중 변동) · 비교 기준 ${RL}`);
     const g = A.div(s1, 'grid grid-2');
     const c1 = A.div(g), c2 = A.div(g);
     A.sub(c1, '상품유형별'); A.sub(c2, '국내/해외');
@@ -202,16 +277,16 @@ App.registerTab({
     twoRowStack(A, A.canvas(c2), d, doms, k => byD[k].navPy, k => byD[k].nav, k => DOM_COLORS[k] || '#c4c4cc', 'paren');
     const cols = [
       { h: '구분', f: r => A.swc(r.type ? tc(r.type) : (DOM_COLORS[r.dom] || '#c4c4cc')) + (r.type || r.dom), l: 1 }, { h: '잔고(조원)', f: r => A.eok(r.nav) },
-      { h: '증감액', g: '연초 대비', f: r => A.signed(r.ytd.amt), cls: r => A.cls(r.ytd.amt) }, { h: '증감률', g: '연초 대비', f: r => A.pct(r.ytd.pct), cls: r => A.clsP(r.ytd.pct) },
+      { h: '증감액', g: G, f: r => A.signed(r.ytd.amt), cls: r => A.cls(r.ytd.amt) }, { h: '증감률', g: G, f: r => A.pct(r.ytd.pct), cls: r => A.clsP(r.ytd.pct) },
       { h: '증감액', g: '전월 대비', f: r => A.signed(r.mom.amt), cls: r => A.cls(r.mom.amt) }, { h: '증감률', g: '전월 대비', f: r => A.pct(r.mom.pct), cls: r => A.clsP(r.mom.pct) },
-      { h: '기준일', g: '비중', f: r => A.share(r.share) }, { h: '전년말', g: '비중', f: r => A.share(r.sharePy) }, { h: '변동(%p)', g: '비중', f: r => r.sharePy === null ? '-' : A.pct(r.share - r.sharePy).replace('%', '%p'), cls: r => A.clsP(r.share - (r.sharePy || 0)) }
+      { h: '기준일', g: '비중', f: r => A.share(r.share) }, { h: RL, g: '비중', f: r => A.share(r.sharePy) }, { h: '변동(%p)', g: '비중', f: r => r.sharePy === null ? '-' : A.pct(r.share - r.sharePy).replace('%', '%p'), cls: r => A.clsP(r.share - (r.sharePy || 0)) }
     ];
-    A.div(s1, '', A.table(d.rows.concat(d.dom), cols, { attr: r => r === d.dom[0] ? 'class="sep"' : '', total: { '구분': '합계', '잔고(조원)': A.eok(d.total), '연초 대비|증감액': A.signed(d.total - d.totalPy), '연초 대비|증감률': A.pct(d.totalPy ? (d.total / d.totalPy - 1) * 100 : null), '비중|기준일': '100.0%', '비중|전년말': '100.0%' } }));
+    A.div(s1, '', A.table(d.rows.concat(d.dom), cols, { tools: false, attr: r => r === d.dom[0] ? 'class="sep"' : '', total: { '구분': '합계', '잔고(조원)': A.eok(d.total), [G + '|증감액']: A.signed(d.total - d.totalPy), [G + '|증감률']: A.pct(d.totalPy ? (d.total / d.totalPy - 1) * 100 : null), '비중|기준일': '100.0%', ['비중|' + RL]: '100.0%' } }));
 
-    // v14/v15: 유형 > 운용사 > 개별 ETF 히트맵(트리맵). 넓이 = 기준일 NAV, 색·숫자 = 전년말 대비 NAV 증감
-    const s2 = A.section(root, '유형별 ETF 히트맵', `넓이 = NAV · 색 = 전년말(${dlabel(d.ref.py) || '-'}) 대비 증감`);
+    // v14/v15: 유형 > 운용사 > 개별 ETF 히트맵(트리맵). 넓이 = 기준일 NAV, 색·숫자 = 비교 기준 대비 NAV 증감
+    const s2 = A.section(root, '유형별 ETF 히트맵', `넓이 = NAV · 색 = ${RL}(${dlabel(d.ref.py) || '-'}) 대비 증감 · 작은 종목은 이름 없이 마우스 올리면 표시`);
     const host = A.div(s2, 'treemap-host'); host.innerHTML = '<div class="loading">히트맵 데이터를 불러오는 중…</div>';
-    A.call('treemap', { date: d.date }).then(t => { if (host.isConnected) treemap(A, host, t); }).catch(e => { host.innerHTML = `<div class="error">${e.message}</div>`; });
+    A.call('treemap', { date: d.date, ref: A.state.ref }).then(t => { if (host.isConnected) treemap(A, host, t); }).catch(e => { host.innerHTML = `<div class="error">${e.message}</div>`; });
   }
 });
 
@@ -253,7 +328,7 @@ function navSmall(A, v) { const t = A.eok(v, 2); return /^-?0\.00$/.test(t) && v
 function mgrChips(A, parent, opts) {
   const keys = GROUPS();
   return A.chips(parent, keys, { hint: opts.hint || '운용사 선택 시 해당 운용사 상품 강조', reset: !!opts.reset, onSelect: sel => {
-    if (opts.chart) { opts.chart.data.datasets[0].backgroundColor = opts.rowsTop.map(t => !sel || t === sel ? A.color(t) : A.fade(A.color(t), 0.18)); opts.chart.update(); }
+    if (opts.chart) { opts.chart.data.datasets[0].backgroundColor = opts.rowsTop.map(t => !sel || t === sel ? A.focusColor(A.color(t), t) : A.fade(A.color(t), 0.18)); opts.chart.update(); }
     (opts.hosts || []).forEach(h => A.highlightRows(h, sel));
     (opts.filterHosts || []).forEach(h => A.filterRows(h, sel));
   } });
@@ -305,10 +380,12 @@ App.registerTab({
   render(d, root, A) {
     A.tiles(root, [['신규상장 종목수', A.num(d.items.length) + '종목', d.year + '년 상장 · ' + (d.filter === 'exBond' ? '채권/금리형 제외' : '전체')], ['신규상장 NAV 합계', A.eok(d.total) + '조원', `기준일 ${dlabel(d.date)}`], ['운용사 수', d.byMgr.length + '사', ''], ['종목당 평균 NAV', d.items.length ? A.eok(d.total / d.items.length) + '조원' : '-', '']]);
     if (!d.items.length) { A.div(root, 'empty', `${d.year}년 상장 종목이 없습니다. (상장일 미확정 종목 ${d.noDate}개 → 시트 메뉴 [ETF Dashboard] › 상장일 보정 실행)`); return; }
-    const s1 = A.section(root, `${d.year}년 신규상장 ETF — 운용사별`, 'NAV 합계(조원) 상위 15개사');
+    const s1 = A.section(root, `${d.year}년 신규상장 ETF — 운용사별`, 'NAV 합계(조원) 상위 8개사 + 기타');
     const g = A.div(s1, 'grid grid-2');
-    const top = d.byMgr.slice(0, 15);
-    A.bar(A.canvas(g, 'tall'), top.map(r => r.mgr), [{ label: 'NAV 합계', data: top.map(r => r.nav), colors: top.map(r => A.color(r.top)) }], { horizontal: true, noLegend: true, padRight: 40, labels: { mode: 'end', fmt: v => A.eok(v) } });
+    // v19: 막대는 상위 8개사 + '기타 n사' 한 줄로 축약(0.0조 막대 나열 제거), 표와 높이를 맞춤
+    const top8 = d.byMgr.slice(0, 8), restB = d.byMgr.slice(8);
+    const top = restB.length ? top8.concat([{ mgr: `기타 ${restB.length}사`, top: '기타', nav: restB.reduce((s, r) => s + r.nav, 0) }]) : top8;
+    A.bar(A.canvas(g, 'mid'), top.map(r => r.mgr), [{ label: 'NAV 합계', data: top.map(r => r.nav), colors: top.map(r => A.color(r.top)) }], { horizontal: true, noLegend: true, padRight: 40, labels: { mode: 'end', fmt: v => A.eok(v) } });
     // 상위 5개사 + '기타'(접힘, 클릭하면 아래로 펼침) + 합계
     const head5 = d.byMgr.slice(0, 5), rest = d.byMgr.slice(5);
     const etc = rest.length ? { mgr: `기타 ${rest.length}사`, n: rest.reduce((s, r) => s + r.n, 0), nav: rest.reduce((s, r) => s + r.nav, 0), top: '기타', etc: true } : null;
@@ -327,7 +404,7 @@ App.registerTab({
 
 /* 7. 거래대금 */
 App.registerTab({
-  id: 'turnover', label: '거래대금', controls: ['range'], action: 'turnover', params: s => ({ from: s.from, to: s.to }),
+  id: 'turnover', label: '거래대금', controls: ['range'], action: 'turnover', params: s => ({ from: s.from, to: s.to }), loadingMsg: '구간 거래대금을 집계하는 중… (처음 조회하는 구간은 최대 10~15초, 이후에는 즉시 표시)',
   render(d, root, A) {
     const topSum = d.top.reduce((s, r) => s + r.sum, 0);
     A.tiles(root, [['조회 구간', `${d.from} ~ ${d.to}`, `${d.days}영업일`], ['시장 전체 거래대금', A.jo(d.marketSum) + '원', ''], ['시장 일평균', A.eok(d.marketSum / d.days) + '조원', ''], [`상위 ${d.top.length} 비중`, A.share(topSum / d.marketSum * 100), '시장 거래대금 대비']]);
@@ -335,9 +412,10 @@ App.registerTab({
     const chipBox = A.div(s1);
     const t20 = d.top.slice(0, 20);
     const chart = A.bar(A.canvas(s1, 'tall'), t20.map(r => r.name), [{ label: '거래대금', data: t20.map(r => r.sum), colors: t20.map(r => A.color(r.top)) }], { horizontal: true, noLegend: true, padRight: 40, labels: { mode: 'end', fmt: v => A.eok(v) } });
-    const s2 = A.section(root, `거래대금 상위 ${d.top.length}`, '합계 및 일평균 (조원)');
+    const s2 = A.section(root, `거래대금 상위 ${d.top.length}`, '합계 및 일평균 (조원) · 회전율 = 구간 거래대금 ÷ 구간 말일 NAV (배, 높을수록 매매형·낮을수록 보유형)');
     const host = A.div(s2, '', A.table(d.top, [{ h: '순위', k: 'rank' }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 }, { h: '유형', k: 'type', l: 1 },
-      { h: '거래대금(조원)', f: r => A.eok(r.sum) }, { h: '일평균(조원)', f: r => A.eok(r.avg) }, { h: '시장 비중', f: r => A.share(r.sum / d.marketSum * 100) }], { attr: r => `data-top="${r.top}"` }));
+      { h: '거래대금(조원)', f: r => A.eok(r.sum) }, { h: '일평균(조원)', f: r => A.eok(r.avg) }, { h: '시장 비중', f: r => A.share(r.sum / d.marketSum * 100) },
+      { h: 'NAV(조원)', f: r => r.nav ? A.eok(r.nav) : '-' }, { h: '회전율(배)', f: r => r.turn === null || r.turn === undefined ? '-' : A.num(r.turn, 1) }], { attr: r => `data-top="${r.top}"` }));
     mgrChips(A, chipBox, { chart: chart, rowsTop: t20.map(r => r.top), hosts: [host] });
   }
 });

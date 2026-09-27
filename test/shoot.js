@@ -8,7 +8,7 @@ const { chromium } = require('playwright');
   p.on('console', m => { if (m.type() === 'error') errs.push('CONSOLE ' + m.text()); });
   await p.goto('file://' + __dirname + '/' + PAGE);
   await p.waitForSelector('.tab', { timeout: 30000 });
-  const tabs = ['overview', 'mgr', 'type', 'shares', 'top', 'new', 'turnover'];
+  const tabs = ['summary', 'overview', 'mgr', 'type', 'shares', 'top', 'new', 'turnover'];
   for (const t of tabs) {
     if (W > 900) await p.click(`.tab[data-id="${t}"]`); else await p.evaluate(id => App.show(id), t);   // 좁은 화면에서는 탭이 서랍 안에 있음
     await p.waitForFunction(() => !document.querySelector('#view .loading'), null, { timeout: 60000 });

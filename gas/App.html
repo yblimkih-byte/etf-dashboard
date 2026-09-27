@@ -1,8 +1,10 @@
 <script>
 /* ── 코어: 상태·API·컨트롤·탭 레지스트리·차트/표 헬퍼 ───────────────────────── */
 const App = {
-  meta: null, tabs: [], state: { tab: null, date: null, from: null, to: null, mgr: '', filter: 'exBond', year: null },
+  meta: null, tabs: [], state: { tab: null, date: null, from: null, to: null, mgr: '', filter: 'exBond', year: null, ref: 'py', focus: false },
   charts: [],
+  FOCUS: '한투',   // v19: '우리 회사' 강조 대상(전역 토글) — 설명 문장·카드·차트·표·히트맵 공통
+  REF_OPTS: [{ value: 'py', label: '전년말' }, { value: 'pq', label: '전분기말' }, { value: 'pm', label: '전월말' }, { value: 'ly', label: '전년동월' }],
 
   /* 서버 호출 (로컬 테스트 시 window.MOCK.api 사용). 같은 조회는 세션 내 재요청 없음 */
   _memo: {},
@@ -30,6 +32,8 @@ const App = {
     if (!m.dates.length) { document.getElementById('hdrMeta').textContent = '데이터 적재 전'; document.getElementById('view').innerHTML = '<div class="loading">아직 적재된 데이터가 없습니다. 시트 메뉴 [ETF Dashboard] › 월말 백필 / 일별 백필을 실행하십시오.</div>'; return; }
     this.state.date = m.defaultDate;
     this.state.year = (m.defaultDate || '').slice(0, 4);
+    try { this.state.focus = localStorage.getItem('etf.focus') === '1'; } catch (e) {}
+    document.body.classList.toggle('focus-on', this.state.focus);
     const ll = this.loadLine(m), hm = document.getElementById('hdrMeta');
     hm.innerHTML = `${ll.head}${ll.at ? ` · 확인 ${ll.at}` : ''}` + (ll.note ? `<br><span class="ld-note${ll.warn ? ' warn' : ''}"></span>` : '');
     if (ll.note) hm.querySelector('.ld-note').textContent = ll.note;
@@ -104,8 +108,25 @@ const App = {
         w.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.v === s.filter); b.onclick = () => { s.filter = b.dataset.v; this.renderControls(); this.load(); }; });
         el.appendChild(w);
       }
+      if (c === 'ref') {   // v19: 비교 기준(전년말·전분기말·전월말·전년동월)
+        const w = document.createElement('div'); w.className = 'ctl'; w.innerHTML = `<label>비교 기준</label><select></select>`;
+        const se = w.querySelector('select'); this.REF_OPTS.forEach(o => { const op = document.createElement('option'); op.value = o.value; op.textContent = o.label; se.appendChild(op); });
+        se.value = s.ref || 'py'; se.title = '증감·M/S 변동의 비교 시점'; se.onchange = () => { s.ref = se.value; this.load(); }; el.appendChild(w);
+      }
     });
+    // v19: 전역 'ACE 강조' 토글 — 모든 탭 공통. 켜면 한투 계열만 본색, 나머지 차트·표·히트맵은 흐리게
+    const fw = document.createElement('div'); fw.className = 'ctl ctl-focus';
+    fw.innerHTML = `<button class="seg-one${s.focus ? ' on' : ''}" title="한투(ACE) 상품·운용사만 강조하고 나머지는 흐리게 표시">${this.sw(this.FOCUS)}ACE 강조</button>`;
+    fw.querySelector('button').onclick = () => { s.focus = !s.focus; try { localStorage.setItem('etf.focus', s.focus ? '1' : '0'); } catch (e) {} document.body.classList.toggle('focus-on', s.focus); this.renderControls(); this.load(); };
+    el.appendChild(fw);
   },
+  /** v19: 강조 모드에서 색을 흐리게(한투 계열은 그대로). 운용사 고유색·기타색 외의 색(유형색 등)은 건드리지 않음 */
+  focusColor(col, top) {
+    if (!this.state.focus) return col;
+    const isF = top ? top === this.FOCUS : (String(col).toLowerCase() === String(this.color(this.FOCUS)).toLowerCase());
+    return isF ? col : this.fade(col, 0.22);
+  },
+  refLabel(d) { return (d && d.refLabel) || '전년말'; },
 
   tab() { return this.tabs.find(t => t.id === this.state.tab); },
   /* 탭 전환 시 정리할 작업 등록(타이머 등) */
@@ -115,10 +136,10 @@ const App = {
     const t = this.tab(), view = document.getElementById('view');
     (this._unload || []).forEach(f => { try { f(); } catch (e) {} }); this._unload = [];
     this.charts.forEach(c => c.destroy()); this.charts = [];
-    view.innerHTML = '<div class="loading">데이터를 불러오는 중…</div>';
+    view.innerHTML = `<div class="loading">${t.loadingMsg || '데이터를 불러오는 중…'}</div>`;
     const token = this._req = (this._req || 0) + 1;
     try {
-      const data = await this.call(t.action, t.params ? t.params(this.state) : {});
+      const data = t.load ? await t.load(this.state, this) : await this.call(t.action, t.params ? t.params(this.state) : {});
       if (token !== this._req) return;                 // 더 최근 요청이 있으면 무시
       view.innerHTML = ''; t.render(data, view, this);
     } catch (e) { if (token === this._req) view.innerHTML = `<div class="error">${e.message}</div>`; }
@@ -142,14 +163,17 @@ const App = {
   table(rows, cols, opts) {
     opts = opts || {};
     const hasG = cols.some(c => c.g);
-    let h = `<div class="tbl-scroll"><table class="tbl${opts.compact ? ' compact' : ''}"><thead>`;
+    // v19: 8행 이상 표에는 도구 줄(검색·CSV) + 머리글 클릭 정렬. 표 HTML 을 삽입한 뒤 A.tableTools(host) 를 호출하면 활성화(div() 가 자동 호출)
+    const tools = opts.tools !== false && rows.length >= 8;
+    let h = (tools ? `<div class="tbl-tools"><input type="search" class="tbl-q" placeholder="검색 (종목·운용사·유형)" aria-label="표 검색"><span class="tbl-cnt"></span><button type="button" class="tbl-csv" title="현재 표를 CSV 파일로 내려받기">CSV</button></div>` : '')
+      + `<div class="tbl-scroll"><table class="tbl${opts.compact ? ' compact' : ''}${tools ? ' sortable' : ''}"><thead>`;
     if (hasG) {   // 1단: 그룹 헤더(연초 대비 / 전월 대비 …), 2단: 항목
       h += '<tr class="grp-row">';
       for (let i = 0; i < cols.length;) { const g = cols[i].g || ''; let j = i; while (j < cols.length && (cols[j].g || '') === g) j++; h += `<th colspan="${j - i}" class="${g ? 'grp' : 'nog'}">${g}</th>`; i = j; }
       h += '</tr>';
     }
     const gcls = i => { const g = cols[i].g || ''; if (!g) return ''; const first = i === 0 || (cols[i - 1].g || '') !== g, last = i === cols.length - 1 || (cols[i + 1].g || '') !== g; return (first ? ' g-start' : '') + (last ? ' g-end' : '') + ' g-in'; };
-    h += '<tr>' + cols.map((c, i) => `<th class="${c.l ? 'l' : ''}${gcls(i)}">${c.h}</th>`).join('') + '</tr></thead><tbody>';
+    h += '<tr>' + cols.map((c, i) => `<th class="${c.l ? 'l' : ''}${gcls(i)}"${tools ? ' data-sort="' + i + '" title="클릭하여 정렬"' : ''}>${c.h}</th>`).join('') + '</tr></thead><tbody>';
     rows.forEach(r => { h += `<tr ${opts.attr ? opts.attr(r) : ''}>` + cols.map((c, i) => { const v = c.f ? c.f(r) : r[c.k]; return `<td class="${c.l ? 'l' : ''} ${c.cls ? c.cls(r) : ''}${gcls(i)}">${v === undefined || v === null ? '-' : v}</td>`; }).join('') + '</tr>'; });
     if (opts.total) h += '<tr class="total">' + cols.map((c, i) => { const key = c.g && opts.total[c.g + '|' + c.h] !== undefined ? c.g + '|' + c.h : c.h; return `<td class="${c.l ? 'l' : ''}${gcls(i)}">${opts.total[key] !== undefined ? opts.total[key] : ''}</td>`; }).join('') + '</tr>';
     return h + '</tbody></table></div>';
@@ -195,7 +219,19 @@ const App = {
     }, extra || {});
   },
   canvas(parent, cls) { const w = document.createElement('div'); w.className = 'chart-wrap ' + (cls || ''); const c = document.createElement('canvas'); w.appendChild(c); parent.appendChild(w); return c; },
-  chart(canvas, cfg) { const ch = new Chart(canvas, cfg); this.charts.push(ch); return ch; },
+  chart(canvas, cfg) {
+    if (this.state.focus) {   // v19: 강조 모드 — 데이터셋 색이 운용사 고유색이면 한투 외 흐리게 (유형색·검정 단일 막대는 그대로)
+      try {
+        const mc = {}; Object.keys(this.meta.colors).forEach(k => mc[String(this.meta.colors[k]).toLowerCase()] = k);
+        const dim = (c, label) => { const k = mc[String(c).toLowerCase()]; if (k) return this.focusColor(c, k); if (label && this.meta.colors[label]) return this.focusColor(c, label); return c; };
+        (cfg.data.datasets || []).forEach(d => {
+          if (Array.isArray(d.backgroundColor)) d.backgroundColor = d.backgroundColor.map(c => dim(c));
+          else if (typeof d.backgroundColor === 'string') { const k = mc[d.backgroundColor.toLowerCase()] || (this.meta.colors[d.label] ? d.label : null); if (k) { d.backgroundColor = this.focusColor(d.backgroundColor, k); if (typeof d.borderColor === 'string' && d.borderColor !== '#fff') d.borderColor = this.focusColor(d.borderColor, k); } else if (d.fill && this.meta.colors[d.label]) d.backgroundColor = this.focusColor(d.backgroundColor, d.label); }
+        });
+      } catch (e) {}
+    }
+    const ch = new Chart(canvas, cfg); this.charts.push(ch); return ch;
+  },
 
   /* 값 레이블 플러그인: options.plugins.valueLabels = {fmt(v, ctx), mode:'end'|'inside'|'total', color, only(ctx)} */
   valueLabels: {
@@ -425,7 +461,7 @@ const App = {
         el.style.transform = `translateY(${(r.rank - 1) * H}px)`; el.style.opacity = '1';
         el.querySelector('.race-rank').textContent = r.rank;
         el.querySelector('.race-fill').style.width = (r.nav / fmax * 100) + '%';
-        el.querySelector('.race-fill').style.background = r.bond ? App.BOND_GRAY : App.color(r.top);   // 채권/금리형은 회색
+        el.querySelector('.race-fill').style.background = App.focusColor(r.bond ? App.BOND_GRAY : App.color(r.top), r.top);   // 채권/금리형은 회색
         el.querySelector('.race-name').textContent = r.name; const nm = el.querySelector('.race-name'); nm.style.color = r.bond ? '#3a3a44' : ''; nm.style.textShadow = r.bond ? 'none' : '';
         el.querySelector('.race-val').textContent = App.eok(r.nav) + '조';
       });
@@ -446,7 +482,31 @@ const App = {
     parent.appendChild(s); return s;
   },
   sub(parent, title) { const d = document.createElement('div'); d.className = 'h3'; d.textContent = title; parent.appendChild(d); return d; },
-  div(parent, cls, html) { const d = document.createElement('div'); if (cls) d.className = cls; if (html) d.innerHTML = html; parent.appendChild(d); return d; },
+  div(parent, cls, html) { const d = document.createElement('div'); if (cls) d.className = cls; if (html) { d.innerHTML = html; if (d.querySelector('.tbl-tools')) this.tableTools(d); } parent.appendChild(d); return d; },
+  /** v19: 표 도구 — 머리글 클릭 정렬(숫자·문자 자동 판별, 합계 행은 항상 맨 아래), 검색(행 텍스트 부분 일치), CSV 내려받기(현재 보이는 행) */
+  tableTools(host) {
+    const tb = host.querySelector('table.tbl'), body = tb && tb.tBodies[0]; if (!tb || !body) return;
+    const q = host.querySelector('.tbl-q'), cnt = host.querySelector('.tbl-cnt'), csv = host.querySelector('.tbl-csv');
+    const dataRows = () => [...body.rows].filter(r => !r.classList.contains('total'));
+    const num = t => { const x = String(t).replace(/[,%조원배\s]/g, '').replace(/p$/, ''); return x !== '' && !isNaN(x) ? +x : null; };
+    const state = { col: -1, dir: 1 };
+    tb.querySelectorAll('th[data-sort]').forEach(th => th.onclick = () => {
+      const i = +th.dataset.sort; state.dir = state.col === i ? -state.dir : (th.classList.contains('l') ? 1 : -1); state.col = i;
+      tb.querySelectorAll('th[data-sort]').forEach(x => x.classList.remove('asc', 'desc')); th.classList.add(state.dir > 0 ? 'asc' : 'desc');
+      const rows = dataRows(), total = body.querySelector('tr.total');
+      rows.sort((a, b) => { const ta = a.cells[i] ? a.cells[i].textContent.trim() : '', tbb = b.cells[i] ? b.cells[i].textContent.trim() : ''; const na = num(ta), nb = num(tbb); const r = na !== null && nb !== null ? na - nb : ta.localeCompare(tbb, 'ko'); return r * state.dir; });
+      rows.forEach(r => body.appendChild(r)); if (total) body.appendChild(total);
+    });
+    if (q) q.oninput = () => { const s = q.value.trim().toLowerCase(); let n = 0; dataRows().forEach(r => { const hit = !s || r.textContent.toLowerCase().indexOf(s) >= 0; r.classList.toggle('q-hide', !hit); if (hit) n++; }); cnt.textContent = s ? `${n}행` : ''; };
+    if (csv) csv.onclick = () => {
+      const head = [...tb.tHead.rows[tb.tHead.rows.length - 1].cells].map(c => c.textContent.trim());
+      const lines = [head].concat([...body.rows].filter(r => !r.classList.contains('q-hide') && !r.classList.contains('fold') && !r.hidden).map(r => [...r.cells].map(c => c.textContent.trim())));
+      const text = '\ufeff' + lines.map(l => l.map(v => /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v).join(',')).join('\r\n');
+      const name = ((this.tab() || {}).label || 'table') + '_' + (this.state.date || '') + '.csv';
+      try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+      catch (e) { window.open('data:text/csv;charset=utf-8,' + encodeURIComponent(text)); }
+    };
+  },
   tiles(parent, items) { const t = this.div(parent, 'grid grid-' + Math.min(items.length, 4)); t.innerHTML = items.map(x => `<div class="tile"><div class="k">${x[0]}</div><div class="v">${x[1]}</div><div class="d">${x[2] || ''}</div></div>`).join(''); return t; }
 };
 window.addEventListener('DOMContentLoaded', () => App.init());

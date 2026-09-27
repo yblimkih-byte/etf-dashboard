@@ -17,6 +17,7 @@ main{max-width:1280px;margin:0 auto;padding:0 32px 64px}
 .display{font-size:34px;line-height:1;letter-spacing:-1px;font-weight:400;margin:4px 0 0}
 .mono{font-family:var(--mono);font-size:12px;letter-spacing:.28px;text-transform:uppercase;color:var(--ink-2)}
 .hdr-meta{text-align:right;line-height:1.6}
+.use-note{font-size:11px;color:var(--ink-2);text-transform:none;letter-spacing:0;margin-top:2px}.use-note a{color:var(--blue)}
 .hdr-meta .ld-note{display:inline-block;max-width:640px;white-space:normal;font-size:12px}.hdr-meta .ld-note.warn{color:#b45309}
 .tabs{display:flex;flex-wrap:wrap;gap:8px;padding:12px 0 4px}
 .tab{border:1px solid var(--black);background:transparent;color:var(--black);border-radius:30px;padding:8px 18px;font:500 14px/1.4 var(--font);cursor:pointer}
@@ -142,4 +143,27 @@ body.narrow-tab .view{max-width:1040px}
 .sticky-sec .section-h{position:sticky;top:var(--hdr-h,0px);z-index:5;background:var(--canvas);padding-top:6px;margin-bottom:0}
 .sticky-chips{position:sticky;top:calc(var(--hdr-h,0px) + var(--sec-h,44px));z-index:5;background:var(--canvas);padding:6px 0 2px;border-bottom:1px solid var(--rule-2);margin-bottom:8px}
 .tm-c{white-space:nowrap}
+/* v19: 표 도구(검색·CSV·정렬), 경영진 요약, ACE 강조 모드, 인쇄 */
+.tbl-tools{display:flex;align-items:center;gap:10px;margin:6px 0 4px}
+.tbl-q{font:13px var(--font);border:1px solid var(--rule);border-radius:4px;padding:6px 10px;min-width:220px;color:var(--ink)}
+.tbl-cnt{font-size:12px;color:var(--ink-2)}
+.tbl-csv{margin-left:auto;border:1px solid var(--rule);background:#fff;color:var(--ink);border-radius:4px;padding:5px 12px;font:12px var(--font);cursor:pointer}
+.tbl-csv:hover{border-color:var(--black)}
+.tbl.sortable th[data-sort]{cursor:pointer;user-select:none}
+.tbl.sortable th[data-sort]:hover{color:var(--ink)}
+.tbl.sortable th.asc::after{content:' \25B2';font-size:9px}.tbl.sortable th.desc::after{content:' \25BC';font-size:9px}
+.tbl tr.q-hide{display:none}
+.sum-lines ul{margin:0;padding-left:20px;font-size:15px;line-height:1.75}
+.sum-lines li{margin:2px 0}.sum-lines b{font-weight:600}
+.ctl-focus{justify-content:flex-end}
+.seg-one{display:inline-flex;align-items:center;border:1px solid var(--black);background:transparent;color:var(--black);border-radius:30px;padding:8px 14px;font:500 13px var(--font);cursor:pointer}
+.seg-one.on{background:var(--black);color:#fff}.seg-one .sw{margin-right:6px}
+body.focus-on .tbl tr[data-top]:not([data-top="한투"]) td{opacity:.42}
+body.focus-on .tbl tr[data-top="한투"] td{font-weight:500;background:#f7f4ef}
+body.focus-on .tbl tr[data-top="한투"] td:first-child{box-shadow:inset 3px 0 0 #7A4A1D}
+body.focus-on .tm-cell:not([data-top="한투"]){opacity:.38}
+body.focus-on .tm-cell[data-top="한투"]{outline:2px solid #17171c;outline-offset:-2px;z-index:1}
+body.focus-on .tm-mgr[data-top="한투"]{outline:2px solid #7A4A1D;outline-offset:-1px}
+body.focus-on .race-row .race-name{opacity:.9}
+@media print{.hdr-wrap .tabs,.controls,.tbl-tools,.race-bar,.chips{display:none!important}.hdr-wrap{position:static;box-shadow:none}.section{break-inside:avoid;page-break-inside:avoid}main{padding:0 8px}.tbl td,.tbl th{padding:4px 6px;font-size:11px}.chart-wrap{height:300px!important}}
 </style>

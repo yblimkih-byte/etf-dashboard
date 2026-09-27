@@ -169,3 +169,21 @@ body.narrow-tab.web main{max-width:1040px;margin:0 auto;width:100%}
 /* v18: 상위 20 M/S 막대·소제목 */
 .web .race-ms-l{font-size:12.5px;color:var(--mut)}
 .web .sub-h{font-size:13.5px;font-weight:600;margin:18px 0 8px}
+
+/* v19: 표 도구·요약·강조 토글·로딩 문구·카드 정의 툴팁·인쇄 */
+.web .tbl-tools{margin:0 0 6px}
+.web .tbl-q{height:32px;border:1px solid var(--bd);border-radius:var(--r-sm);box-shadow:var(--sh-xs);padding:0 12px;font:13px var(--font)}
+.web .tbl-q:focus{outline:2px solid #d4d4d8;outline-offset:1px}
+.web .tbl-csv{height:30px;border:1px solid var(--bd);border-radius:var(--r-sm);box-shadow:var(--sh-xs);padding:0 12px;font:500 12.5px var(--font);color:var(--fg)}
+.web .tbl-csv:hover{background:var(--muted-bg)}
+.web .sum-lines ul{font-size:14.5px;line-height:1.8;color:var(--fg);padding-left:18px}
+.web .sum-lines li::marker{color:var(--mut2)}
+.web .seg-one{height:32px;border:1px solid var(--bd);border-radius:var(--r-sm);box-shadow:var(--sh-xs);padding:0 12px 0 10px;font:500 13px var(--font);color:var(--fg);background:#fff}
+.web .seg-one.on{background:var(--fg);color:#fff;border-color:var(--fg)}
+body.web.focus-on .tbl tr[data-top="한투"] td{background:#f5f1ea}
+.web .view>.loading{font-size:13px;color:var(--mut);padding:24px;display:flex;align-items:flex-start}
+.web .view>.loading::before{content:'';width:14px;height:14px;border:2px solid var(--bd);border-top-color:var(--fg);border-radius:50%;margin-right:10px;flex:none;animation:spin .8s linear infinite;margin-top:2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.cd-k .cd-i{display:inline-flex;width:14px;height:14px;border:1px solid var(--bd);border-radius:50%;font-size:9px;line-height:12px;justify-content:center;color:var(--mut);cursor:help;flex:none}
+@media print{.cd{background:#fff;box-shadow:none}.web .view>.section{box-shadow:none;break-inside:avoid}.web main{padding:0}.tbl-tools,.chips,.race-bar{display:none!important}body.web{background:#fff}}
+.web .section.sum-sec{display:none}

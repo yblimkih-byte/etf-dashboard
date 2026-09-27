@@ -95,6 +95,20 @@ function refDates_(date, months) {
   return { pm: prevM.length ? prevM[prevM.length - 1].date : null, py: prevY.length ? prevY[prevY.length - 1].date : null };
 }
 
+/** v19: 비교 기준 선택 — 'py' 전년말(기본) · 'pq' 전분기말 · 'pm' 전월말 · 'ly' 전년동월. refDates_ 결과의 py 를 바꿔 씀(필드명은 호환 유지) */
+const REF_LABEL = { py: '전년말', pq: '전분기말', pm: '전월말', ly: '전년동월' };
+function applyRef_(ref, date, months, mode) {
+  mode = REF_LABEL[mode] ? mode : 'py';
+  const ym = ym_(date), y = +ym.slice(0, 4), m = +ym.slice(5, 7);
+  let base = null;
+  if (mode === 'pm') base = ref.pm;
+  else if (mode === 'pq') { const qs = ym.slice(0, 4) + '-' + ('0' + (Math.floor((m - 1) / 3) * 3 + 1)).slice(-2); const xs = months.filter(x => x.ym < qs); base = xs.length ? xs[xs.length - 1].date : null; }
+  else if (mode === 'ly') { const t = (y - 1) + '-' + ('0' + m).slice(-2); const xs = months.filter(x => x.ym === t); base = xs.length ? xs[0].date : null; }
+  if (mode !== 'py' && base) ref.py = base;
+  ref.mode = base || mode === 'py' ? mode : 'py'; ref.label = REF_LABEL[ref.mode];
+  return ref;
+}
+
 /** 특정일 스냅샷 레코드: 일별 블록 우선, 없으면 해당 월 스냅샷 */
 const SNAP_MEMO_ = {};
 function snapshot_(date) {
@@ -190,26 +204,31 @@ function apiOverview_(p) {
 function apiByMgr_(p) {
   const months = aggMarket_();
   const date = p.date || defaultDate_(months);
-  const ref = refDates_(date, months);
+  const ref = applyRef_(refDates_(date, months), date, months, p.ref);
   const key = r => topOf_(r.top);
-  const cur = sumBy_(snapRows_(date), key), pm = ref.pm ? sumBy_(snapRows_(ref.pm), key) : {}, py = ref.py ? sumBy_(snapRows_(ref.py), key) : {};
+  const S = snapRows_(date), Py = ref.py ? snapRows_(ref.py) : [];
+  const cur = sumBy_(S, key), pm = ref.pm ? sumBy_(snapRows_(ref.pm), key) : {}, py = sumBy_(Py, key);
   const tot = o => Object.keys(o).reduce((s, k) => s + o[k], 0);
   const total = tot(cur), totalPy = tot(py), totalPm = tot(pm);
   const groups = CFG.TOP5.concat(['기타']);
   const rows = groups.map(k => ({ mgr: k, nav: cur[k] || 0, ms: total ? (cur[k] || 0) / total * 100 : 0,
     navPy: py[k] || 0, msPy: totalPy ? (py[k] || 0) / totalPy * 100 : null, navPm: pm[k] || 0, msPm: totalPm ? (pm[k] || 0) / totalPm * 100 : null,
     ytd: chg_(cur[k] || 0, py[k]), mom: chg_(cur[k] || 0, pm[k]) }));
+  // v19: M/S 변동 기여도 분해 — 운용사 M/S 변동(%p) = Σ유형 [유형 NAV/시장 NAV (기준일) − 유형 NAV/시장 NAV (비교 기준)]
+  const kT = r => topOf_(r.top) + '|' + r.f2, cT = sumBy_(S, kT), pT = sumBy_(Py, kT);
+  const types = CFG.TYPE_ORDER.concat(Object.keys(cT).concat(Object.keys(pT)).map(k => k.split('|')[1]).filter((k, i, a) => CFG.TYPE_ORDER.indexOf(k) < 0 && a.indexOf(k) === i));
+  const contrib = groups.map(g => ({ mgr: g, items: types.map(t => { const c = total ? (cT[g + '|' + t] || 0) / total * 100 : 0, b = totalPy ? (pT[g + '|' + t] || 0) / totalPy * 100 : 0; return { type: t, cur: c, py: b, d: totalPy ? c - b : null }; }) }));
   // 월별 M/S 추이 (agg_운용사월별)
   const trend = {};
   aggRows_(CFG.SHEET.AGG_MGR).forEach(r => { const m = ymstr_(r[0]); if (m > ym_(date)) return; const t = trend[m] = trend[m] || {}; const g = topOf_(String(r[2])); t[g] = (t[g] || 0) + toNum_(r[3]); });
-  return { date: date, ref: ref, total: total, totalPy: totalPy, totalPm: totalPm, rows: rows, trend: Object.keys(trend).sort().map(m => Object.assign({ ym: m }, trend[m])) };
+  return { date: date, ref: ref, refLabel: ref.label, total: total, totalPy: totalPy, totalPm: totalPm, rows: rows, contrib: contrib, types: types, trend: Object.keys(trend).sort().map(m => Object.assign({ ym: m }, trend[m])) };
 }
 
 /** 유형별 NAV — 일자별 요약 사용 */
 function apiByType_(p) {
   const months = aggMarket_();
   const date = p.date || defaultDate_(months);
-  const ref = refDates_(date, months);
+  const ref = applyRef_(refDates_(date, months), date, months, p.ref);
   const S = snapRows_(date), Pm = ref.pm ? snapRows_(ref.pm) : [], Py = ref.py ? snapRows_(ref.py) : [];
   const kT = r => r.f2, kD = r => r.dom;
   const cur = sumBy_(S, kT), pm = sumBy_(Pm, kT), py = sumBy_(Py, kT), curN = cntBy_(S, kT);
@@ -226,14 +245,14 @@ function apiByType_(p) {
   const wanted = (prevYE ? [prevYE.ym] : []).concat(months.filter(m => m.ym.slice(0, 4) === y && m.ym <= ym_(date)).map(m => m.ym));
   const trend = {};
   aggRows_(CFG.SHEET.AGG_TYPE).forEach(r => { const m = ymstr_(r[0]); if (wanted.indexOf(m) < 0) return; const t = trend[m] = trend[m] || {}; t[String(r[2])] = (t[String(r[2])] || 0) + toNum_(r[4]); });
-  return { date: date, ref: ref, total: total, totalPy: totalPy, rows: rows, dom: domRows, trend: wanted.filter(m => trend[m]).map(m => Object.assign({ ym: m, isBase: prevYE && m === prevYE.ym }, trend[m])) };
+  return { date: date, ref: ref, refLabel: ref.label, total: total, totalPy: totalPy, rows: rows, dom: domRows, trend: wanted.filter(m => trend[m]).map(m => Object.assign({ ym: m, isBase: prevYE && m === prevYE.ym }, trend[m])) };
 }
 
 /** 유형 > 개별 ETF 트리맵 (v14). 넓이 = 기준일 NAV, 증감 = 전년말(신규상장은 상장 이후) 대비 NAV 증가액 */
 function apiTreemap_(p) {
   const months = aggMarket_();
   const date = p.date || defaultDate_(months);
-  const ref = refDates_(date, months);
+  const ref = applyRef_(refDates_(date, months), date, months, p.ref);
   const ctx = ctx_();
   const cur = snapshot_(date), py = {};
   if (ref.py) snapshot_(ref.py).forEach(r => py[r.code] = r.nav);
@@ -242,7 +261,7 @@ function apiTreemap_(p) {
     const base = isNew ? 0 : (py[r.code] !== undefined ? py[r.code] : null);
     return { code: r.code, name: r.name, mgr: g.short, top: g.top, type: g.f2, nav: r.nav, base: base, chg: base === null ? null : r.nav - base, isNew: isNew, listDd: ld || '' };
   });
-  return { date: date, ref: ref, total: items.reduce((s, i) => s + i.nav, 0), items: items };
+  return { date: date, ref: ref, refLabel: ref.label, total: items.reduce((s, i) => s + i.nav, 0), items: items };
 }
 
 /** 상위 5개사 및 시장 전체의 유형별 비중 (+ 선택 운용사) — 일자별 요약 사용 */
@@ -333,7 +352,8 @@ function apiTurnover_(p) {
     endBlk.forEach(r => { sum[r.code] = (sum[r.code] || 0) + r.ytd - (sm[r.code] || 0); names[r.code] = r; });
   });
   const days = inRange.length;
-  const top = Object.keys(sum).map(c => { const r = names[c], g = groupOf_(r, ctx); return { code: c, name: r.name, mgr: g.short, top: g.top, type: g.f2, sum: sum[c], avg: sum[c] / days }; })
+  // v19: 회전율 = 구간 거래대금 ÷ 구간 말일 NAV (배)
+  const top = Object.keys(sum).map(c => { const r = names[c], g = groupOf_(r, ctx); return { code: c, name: r.name, mgr: g.short, top: g.top, type: g.f2, sum: sum[c], avg: sum[c] / days, nav: r.nav, turn: r.nav ? sum[c] / r.nav : null }; })
     .sort((a, b) => b.sum - a.sum).slice(0, CFG.TOP_N).map((r, i) => Object.assign({ rank: i + 1 }, r));
   const marketSum = Object.keys(sum).reduce((s, c) => s + sum[c], 0);
   return { from: from, to: to, days: days, top: top, marketSum: marketSum, dailyDates: dates };
