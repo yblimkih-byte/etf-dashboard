@@ -121,7 +121,8 @@ const PROP = { KRX_KEY: 'KRX_AUTH_KEY', LAST_DAILY: 'LAST_DAILY_DATE', BACKFILL_
   LOAD_STATUS: 'LOAD_STATUS',     // v17: 최근 적재 확인 결과(JSON) → 화면 상단 표시
   LOADING: 'LOADING_SINCE',       // v17: 적재 실행 중 표시(예열이 겹치지 않도록)
   MONTHLY_MAP: 'MONTHLY_MAP',     // v17: raw_월말 월별 블록 위치 {lr, m:{ym:[일자,시작행,행수]}} → 5만 행 A열 전체 읽기 생략
-  COLS_TRIMMED: 'COLS_TRIMMED' }; // v17: raw 시트 빈 열(I~Z) 정리 완료 표시
+  COLS_TRIMMED: 'COLS_TRIMMED',   // v17: raw 시트 빈 열(I~Z) 정리 완료 표시
+  README_VER: 'README_VER' };     // v18: README 시트 작성 버전(README.VER 와 다르면 한가한 적재 실행에서 다시 작성)
 
 function krxKey_() {
   const k = PropertiesService.getScriptProperties().getProperty(PROP.KRX_KEY);

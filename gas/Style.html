@@ -69,6 +69,12 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeri
 .race-bar{display:flex;align-items:center;gap:16px;margin-bottom:12px}
 .race-bar input[type=range]{flex:1}
 .race-ym{font-size:28px;letter-spacing:-.4px;min-width:110px;font-variant-numeric:tabular-nums}
+/* v18: 상위 N 내 운용사 M/S 한 줄 막대 (슬라이더와 차트 사이) */
+.race-ms{display:flex;align-items:center;gap:12px;margin:0 0 14px}
+.race-ms-l{font-size:12px;color:var(--ink-2);white-space:nowrap;min-width:92px}
+.race-ms-bar{flex:1;display:flex;gap:2px;height:24px;min-width:0}
+.race-ms-seg{flex:0 1 0;min-width:0;border-radius:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:24px;padding:0 6px;font-variant-numeric:tabular-nums;cursor:default}
+.sub-h{font-size:14px;font-weight:600;margin:18px 0 8px}
 .ftr{max-width:1280px;margin:0 auto;padding:24px 32px 40px;border-top:1px solid var(--rule);text-transform:none;letter-spacing:0}
 .tbl tbody tr:hover td{background:#fafaf8}
 /* 그룹 헤더(연초 대비 / 전월 대비 …): 관련 열을 묶어 보이게 */
@@ -134,6 +140,6 @@ body.narrow-tab .view{max-width:1040px}
 .fold-btn{display:inline-block;width:14px;margin-right:4px;font-size:11px;color:var(--ink-2)}
 .fold-item td{color:var(--ink-2)}
 .sticky-sec .section-h{position:sticky;top:var(--hdr-h,0px);z-index:5;background:var(--canvas);padding-top:6px;margin-bottom:0}
-.sticky-chips{position:sticky;top:calc(var(--hdr-h,0px) + 44px);z-index:5;background:var(--canvas);padding:6px 0 2px;border-bottom:1px solid var(--rule-2);margin-bottom:8px}
+.sticky-chips{position:sticky;top:calc(var(--hdr-h,0px) + var(--sec-h,44px));z-index:5;background:var(--canvas);padding:6px 0 2px;border-bottom:1px solid var(--rule-2);margin-bottom:8px}
 .tm-c{white-space:nowrap}
 </style>

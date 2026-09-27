@@ -416,11 +416,16 @@ function kospiDays_(ds, todayS) {
   } catch (e) { return null; }
 }
 
-/** v17: 한가한 실행(적재할 자료 없음)에서 1회성 시트 정리 */
+/** 한가한 실행(적재할 자료 없음)에서 1회성 시트 정리 — v17 빈 열 정리, v18 README 시트 작성(버전이 바뀌면 다시) */
 function maintainSheets_(t0) {
-  if (PropertiesService.getScriptProperties().getProperty(PROP.COLS_TRIMMED)) return;
+  const props = PropertiesService.getScriptProperties();
   if (Date.now() - t0 > 60 * 1000) return;   // 시간 여유가 있을 때만
-  try { trimRawColumns(); } catch (e) { PropertiesService.getScriptProperties().setProperty(PROP.COLS_TRIMMED, 'fail ' + fmt_(new Date())); log_('시트 빈 열 정리 실패(메뉴에서 다시 실행 가능): ' + e.message, 'WARN'); }
+  if (!props.getProperty(PROP.COLS_TRIMMED)) {
+    try { trimRawColumns(); } catch (e) { props.setProperty(PROP.COLS_TRIMMED, 'fail ' + fmt_(new Date())); log_('시트 빈 열 정리 실패(메뉴에서 다시 실행 가능): ' + e.message, 'WARN'); }
+  }
+  if (props.getProperty(PROP.README_VER) !== README.VER && Date.now() - t0 < 120 * 1000) {
+    try { writeReadme(); } catch (e) { props.setProperty(PROP.README_VER, README.VER); log_('README 시트 작성 실패(메뉴에서 다시 실행 가능): ' + e.message, 'WARN'); }
+  }
 }
 /** raw_일별·raw_월말·agg_일별요약의 쓰지 않는 열(새 시트 기본 26열 중 헤더 뒤 빈 열) 삭제.
  *  스프레드시트 셀 한도(1,000만 셀) 여유 확보 — 2026-09-24 기준 약 778만 셀(raw_일별 19.8만 행×26열) → 정리 후 약 290만.

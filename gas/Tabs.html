@@ -239,6 +239,17 @@ App.registerTab({
 });
 
 /* 공용: 운용사 선택 칩 — 차트 막대·표 행 강조 */
+/** v18: 섹션 제목(.section-h)과 바로 아래 칩(.sticky-chips)을 스크롤 시 상단 고정. 칩 위치 = 머리글 높이 + 제목 높이(실측) */
+function stickyHead(sec) {
+  sec.classList.add('sticky-sec');
+  const set = () => {
+    const hdr = document.querySelector('.top, .hdr-wrap'); if (hdr) document.documentElement.style.setProperty('--hdr-h', hdr.offsetHeight + 'px');
+    const h = sec.querySelector('.section-h'); if (h && h.offsetHeight) sec.style.setProperty('--sec-h', h.offsetHeight + 'px');
+  };
+  set(); requestAnimationFrame(set);
+}
+/** v18: 신규상장 목록 NAV(조원) — 소수 둘째 자리(셋째 자리에서 반올림), 둘째 자리까지 0.00 이면 셋째 자리까지 */
+function navSmall(A, v) { const t = A.eok(v, 2); return /^-?0\.00$/.test(t) && v ? A.eok(v, 3) : t; }
 function mgrChips(A, parent, opts) {
   const keys = GROUPS();
   return A.chips(parent, keys, { hint: opts.hint || '운용사 선택 시 해당 운용사 상품 강조', reset: !!opts.reset, onSelect: sel => {
@@ -261,24 +272,26 @@ App.registerTab({
     mgrChips(A, chipBox1, { chart: chart, rowsTop: t20.map(r => r.top) });
 
     // ② bar chart race (상위 20)
-    const s2 = A.section(root, 'NAV 상위 20 변천 (2021년 이후 월별)', '▶ 재생 또는 슬라이더 이동');
+    const s2 = A.section(root, 'NAV 상위 20 변천 (2021년 이후 월별)');
     const holder = A.div(s2, 'empty', '변천 자료를 불러오는 중…');
     A.call('race', { n: 20 }).then(r => {
       if (!holder.isConnected) return;
       holder.remove();
       const frames = r.frames; if (!frames.length) return;
       let i = frames.findIndex(f => f.ym === d.date.slice(0, 7)); if (i < 0) i = frames.length - 1;
-      A.race(s2, frames, { n: 20, rowH: 28, step: 900, start: i });
+      A.race(s2, frames, { n: 20, rowH: 28, step: 900, start: i, ms: true });   // ms: 슬라이더 아래 상위 20 내 운용사 M/S 막대
     }).catch(e => { holder.className = 'error'; holder.textContent = e.message; });
 
-    // ③ 상위 50 요약 + ④ 목록 (별도 운용사 선택 칩)
-    const s3 = A.section(root, `NAV 상위 ${N} ETF — 운용사별 요약`, `상위 ${N} 합계 = 100%`);
-    const chipBox2 = A.div(s3);
+    // ③ 상위 50 요약 + ④ 목록 (v18: 한 섹션으로 묶고 제목·운용사 칩을 스크롤 고정)
+    const s3 = A.section(root, `NAV 상위 ${N} ETF`);
+    const chipBox2 = A.div(s3, 'sticky-chips');
+    stickyHead(s3);
+    A.div(s3, 'sub-h', '운용사별 요약');
     const host3 = A.div(s3, '', A.table(d.byMgr, [
       { h: '운용사', f: r => A.sw(r.top) + r.top, l: 1 }, { h: `상위${N} 내 종목수`, k: 'n' }, { h: 'NAV 합계(조원)', f: r => A.eok(r.nav) }, { h: `상위${N} 내 비중`, f: r => A.share(r.share) }, { h: '시장 전체 대비', f: r => A.share(r.nav / d.total * 100) }
     ], { attr: r => `data-top="${r.top}"`, total: { '운용사': '합계', [`상위${N} 내 종목수`]: N, 'NAV 합계(조원)': A.eok(d.topTotal), [`상위${N} 내 비중`]: '100.0%', '시장 전체 대비': A.share(d.topTotal / d.total * 100) } }));
-    const s4 = A.section(root, `상위 ${N} ETF 목록`);
-    const host4 = A.div(s4, '', A.table(d.top, [
+    A.div(s3, 'sub-h', `종목 목록 (${N}종목)`);
+    const host4 = A.div(s3, '', A.table(d.top, [
       { h: '순위', k: 'rank' }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 }, { h: '유형', k: 'type', l: 1 },
       { h: 'NAV(조원)', f: r => A.eok(r.nav) }, { h: '시장 비중', f: r => A.share(r.share) }
     ], { attr: r => `data-top="${r.top}"` }));
@@ -304,10 +317,9 @@ App.registerTab({
       { attr: r => r.etc ? 'class="fold-head"' : r.hidden ? 'class="fold-item" hidden' : '', total: { '운용사': '합계', '종목수': d.items.length, 'NAV 합계(조원)': A.eok(d.total), '비중': '100.0%' } }));
     const fh = tb.querySelector('.fold-head'); if (fh) fh.onclick = () => { const open = fh.classList.toggle('open'); fh.querySelector('.fold-btn').textContent = open ? '▾' : '▸'; fh.querySelector('.fold-btn').setAttribute('aria-expanded', open); tb.querySelectorAll('.fold-item').forEach(tr => { tr.hidden = !open; }); };
     const s2 = A.section(root, '신규상장 종목 목록', 'NAV 순');
-    s2.classList.add('sticky-sec');   // 제목·운용사 선택 칩을 스크롤 시 상단에 고정
-    const hdr = document.querySelector('.top, .hdr-wrap'); if (hdr) document.documentElement.style.setProperty('--hdr-h', hdr.offsetHeight + 'px');
     const chipBox = A.div(s2, 'sticky-chips');
-    const host = A.div(s2, '', A.table(d.items, [{ h: '상장일', k: 'listDd', l: 1 }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: '신규상장용 구분', k: 'neu', l: 1 }, { h: 'NAV(조원)', f: r => r.listed ? A.eok(r.nav) : '-' }], { attr: r => `data-top="${r.top}"` }));
+    stickyHead(s2);   // 제목·운용사 선택 칩을 스크롤 시 상단에 고정
+    const host = A.div(s2, '', A.table(d.items, [{ h: '상장일', k: 'listDd', l: 1 }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: '신규상장용 구분', k: 'neu', l: 1 }, { h: 'NAV(조원)', f: r => r.listed ? navSmall(A, r.nav) : '-' }], { attr: r => `data-top="${r.top}"` }));
     mgrChips(A, chipBox, { filterHosts: [host], reset: true, hint: '운용사 선택 시 해당 운용사 종목만 표시' });
     if (d.noDate) A.div(s2, 'note', `상장일 미확정 종목 ${d.noDate}개는 집계에서 제외됨 → 시트 메뉴 [ETF Dashboard] › 상장일 보정`);
   }

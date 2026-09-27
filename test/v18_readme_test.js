@@ -1,0 +1,25 @@
+/* node v18_readme_test.js — 모의 시트(store.json)로 writeReadme 실행 → README 내용·서식 호출 점검 */
+const fs = require('fs'), path = require('path'), vm = require('vm');
+const ctx = { console: { log: () => {} }, Date, Math, JSON, Object, Array, String, Number, RegExp, Error, isNaN, setTimeout, globalThis: null };
+ctx.globalThis = ctx; vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname, 'shim.js'), 'utf8'), ctx);
+for (const f of fs.readdirSync(path.join(__dirname, '..', 'gas')).filter(f => f.endsWith('.gs'))) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'gas', f), 'utf8'), ctx, { filename: f });
+const st = JSON.parse(fs.readFileSync(path.join(__dirname, 'store.json'), 'utf8'));
+const calls = [];
+vm.runInContext(`(function(){ const ss = SpreadsheetApp.getActiveSpreadsheet(); const s = ${JSON.stringify(st.store)};
+  Object.keys(s).forEach(n => { const sh = ss.insertSheet(n); sh.rows = s[n]; });
+  ss.insertSheet('사용자메모');
+  const sh0 = ss.getSheetByName('_log'); const SP = Object.getPrototypeOf(sh0), RP = Object.getPrototypeOf(sh0.getRange(1,1));
+  ['setFontColor','setBackground','setVerticalAlignment','setWrap','setFontSize','setFontWeight','setBorder','mergeAcross','setHorizontalAlignment','breakApart'].forEach(m => { RP[m] = function(){ (globalThis.__calls = globalThis.__calls || []).push(m); return this; }; });
+  RP.clear = function(){ return this; };
+  SP.clear = function(){ this.rows = []; return this; }; SP.getMaxRows = function(){ return this._maxr || 1000; }; SP.insertRowsAfter = function(a, n){ this._maxr = this.getMaxRows() + n; };
+  SP.insertColumnsAfter = function(){}; SP.setColumnWidth = function(){}; SP.deleteRows = function(a, n){ this._maxr = this.getMaxRows() - n; }; SP.setHiddenGridlines = function(){};
+  ss.setActiveSheet = sh => { ss._active = sh; }; ss.moveActiveSheet = i => { ss._moved = [ss._active.getName(), i]; };
+  const ins = ss.insertSheet; ss.insertSheet = (n, i) => { const x = ins(n); x._index = i; return x; };
+  SpreadsheetApp.BorderStyle = { SOLID: 'solid' };
+})()`, ctx);
+vm.runInContext('writeReadme()', ctx);
+const R = ctx.MOCK_STORE['README'].rows;
+R.forEach((r, i) => console.log(String(i + 1).padStart(2), r.map(v => String(v).slice(0, 38)).join(' | ')));
+console.log('moved:', JSON.stringify(vm.runInContext('SpreadsheetApp.getActiveSpreadsheet()._moved', ctx)), 'README_VER:', vm.runInContext("PropertiesService.getScriptProperties().getProperty('README_VER')", ctx));
+const c = vm.runInContext('globalThis.__calls', ctx); const cnt = {}; c.forEach(m => cnt[m] = (cnt[m] || 0) + 1); console.log('format calls:', JSON.stringify(cnt));

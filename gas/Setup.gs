@@ -19,6 +19,7 @@ function onOpen() {
     .addItem('상장일 보정 (최초 등장일)', 'repairListDates')
     .addItem('일별 요약 재작성', 'rebuildDailySummary')
     .addItem('시트 빈 열 정리 (셀 한도 여유 확보)', 'trimRawColumns')
+    .addItem('README 시트 갱신 (시트·탭 안내)', 'writeReadme')
     .addToUi();
 }
 
@@ -72,4 +73,105 @@ function testKrx() {
 /** UI 가 있으면 알림창, 없으면(편집기·트리거 실행) 로그 */
 function notify_(msg) {
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) { log_(msg); }
+}
+
+// ─────────────────────────── README 시트 (v18) ───────────────────────────
+
+const README = {
+  SHEET: 'README', VER: 'v18',
+  /* [시트명, 구분, 내용·주요 열, 갱신 방식, 사용하는 대시보드 탭] */
+  SHEETS: [
+    ['README', '안내', '이 시트. 시트별 역할과 대시보드 탭별 원천 설명', '메뉴 [ETF Dashboard] › README 시트 갱신 (코드 변경 시 자동 1회)', '-'],
+    ['범례_유형', '사용자 작성 (자동 보강)', '종목코드 · ETF명 · 설정일 · 유형1~4 · 유형최종1 · 유형최종2 · 국내해외 · 신규상장용 · 확인필요', '사용자 관리. 신규 종목은 적재 시 규칙 기반 유형으로 자동 추가되고 확인필요 표시됨', '유형별 NAV · 상위 5개사·시장 유형 비중 · 상위 ETF(유형, 변천 막대의 채권/금리 회색) · 신규상장 ETF(유형·신규상장용 구분·채권/금리 제외·설정일) — 모든 집계의 유형 분류 기준'],
+    ['범례_운용사', '사용자 작성 (자동 보강)', '운용사명 · 브랜드 · 약식_한글 · 약식_정식 · 약식_상위 · 운용사명_상위', '사용자 관리. 처음 보는 운용사는 적재 시 자동 추가됨', '전 탭 — 운용사 약식명, 상위 5개사(삼성·미래·KB·한투·신한)/기타 구분과 고유색, 개별 운용사 선택 목록'],
+    ['ETF마스터', '자동 적재', '종목코드 · 종목명 · 운용사명 · 브랜드 · 상장일 · 기초시장 · 기초자산 · 출처', '일별 적재 시 신규 종목 추가. 메뉴 운용사 보정·상장일 보정으로 보완', '전 탭(운용사 매칭) · 신규상장 ETF(상장일) · 유형별 NAV 히트맵(상장일 이후 증감)'],
+    ['raw_일별', '자동 적재', '2026-01-02 이후 매 영업일 전 종목: 기준일자 · 종목코드 · 종목명 · 자산운용사 · 순자산총액 · 거래대금 · 해당연도거래대금계 · 해당월거래대금계', '매일 08:30/19:00 loadDaily (KRX Open API ETF 일별매매정보, 전 영업일분)', '거래대금(누적 차분) · 일별 기준일 선택 시 상위 ETF · 유형별 NAV 히트맵 · 신규상장 ETF의 NAV / raw_월말·agg_* 의 원천'],
+    ['raw_월말', '자동 적재', '2021-01 이후 월별 마지막 영업일 전 종목 스냅샷(당월은 최근 영업일). 열 구성은 raw_일별과 같음(2025년 이전 거래대금 누적 열은 공란)', '월말 백필(과거) · 일별 적재 시 해당 월 스냅샷 교체', '월말 기준일 선택 시 상위 ETF · 유형별 NAV 히트맵 · 신규상장 ETF의 NAV / 집계(agg_*) 재계산 원천'],
+    ['_index', '시스템', 'raw_일별의 기준일자별 시작행 · 행수', '일별 적재 시 1행 추가', '전 탭 — 선택 가능한 일별 기준일 목록, raw_일별 블록 빠른 조회'],
+    ['지수', '자동 적재', '일자 · KOSPI · S&P500 · NASDAQ100 (Yahoo Finance 일별 종가)', '일별 적재 뒤 최근 구간 갱신 · 메뉴 지수 백필', 'ETF 시장 개관(지수 비교) — agg_시장월별을 거쳐 사용'],
+    ['agg_시장월별', '자동 집계', '월 · 기준일자 · 총NAV · 종목수 · KOSPI · S&P500 · NASDAQ100', '적재 후 집계 재계산(raw_월말 전체)', 'ETF 시장 개관 · 전 탭의 월말 기준일 목록·기본 기준일(전월말)·전월말/전년말 비교 기준일'],
+    ['agg_운용사월별', '자동 집계', '월 · 운용사 · 상위구분 · NAV · 종목수', '적재 후 집계 재계산', '운용사별 NAV(월별 M/S 추이)'],
+    ['agg_유형월별', '자동 집계', '월 · 유형최종1 · 유형최종2 · 국내해외 · NAV · 종목수', '적재 후 집계 재계산', '유형별 NAV(월별 유형 추이)'],
+    ['agg_운용사유형월별', '자동 집계', '월 · 운용사 · 상위구분 · 유형최종2 · NAV', '적재 후 집계 재계산', '현재 대시보드 직접 사용 없음(분석용 보관)'],
+    ['agg_상위ETF월별', '자동 집계', '월 · 순위 · 종목코드 · 종목명 · 운용사 · 상위구분 · NAV (월별 상위 50)', '적재 후 집계 재계산', '상위 ETF(NAV 상위 20 변천 · 상위 20 내 M/S 막대)'],
+    ['agg_월말요약', '자동 집계', '기준일자 · 운용사 · 상위구분 · 유형최종2 · 국내해외 · NAV · 종목수 (월말 스냅샷별)', '적재 후 집계 재계산(전체 재작성)', '월말 기준일 선택 시 운용사별 NAV · 유형별 NAV · 상위 5개사·시장 유형 비중'],
+    ['agg_일별요약', '자동 적재', 'agg_월말요약과 같은 구성의 일별 요약(적재일마다 추가)', '일별 적재 시 추가 · 메뉴 일별 요약 재작성', '일별 기준일 선택 시 운용사별 NAV · 유형별 NAV · 상위 5개사·시장 유형 비중'],
+    ['투자자별순매수', '선택 기능(미사용)', '기준일자 · 운용사 · 투자자 · 순매수대금', 'Config.gs KRX_WEB.INVESTOR_ENABLED=true 일 때만 적재(현재 false)', '현재 사용 없음'],
+    ['_log', '시스템', '시각 · 수준(INFO/WARN/ERROR) · 내용 — 적재·보정·집계 실행 기록', '실행 시 자동 추가(3,000행 초과 시 오래된 1,000행 삭제)', '-(점검용)']
+  ],
+  /* [탭, 화면 구성, API(action), 원천 시트] */
+  TABS: [
+    ['공통(머리글·기준일 선택)', '최종 적재일 · 적재 상태(미게시 사유 등) · 기준일/연도/구간 선택', 'meta', 'agg_시장월별 · _index · 범례_운용사 · 스크립트 속성(최종 적재일·적재 상태)'],
+    ['ETF 시장 개관', '연도별 총 NAV · 당해 월별 NAV · 지수 대비 연초 이후 증감 · 요약 카드', 'overview', 'agg_시장월별(지수는 지수 시트에서 집계 시 반영)'],
+    ['운용사별 NAV', '상위 5개사+기타 NAV·M/S·전월말/전년말 대비 증감 · 월별 M/S 추이', 'byMgr', 'agg_일별요약 또는 agg_월말요약(기준일·전월말·전년말) · agg_운용사월별 · agg_시장월별'],
+    ['유형별 NAV', '유형별·국내해외 NAV와 비중 · 월별 유형 추이 · 유형별 ETF 히트맵(운용사 중단)', 'byType · treemap', 'byType: agg_일별요약/agg_월말요약 · agg_유형월별 / treemap: raw_일별 또는 raw_월말(기준일·전년말) · ETF마스터 · 범례_유형 · 범례_운용사'],
+    ['상위 5개사·시장 유형 비중', '시장 전체 · 상위 5개사 · 선택 운용사의 유형별 비중', 'shares', 'agg_일별요약 또는 agg_월말요약 · 범례_운용사(선택 목록)'],
+    ['상위 ETF', '상위 20 막대 · NAV 상위 20 변천(월별)과 상위 20 내 M/S 막대 · 상위 50 운용사별 요약·종목 목록', 'topEtf · race', 'topEtf: raw_일별 또는 raw_월말(기준일) · 범례_유형 · 범례_운용사 · ETF마스터 / race: agg_상위ETF월별 · 범례_유형(채권/금리 구분)'],
+    ['신규상장 ETF', '연도별 신규상장 종목수·NAV · 운용사별 합계 · 종목 목록', 'newListings', 'ETF마스터(상장일) · 범례_유형(설정일·신규상장용 구분·유형) · raw_일별 또는 raw_월말(기준일 NAV) · 범례_운용사'],
+    ['거래대금', '구간(from~to) 거래대금 상위 50 · 운용사별 합계', 'turnover', 'raw_일별(해당연도거래대금계 차분) · _index · 범례_유형 · 범례_운용사']
+  ],
+  FLOW: [
+    '적재: KRX Open API(ETF 일별매매정보) → raw_일별 · _index · agg_일별요약 → raw_월말(해당 월 스냅샷) → 집계 재계산(agg_시장월별·운용사월별·유형월별·운용사유형월별·상위ETF월별·월말요약) → 지수 갱신',
+    '일정: 매일 08:30 · 19:00 자동 실행. D일분은 KRX가 다음 영업일 오전에 게시하므로 보통 다음 날 08:30 실행에서 적재됨. 휴장일(Config.gs KRX_HOLIDAYS)은 건너뜀',
+    '화면: 두 화면(Apps Script 웹앱, Vercel)은 같은 API를 사용하며, 응답은 적재·집계 때마다 갱신되는 캐시(최대 6시간)를 거침',
+    '수동 작업: 시트 메뉴 [ETF Dashboard] — 오늘분 수동 적재 · 집계 재계산 · 운용사/상장일 보정 · NAV 0 일자 보정 · 일별 요약 재작성 · 시트 빈 열 정리 · README 시트 갱신',
+    '주의: 범례_유형·범례_운용사는 사용자 작성 시트이므로 열 순서를 바꾸지 말 것. raw_* · agg_* · _index 는 자동 생성 시트이므로 직접 수정하지 말 것'
+  ]
+};
+
+/** README 시트 작성(맨 앞). 흰 바탕·검은 글자·선만 사용. 각 시트의 현재 행 수를 함께 기록하고, 목록에 없는 시트는 '설명 없음'으로 표시 */
+function writeReadme() {
+  const ss = ss_(), R = README, W = 7;
+  let sh = ss.getSheetByName(R.SHEET);
+  if (!sh) sh = ss.insertSheet(R.SHEET, 0);
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).breakApart();
+  sh.clear(); sh.setFrozenRows(0);
+  const known = {};
+  R.SHEETS.forEach(x => known[x[0]] = x);
+  const names = R.SHEETS.map(x => x[0]).concat(ss.getSheets().map(s => s.getName()).filter(n => !known[n]));
+  const sheetRows = names.map((n, i) => {
+    const s = ss.getSheetByName(n), k = known[n] || [n, '기타', '설명 없음(사용자 추가 시트로 추정)', '-', '-'];
+    return [i + 1, n, k[1], k[2], k[3], k[4], s ? (n === R.SHEET ? '-' : Math.max(0, s.getLastRow() - 1)) : '(없음)'];
+  });
+  const tabRows = R.TABS.map((x, i) => [i + 1, x[0], x[2], x[1], x[3], '', '']);
+  const flowRows = R.FLOW.map((x, i) => [i + 1, x, '', '', '', '', '']);
+  const pad = a => a.concat(Array(W - a.length).fill(''));
+  const now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
+  const grid = [
+    pad(['ETF Dashboard — 시트 안내 (README)']),
+    pad(['작성 ' + now + ' · 최종 적재 ' + (PropertiesService.getScriptProperties().getProperty(PROP.LAST_DAILY) || '-') + ' · 행 수는 작성 시점 기준(머리글 제외)']),
+    pad([]),
+    pad(['1. 시트별 역할'])];
+  const t1 = grid.length + 1;
+  grid.push(['순번', '시트명', '구분', '내용 · 주요 열', '갱신 방식', '사용하는 대시보드 탭', '행 수']);
+  sheetRows.forEach(x => grid.push(x));
+  grid.push(pad([]), pad(['2. 대시보드 탭별 원천']));
+  const t2 = grid.length + 1;
+  grid.push(['순번', '탭', 'API(action)', '화면 구성', '원천 시트', '', '']);
+  tabRows.forEach(x => grid.push(x));
+  grid.push(pad([]), pad(['3. 데이터 흐름 · 운영']));
+  const t3 = grid.length + 1;
+  flowRows.forEach(x => grid.push(x));
+  const n = grid.length;
+  if (sh.getMaxRows() < n) sh.insertRowsAfter(sh.getMaxRows(), n - sh.getMaxRows());
+  if (sh.getMaxColumns() < W) sh.insertColumnsAfter(sh.getMaxColumns(), W - sh.getMaxColumns());
+  sh.getRange(1, 1, n, W).setValues(grid);
+  // 서식: 흰 바탕·검은 글자·선만 (음영·색 없음)
+  sh.getRange(1, 1, n, W).setFontColor('#000000').setBackground(null).setVerticalAlignment('top').setWrap(true).setFontSize(10);
+  sh.getRange(1, 1).setFontSize(14).setFontWeight('bold');
+  [t1 - 1, t2 - 1, t3 - 1].forEach(x => sh.getRange(x, 1).setFontSize(11).setFontWeight('bold'));
+  const line = (row, rowsN) => sh.getRange(row, 1, rowsN, W).setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange(t2, 5, tabRows.length + 1, 3).mergeAcross();
+  sh.getRange(t3, 2, flowRows.length, 6).mergeAcross();
+  line(t1, sheetRows.length + 1); line(t2, tabRows.length + 1); line(t3, flowRows.length);
+  [t1, t2].forEach(x => sh.getRange(x, 1, 1, W).setFontWeight('bold').setHorizontalAlignment('center'));
+  [[t1, sheetRows.length], [t2, tabRows.length], [t3, flowRows.length]].forEach(x => sh.getRange(x[0], 1, x[1] + 1, 1).setHorizontalAlignment('center'));
+  sh.getRange(t1 + 1, 7, sheetRows.length, 1).setHorizontalAlignment('right').setNumberFormat('#,##0');
+  [48, 150, 130, 360, 260, 340, 70].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  if (sh.getMaxColumns() > W) sh.deleteColumns(W + 1, sh.getMaxColumns() - W);
+  if (sh.getMaxRows() > n + 2) sh.deleteRows(n + 3, sh.getMaxRows() - n - 2);
+  sh.setHiddenGridlines(true);
+  ss.setActiveSheet(sh); ss.moveActiveSheet(1);
+  PropertiesService.getScriptProperties().setProperty(PROP.README_VER, R.VER);
+  log_('README 시트 갱신 (' + sheetRows.length + '개 시트, ' + tabRows.length + '개 탭)');
 }

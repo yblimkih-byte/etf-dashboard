@@ -382,14 +382,34 @@ const App = {
     opts = opts || {};
     const N = opts.n || 10, H = opts.rowH || 30, dur = opts.step || 700;
     const box = document.createElement('div'); box.className = 'race';
-    box.innerHTML = `<div class="race-bar"><button class="btn race-play">▶ 재생</button><div class="race-ym"></div><input type="range" class="race-range" min="0" max="${frames.length - 1}" value="0"></div><div class="race-stage" style="height:${N * H + 8}px"></div>`;
+    box.innerHTML = `<div class="race-bar"><button class="btn race-play">▶ 재생</button><div class="race-ym"></div><input type="range" class="race-range" min="0" max="${frames.length - 1}" value="0"></div>`
+      + (opts.ms ? `<div class="race-ms"><div class="race-ms-l">상위 ${N} 내 M/S</div><div class="race-ms-bar"></div></div>` : '')
+      + `<div class="race-stage" style="height:${N * H + 8}px"></div>`;
     parent.appendChild(box);
     const stage = box.querySelector('.race-stage'), ym = box.querySelector('.race-ym'), range = box.querySelector('.race-range'), btn = box.querySelector('.race-play');
+    // v18: 상위 N 내 운용사 M/S 한 줄 막대 — 월 이동·재생과 함께 변함 (순서 고정: 상위 5개사 → 기타, 색 = 운용사)
+    const msBar = box.querySelector('.race-ms-bar'), msKeys = (this.meta.top5 || []).concat(['기타']), msSeg = {};
+    const inkOn = hex => { const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; return (L + 0.05) / 0.05 > 1.05 / (L + 0.05) ? '#17171c' : '#fff'; };
+    const drawMs = (rows, instant) => {
+      if (!msBar) return;
+      const tot = rows.reduce((a, r) => a + r.nav, 0) || 1;
+      msKeys.forEach(k => {
+        const xs = rows.filter(r => (msKeys.indexOf(r.top) >= 0 && r.top !== '기타' ? r.top : '기타') === k), nav = xs.reduce((a, r) => a + r.nav, 0), pct = nav / tot * 100;
+        let el = msSeg[k];
+        if (!el) { el = document.createElement('div'); el.className = 'race-ms-seg'; const col = this.color(k); el.style.background = col; el.style.color = inkOn(col); msBar.appendChild(el); msSeg[k] = el; }
+        el.style.transition = instant ? 'none' : `flex-grow ${dur * 0.85}ms cubic-bezier(.4,0,.2,1)`;
+        el.style.display = nav > 0 ? '' : 'none';
+        el.style.flexGrow = String(pct);
+        el.textContent = pct >= 7 ? `${k} ${pct.toFixed(1)}%` : pct >= 3 ? pct.toFixed(0) + '%' : '';
+        el.title = `${k} · 상위 ${N} 내 ${xs.length}종목 · NAV ${App.eok(nav)}조원 · M/S ${pct.toFixed(1)}%`;
+      });
+    };
     const nodes = {};
     const maxNav = Math.max.apply(null, frames.map(f => Math.max.apply(null, f.rows.map(r => r.nav))));
     let timer = null, cur = 0;
     const draw = (k, instant) => {
       const f = frames[k]; ym.textContent = f.ym; range.value = k;
+      drawMs(f.rows.slice(0, N), instant);
       const fmax = Math.max.apply(null, f.rows.map(r => r.nav)) || 1;   // 프레임별 최대값 기준 폭 (초기 소규모도 보이게)
       const present = {};
       f.rows.slice(0, N).forEach(r => {

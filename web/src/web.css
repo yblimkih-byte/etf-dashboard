@@ -141,7 +141,7 @@ body.narrow-tab.web main{max-width:1040px;margin:0 auto;width:100%}
 .web .fold-item td{color:var(--mut)}
 .web .view>.section.sticky-sec{overflow:visible}
 .web .sticky-sec .section-h{position:sticky;top:var(--hdr-h,52px);z-index:5;background:var(--card,#fff);padding-top:6px;margin-bottom:0}
-.web .sticky-chips{position:sticky;top:calc(var(--hdr-h,52px) + 44px);z-index:5;background:var(--card,#fff);padding:6px 0 2px;border-bottom:1px solid var(--bd);margin-bottom:8px}
+.web .sticky-chips{position:sticky;top:calc(var(--hdr-h,52px) + var(--sec-h,44px));z-index:5;background:var(--card,#fff);padding:6px 0 2px;border-bottom:1px solid var(--bd);margin-bottom:8px}
 .web .lede{white-space:pre-line}
 .web .lede .ld{display:block}
 
@@ -166,3 +166,6 @@ body.narrow-tab.web main{max-width:1040px;margin:0 auto;width:100%}
   .web .tbl td:first-child{background:#fff}
 }
 @media print{.side,.top{display:none}.inset{border:0;box-shadow:none;margin:0}}
+/* v18: 상위 20 M/S 막대·소제목 */
+.web .race-ms-l{font-size:12.5px;color:var(--mut)}
+.web .sub-h{font-size:13.5px;font-weight:600;margin:18px 0 8px}
