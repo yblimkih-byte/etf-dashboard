@@ -126,7 +126,7 @@ function summaryModel(A, d) {
   return { lines, f, rank, ahead, m, py, cs, top50, nlF, gap, mk, g, rows };
 }
 App.registerTab({
-  id: 'summary', narrow: true, label: '경영진 요약', controls: ['date', 'ref'],
+  id: 'summary', narrow: true, label: '요약', controls: ['date', 'ref'],
   load: (s, A) => Promise.all([A.call('byMgr', { date: s.date, ref: s.ref }), A.call('overview', { date: s.date }), A.call('byType', { date: s.date, ref: s.ref }), A.call('topEtf', { date: s.date }),
     A.call('newListings', { date: s.date, year: s.date.slice(0, 4), filter: 'exBond' }), A.call('shares', { date: s.date, mgr: '' })])
     .then(r => ({ date: s.date, refLabel: r[0].refLabel, mgr: r[0], ov: r[1], type: r[2], top: r[3], nl: r[4], sh: r[5] })),
@@ -146,7 +146,7 @@ App.registerTab({
       ], { tools: false, compact: true }));
     }
     const s4 = A.section(root, `${d.nl.year}년 신규상장 — ${F} ${S.nlF.length}종목`, d.nl.filter === 'exBond' ? '채권/금리형 제외 · NAV 순' : 'NAV 순');
-    if (S.nlF.length) A.div(s4, '', A.table(S.nlF, [{ h: '상장일', k: 'listDd', l: 1 }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: 'NAV(조원)', f: r => r.listed ? navSmall(A, r.nav) : '-' }], { attr: r => `data-top="${r.top}"` }));
+    if (S.nlF.length) A.div(s4, '', A.table(S.nlF, [{ h: '상장일', k: 'listDd', l: 1 }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: 'NAV(조원)', f: r => r.listed ? navSmall(A, r.nav) : '-' }], { attr: r => `data-top="${r.top}"`, tools: false }));
     else A.div(s4, 'empty', '해당 종목 없음');
   }
 });
