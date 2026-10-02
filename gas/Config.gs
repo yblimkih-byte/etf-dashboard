@@ -111,8 +111,11 @@ const CFG = {
   HARD_MS: 4 * 60 * 1000,       // 루프 후 월말 동기화 시작 가능 시한
   SAFE_MS: 5.2 * 60 * 1000,     // 이 시점 전에 끝날 수 없는 작업은 시작하지 않음 (6분 한도)
   SYNC_COST_MS: 100 * 1000,     // 월말 스냅샷 1개월 갱신 예상 소요(측정 전 초기값)
-  AGG_START_MS: 2.5 * 60 * 1000, // 이 시점을 넘기면 집계 재계산은 다음 회차로
-  WARM_MS: 5.0 * 60 * 1000,      // 집계 후 API 캐시 예열 허용 시한
+  AGG_START_MS: 3 * 60 * 1000,   // v23: 이 시점을 넘기면 지수 갱신·집계 갱신(바뀐 월만)은 이어서 실행(1분 뒤)으로 넘김
+  INC_MAX_MONTHS: 4,             // v23: 집계 갱신을 '바뀐 월만' 처리하는 범위(최근 N개월 안·N개월 이하). 벗어나면 전체 재계산(분할 실행)
+  FULL_CALC_MS: 3 * 60 * 1000,   // v23: 전체 재계산 분할 실행 1회의 월별 계산 시한
+  FULL_WRITE_MS: 2 * 60 * 1000,  // v23: 계산을 마친 시점이 이보다 이르면 같은 실행에서 시트 쓰기, 아니면 다음 실행에서
+  WARM_MS: 3.5 * 60 * 1000,      // 예열 허용 시한(v23: 4.5→3.5분, 마지막 조회가 6분 한도를 넘겨 강제 종료되던 문제 완화)
   TOP_N: 50
 };
 
@@ -122,7 +125,11 @@ const PROP = { KRX_KEY: 'KRX_AUTH_KEY', LAST_DAILY: 'LAST_DAILY_DATE', BACKFILL_
   LOADING: 'LOADING_SINCE',       // v17: 적재 실행 중 표시(예열이 겹치지 않도록)
   MONTHLY_MAP: 'MONTHLY_MAP',     // v17: raw_월말 월별 블록 위치 {lr, m:{ym:[일자,시작행,행수]}} → 5만 행 A열 전체 읽기 생략
   COLS_TRIMMED: 'COLS_TRIMMED',   // v17: raw 시트 빈 열(I~Z) 정리 완료 표시
-  README_VER: 'README_VER' };     // v18: README 시트 작성 버전(README.VER 와 다르면 한가한 적재 실행에서 다시 작성)
+  README_VER: 'README_VER',       // v18: README 시트 작성 버전(README.VER 와 다르면 한가한 적재 실행에서 다시 작성)
+  FULL_AGG: 'FULL_AGG',           // v23: 전체 재계산(분할 실행) 진행 상태 {id, reason, hash, done[], tries, steps, redo}
+  FULL_BLOCK: 'FULL_AGG_BLOCK',   // v23: 전체 재계산이 중단된 날(yyyy-MM-dd) → 그날은 다시 예약하지 않음(트리거 실행시간 보호)
+  AGG_HASH: 'AGG_LEGEND_HASH',    // v23: 마지막 전체 재계산 때의 범례 지문 → 야간 점검에서 범례 변경 감지
+  AGG_DIRTY: 'AGG_DIRTY' };       // v23: 집계 시트를 쓰는 중 표시 → 캐시 갱신 전에 끊기면 다음 실행에서 캐시 갱신
 
 function krxKey_() {
   const k = PropertiesService.getScriptProperties().getProperty(PROP.KRX_KEY);

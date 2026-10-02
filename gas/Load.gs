@@ -298,10 +298,12 @@ function rowToRec_(v) {
  *  - KRX 부터 조회: 적재할 자료가 없으면(미게시·휴장) 시트를 읽지 않고 곧바로 종료 → 시간 초과·트리거 실행시간 절약
  *  - 빈 응답 일자 판정: 휴장일 목록(CFG.KRX_HOLIDAYS), 또는 '뒤 영업일 자료 게시 + 그날 KOSPI 일봉 없음' → 휴장으로 건너뜀.
  *    그 밖의 경우는 절대 건너뛰지 않고 '미게시'로 멈춘 뒤 다음 실행에서 다시 확인 (v16 까지는 '3일 지난 빈 응답 = 휴장' 어림 규칙)
- *  - 결과는 LOAD_STATUS 에 남겨 화면 상단에 표시 (예: '09-23(수)분 KRX 미게시 — 추석 연휴(09-24~09-25) 휴장, 09-28(월) 오전 게시 예상') */
+ *  - 결과는 LOAD_STATUS 에 남겨 화면 상단에 표시 (예: '09-23(수)분 KRX 미게시 — 추석 연휴(09-24~09-25) 휴장, 09-28(월) 오전 게시 예상')
+ *  - v23: 적재 뒤 '바뀐 월만' 집계 갱신(healAgg_). 새 자료가 없는 실행도 집계 점검(작은 시트 몇 개, 수 초)을 해 강제 종료 흔적을 복구 */
 function loadDaily() {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(10000)) { console.log('다른 적재 실행 중 → 이번 실행 생략'); return; }
+  // v23: 잠금 실패(다른 적재·전체 집계 진행 중) 시 생략하지 않고 5분 뒤 다시 시도
+  if (!lock.tryLock(10000)) { console.log('다른 실행(적재·집계) 진행 중 → 5분 뒤 다시 시도'); scheduleContinue_('loadDaily', 5); return; }
   const t0 = Date.now(), ok = budget_(t0);
   const props = PropertiesService.getScriptProperties();
   const todayS = fmt_(new Date());
@@ -335,6 +337,7 @@ function loadDaily() {
         const ix = indexMap_(), il = Object.keys(ix).sort().pop();
         if (il && (!last || il > last)) { last = il; props.setProperty(PROP.LAST_DAILY, il); }   // _index 는 기록됐는데 LAST_DAILY 가 뒤처진 경우
         trimOrphanRows_(ix);
+        syncDailySummary_(ix, () => ctx);                                           // v23: 중단된 실행이 남긴 agg_일별요약 누락 보충(새 일자 추가 전에)
         step_(t0, '적재 준비(ctx·index·잔여 행)');
       }
       if (last && ds <= last) { d = addDays_(d, 1); continue; }                     // 이미 적재된 일자
@@ -356,32 +359,40 @@ function loadDaily() {
     else if (cutByBudget) st.note = '적재 진행 중 — 이어서 실행';
     setLoadStatus_(st);
     if (st.pending) scheduleUnpublishedRetry_(st.pending, st.expect);
-    // 월말 스냅샷·집계: 새로 적재했거나 이전 회차에서 넘어온 작업이 있을 때만 (없으면 큰 시트를 읽지 않고 종료)
-    if (!loaded && !props.getProperty(PROP.PENDING_AGG)) {
+    props.deleteProperty(PROP.PENDING_AGG);   // v22 까지의 표식(v23 은 사용하지 않음) 정리
+    // v23: 월말 스냅샷·집계가 필요한지는 '시트 상태 비교'로 판단 → 새 자료가 없는 실행(감시 재시도·이어서 실행·19시)도
+    //      앞선 실행이 강제 종료로 남긴 불일치를 복구. 확인 비용: _index·agg_시장월별(약 70행)·지수 시트 읽기(수 초)
+    //      (v22 까지는 새 적재가 있을 때만 집계했고, 집계 직전에 PENDING_AGG 를 지워 강제 종료 시 재시도되지 않았음 → 2026-10-01·02 9월말 미반영)
+    const synced = {};   // 이번 실행에서 raw_월말에 쓴 월 → 레코드 (집계 때 다시 읽지 않음)
+    const leftMonths = syncMonthly_(t0, CFG.HARD_MS, cutByBudget, synced);   // 예산 초과로 중단 → 당월 스냅샷은 마지막 회차에서만 갱신
+    step_(t0, '월말 스냅샷 동기화' + (Object.keys(synced).length ? ' ' + Object.keys(synced).join(',') : ' (변경 없음)'));
+    if (cutByBudget || leftMonths > 0) {
+      log_('일별 적재 진행 중: ' + loaded + '영업일, 최종 ' + last + (leftMonths ? ', 월말 갱신 잔여 ' + leftMonths + '개월' : '') + ' (이어서 실행 예약)');
+      scheduleContinue_('loadDaily', 1); return;   // 집계는 마지막 회차에서만
+    }
+    if (loaded) bumpCache_();   // 새 일자(meta·일별 조회) 즉시 반영 — 집계 갱신이 이어서 실행으로 넘어가도
+    if (Date.now() - t0 > CFG.AGG_START_MS) {   // 시한 부족: 지수·집계는 이어서 실행(새 6분)에서 — 그 실행은 상태 비교로 할 일을 찾음
+      log_('일별 적재 완료(' + loaded + '영업일, 최종 ' + last + ') → 지수·집계 갱신은 이어서 실행(1분 뒤)');
+      scheduleContinue_('loadDaily', 1); return;
+    }
+    const getCtx = () => ctx || (ctx = ctx_());
+    if (!loaded && syncDailySummary_(indexMap_(), getCtx)) bumpCache_();
+    if (last && (loaded || indexBehind_(last))) { try { loadIndices_(last); } catch (e) { log_('지수 적재 실패: ' + e.message, 'WARN'); } step_(t0, '지수 갱신'); }
+    const agg = healAgg_(t0, getCtx, synced);
+    step_(t0, '집계 점검: ' + agg.state + ' — ' + agg.msg);
+    if (agg.state === 'defer') {
+      log_('집계 갱신은 이어서 실행(1분 뒤): ' + agg.msg);
+      scheduleContinue_('loadDaily', 1); return;
+    }
+    ensureNightly_();
+    if (!loaded && agg.state === 'none') {
       maintainSheets_(t0);
       step_(t0, '적재할 자료 없음 → 종료' + (st.pending ? ' · ' + st.note : ''));
       return;
     }
-    const leftMonths = syncMonthly_(t0, CFG.HARD_MS, cutByBudget);   // 예산 초과로 중단 → 당월 스냅샷은 마지막 회차에서만 갱신
-    step_(t0, '월말 스냅샷 동기화');
-    if (cutByBudget || leftMonths > 0) {
-      props.setProperty(PROP.PENDING_AGG, '1');
-      log_('일별 적재 진행 중: ' + loaded + '영업일, 최종 ' + last + (leftMonths ? ', 월말 갱신 잔여 ' + leftMonths + '개월' : '') + ' (이어서 실행 예약)');
-      scheduleContinue_('loadDaily', 1); return;   // 집계는 마지막 회차에서만
-    }
-    if (Date.now() - t0 > CFG.AGG_START_MS) {   // 집계(전체 raw_월말 스캔)는 여유가 있을 때만 → 없으면 다음 회차에서 단독 수행
-      props.setProperty(PROP.PENDING_AGG, '1');
-      log_('일별 적재 완료(' + loaded + '영업일, 최종 ' + last + ') → 집계는 다음 회차에서 실행');
-      scheduleContinue_('loadDaily', 1); return;
-    }
-    props.deleteProperty(PROP.PENDING_AGG);
-    try { loadIndices_(last); } catch (e) { log_('지수 적재 실패: ' + e.message, 'WARN'); }
-    step_(t0, '집계 재계산 시작');
-    rebuildAggregates_();
-    step_(t0, '집계 재계산 완료');
-    if (CFG.KRX_WEB.INVESTOR_ENABLED) { try { loadInvestorNetBuy_(last, ctx || ctx_()); } catch (e) { log_('투자자별 순매수 실패: ' + e.message, 'WARN'); } }
-    warmCache_(t0);
-    log_('일별 적재 완료: ' + loaded + '영업일, 최종 ' + last);
+    if (CFG.KRX_WEB.INVESTOR_ENABLED && loaded) { try { loadInvestorNetBuy_(last, getCtx()); } catch (e) { log_('투자자별 순매수 실패: ' + e.message, 'WARN'); } }
+    if (agg.state !== 'full') warmCache_(t0);   // 전체 재계산 예약 시에는 그 완료 후 예열
+    log_(loaded ? '일별 적재 완료: ' + loaded + '영업일, 최종 ' + last + ' · 집계 ' + agg.msg : '집계 복구: ' + agg.msg);
   } catch (e) {
     st.last = last; st.error = String((e && e.message) || e).slice(0, 200); setLoadStatus_(st);
     log_('적재 오류: ' + st.error, 'ERROR');
@@ -513,7 +524,7 @@ function upsertMonthly_(rows, ds) {
  * raw_월말 ↔ raw_일별 동기화. _index 의 월별 마지막 일자보다 raw_월말 스냅샷이 오래됐거나 없는 월만 갱신.
  * 시간 초과로 중단된 실행이 있어도 다음 회차에서 자동 복구됨. 하드 시한(CFG.HARD_MS) 초과 시 남은 월 수 반환.
  */
-function syncMonthly_(t0, limitMs, skipCurrent) {
+function syncMonthly_(t0, limitMs, skipCurrent, out) {   // out(v23): {ym: 레코드} 갱신한 월의 레코드를 담아 집계에서 재사용
   const ix = indexMap_(), lastOf = {};
   Object.keys(ix).forEach(d => { const k = ym_(d); if (!lastOf[k] || d > lastOf[k]) lastOf[k] = d; });
   const have = monthlyMap_(sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER));
@@ -525,11 +536,29 @@ function syncMonthly_(t0, limitMs, skipCurrent) {
     if (el > limitMs || el + cost > CFG.SAFE_MS) { left++; return; }
     const s = Date.now();
     const blk = readDailyBlock_(lastOf[k]);
-    if (blk) upsertMonthly_(blk.map(recToRow_), lastOf[k]);
+    if (blk) { upsertMonthly_(blk.map(recToRow_), lastOf[k]); if (out) out[k] = blk; }
     cost = Date.now() - s;
     log_('월말 스냅샷 갱신 ' + k + ' (' + lastOf[k] + ', ' + Math.round(cost / 1000) + 's)');
   });
   return left;
+}
+
+/** v23: agg_일별요약 누락 보충 — 강제 종료로 _index 에는 기록됐으나 요약 행이 빠진 최근 일자(최대 3일)를 채움. 반환: 채운 일수 */
+function syncDailySummary_(ix, getCtx) {
+  const sh = sheet_(CFG.SHEET.AGG_SNAP_D, CFG.SNAP_HEADER), lr = sh.getLastRow();
+  const lastS = lr >= 2 ? dstr_(sh.getRange(lr, 1, 1, 1).getValues()[0][0]) : '';
+  const miss = Object.keys(ix).sort().filter(d => d > lastS);
+  if (!miss.length) return 0;
+  if (miss.length > 3) { log_('agg_일별요약 누락 ' + miss.length + '일(' + miss[0] + '~) → 메뉴 [일별 요약 재작성] 필요', 'WARN'); return 0; }
+  const ctx = getCtx(), shD = sheet_(CFG.SHEET.RAW_DAILY, CFG.RAW_HEADER);
+  miss.forEach(d => appendRows_(sh, summarize_(shD.getRange(ix[d].start, 1, ix[d].count, CFG.RAW_HEADER.length).getValues().map(rowToRec_), ctx, d)));
+  log_('agg_일별요약 누락 보충(중단된 실행 정리): ' + miss.join(', '), 'WARN');
+  return miss.length;
+}
+/** v23: 지수 시트의 마지막 일자가 최종 적재일보다 이전이면 true → 다음 실행에서 지수 갱신 보충 */
+function indexBehind_(last) {
+  const sh = sheet_(CFG.SHEET.INDEX, ['일자', 'KOSPI', 'S&P500', 'NASDAQ100']), lr = sh.getLastRow();
+  return lr < 2 || dstr_(sh.getRange(lr, 1, 1, 1).getValues()[0][0]) < last;
 }
 
 /** raw_월말 전체 → {ym: [rec]} (ym 오름차순 키) */
@@ -568,7 +597,7 @@ function mergeIndices_(map, from, to) {
 function writeIndices_(sh, map) {
   const rows = Object.keys(map).filter(d => map[d].k || map[d].s || map[d].n).sort().map(d => [d, map[d].k || '', map[d].s || '', map[d].n || '']);
   const lr = sh.getLastRow();
-  if (lr >= 2) sh.getRange(2, 1, lr - 1, 4).clearContent();
+  while (rows.length + 1 < lr) rows.push(['', '', '', '']);   // v23: 지우고 쓰지 않고 한 번에 덮어씀(중간에 끊겨도 지수 시트가 비지 않음)
   if (rows.length) { sh.getRange(2, 1, rows.length, 1).setNumberFormat('@'); sh.getRange(2, 1, rows.length, 4).setValues(rows); }
 }
 
