@@ -8,7 +8,8 @@ const store = fs.readFileSync(path.join(__dirname, 'store.json'), 'utf8');
 const mock = `<script>${fs.readFileSync(path.join(__dirname, 'shim.js'), 'utf8')}</script>\n${gs}\n<script>(function(){ const s = ${store}; const ss = SpreadsheetApp.getActiveSpreadsheet();
   Object.keys(s.store).forEach(n => { const sh = ss.insertSheet(n); sh.rows = s.store[n]; });
   Object.keys(s.props).forEach(k => PropertiesService.getScriptProperties().setProperty(k, s.props[k]));
-  window.MOCK = { api: (a, p) => api(a, p) }; })();</script>`;
+  window.MOCK = { calls: [], api: (a, p) => { window.MOCK.calls.push(a); return api(a, p); } };
+  if (${process.env.NOBOOT ? 'false' : 'true'}) { window.MOCK_CACHE = true; try { warmAll(); } catch (e) { console.error(e); } } })();</script>`;   // v24: 예열된 캐시 → boot 요청에 첫 화면 자료 포함
 const fav = 'data:image/svg+xml,' + encodeURIComponent(pub('favicon.svg'));
 const nm = p => 'file://' + path.join(__dirname, 'node_modules', p);
 let html = pub('index.html')

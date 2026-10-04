@@ -106,7 +106,8 @@ body.side-off .inset{margin-left:8px}
 .web .tbl td small{color:var(--mut)}
 .web .neg{color:var(--down)}
 .web .sw{border-radius:3px}
-.web table.tbl.compact{width:100%}
+.web table.tbl.compact{width:auto}   /* v24: 내용 폭(옆으로 퍼지지 않음) — 테두리 상자도 표 폭에 맞춤 */
+.web .tbl-scroll.compact{display:inline-block;max-width:100%;vertical-align:top}
 
 /* 칩·버튼·레이스 */
 .web .view>.chips{margin:0;padding:0;gap:6px;position:sticky;top:60px;z-index:20;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);padding:6px 0}
@@ -167,7 +168,7 @@ body.narrow-tab.web main{max-width:1040px;margin:0 auto;width:100%}
 }
 @media print{.side,.top{display:none}.inset{border:0;box-shadow:none;margin:0}}
 /* v18: 상위 20 M/S 막대·소제목 */
-.web .race-ms-l{font-size:12.5px;color:var(--mut)}
+.web .race-ms-l{font-size:12.5px;color:var(--mut);min-width:160px}
 .web .sub-h{font-size:13.5px;font-weight:600;margin:18px 0 8px}
 
 /* v19: 표 도구·요약·강조 토글·로딩 문구·카드 정의 툴팁·인쇄 */
@@ -186,6 +187,21 @@ body.web.focus-on .tbl tr[data-top="한투"] td{background:#f5f1ea}
 @keyframes spin{to{transform:rotate(360deg)}}
 .cd-k .cd-i{display:inline-flex;width:14px;height:14px;border:1px solid var(--bd);border-radius:50%;font-size:9px;line-height:12px;justify-content:center;color:var(--mut);cursor:help;flex:none}
 @media print{.cd{background:#fff;box-shadow:none}.web .view>.section{box-shadow:none;break-inside:avoid}.web main{padding:0}.tbl-tools,.chips,.race-bar{display:none!important}body.web{background:#fff}}
-.web .section.sum-sec{display:none}
 /* v19: 요약 탭(폭 1040)은 카드 3열로 제목 잘림 방지 */
 body.narrow-tab.web .cards{grid-template-columns:repeat(min(var(--n,4),4),minmax(0,1fr))}
+/* v24: 폭 제한 탭의 카드 5개(운용사별)는 한 줄 5열 — 여백·글자만 조금 줄임 */
+body.narrow-tab.web .cards[style*="--n:5"]{grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+body.narrow-tab.web .cards[style*="--n:5"] .cd{padding:16px 16px 14px}
+body.narrow-tab.web .cards[style*="--n:5"] .cd-v{font-size:26px}
+body.narrow-tab.web .cards[style*="--n:5"] .cd-f{font-size:13px;margin-top:14px}
+@media (max-width:1280px){body.narrow-tab.web .cards[style*="--n:5"]{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:900px){body.narrow-tab.web .cards[style*="--n:5"]{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* v24: 요약 탭 — 상단 설명 줄 없음, '핵심 요약' 표(항목·내용 2열) */
+.lede.empty{display:none}
+.web .kv-wrap{border:1px solid var(--bd);border-radius:var(--r-sm);overflow:hidden;margin-top:2px}
+.web table.kv{width:100%;border-collapse:collapse;font-size:14px}
+.web .kv th{width:140px;background:var(--muted-bg);font-weight:500;color:var(--mut);text-align:left;vertical-align:top;padding:11px 14px;border:0;border-bottom:1px solid var(--bd2);white-space:nowrap}
+.web .kv td{padding:11px 14px;border:0;border-bottom:1px solid var(--bd2);line-height:1.6;color:var(--fg)}
+.web .kv tr:last-child th,.web .kv tr:last-child td{border-bottom:0}
+.web .kv b{font-weight:600}
+@media (max-width:900px){.web .kv th{width:96px;white-space:normal}}

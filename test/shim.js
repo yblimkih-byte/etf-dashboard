@@ -32,13 +32,38 @@
     insertSheet: n => (store[n] = new Sheet(n)),
     getSheets: () => Object.values(store)
   };
-  g.SpreadsheetApp = { getActiveSpreadsheet: () => ss, getUi: () => ({ alert: m => console.log('[UI]', m), prompt: () => ({ getSelectedButton: () => 1, getResponseText: () => 'KEY' }), Button: { OK: 1 }, ButtonSet: { OK_CANCEL: 1 }, createMenu: () => ({ addItem() { return this; }, addSeparator() { return this; }, addToUi() {} }) }) };
-  g.PropertiesService = { getScriptProperties: () => ({ getProperty: k => props[k] === undefined ? null : props[k], setProperty: (k, v) => { props[k] = String(v); }, deleteProperty: k => { delete props[k]; } }) };
-  g.CacheService = { getScriptCache: () => ({ get: () => null, put: () => {}, remove: () => {}, removeAll: () => {} }) };
+  g.SpreadsheetApp = { flush: () => { g.MOCK_FLUSH = (g.MOCK_FLUSH || 0) + 1; }, getActiveSpreadsheet: () => ss, getUi: () => ({ alert: m => console.log('[UI]', m), prompt: () => ({ getSelectedButton: () => 1, getResponseText: () => 'KEY' }), Button: { OK: 1 }, ButtonSet: { OK_CANCEL: 1 }, createMenu: () => ({ addItem() { return this; }, addSeparator() { return this; }, addToUi() {} }) }) };
+  g.PropertiesService = { getScriptProperties: () => ({ getProperty: k => props[k] === undefined ? null : props[k], setProperty: (k, v) => { props[k] = String(v); }, deleteProperty: k => { delete props[k]; }, getProperties: () => Object.assign({}, props) }) };
+  // 캐시: 기본은 아무것도 저장하지 않음(기존 테스트 동작 유지). g.MOCK_CACHE = true 이면 메모리 캐시(만료 시각·크기 한도 100KB 점검) — v24 압축·예열·boot 점검용
+  const mem = {}; g.MOCK_CACHE_STORE = mem; g.MOCK_NOW = g.MOCK_NOW || (() => Date.now());
+  const live = k => mem[k] && mem[k].exp > g.MOCK_NOW() ? mem[k].v : null;
+  // 값 한도: UTF-8 100KB(한글 1자 = 3바이트) — 글자 수가 아니라 바이트로 점검
+  const bytes = v => unescape(encodeURIComponent(String(v))).length;
+  const cput = (k, v, ttl) => { if (!g.MOCK_CACHE) return; if (bytes(v) > 100 * 1024) throw new Error('Argument too large: value'); if (k.length > 250) throw new Error('key too long'); mem[k] = { v: String(v), exp: g.MOCK_NOW() + (ttl || 600) * 1000 }; };
+  g.CacheService = { getScriptCache: () => ({
+    get: k => g.MOCK_CACHE ? live(k) : null,
+    getAll: ks => { const o = {}; if (g.MOCK_CACHE) ks.forEach(k => { const v = live(k); if (v !== null) o[k] = v; }); return o; },
+    put: (k, v, ttl) => cput(k, v, ttl),
+    putAll: (o, ttl) => Object.keys(o).forEach(k => cput(k, o[k], ttl)),
+    remove: k => { delete mem[k]; }, removeAll: ks => ks.forEach(k => { delete mem[k]; }) }) };
   g.LockService = { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) };
   g.ScriptApp = { getProjectTriggers: () => [], newTrigger: () => ({ timeBased() { return this; }, after() { return this; }, everyDays() { return this; }, atHour() { return this; }, nearMinute() { return this; }, inTimezone() { return this; }, create() { console.log('[trigger created]'); } }), deleteTrigger() {}, EventType: { CLOCK: 'CLOCK' } };
   const pad = n => ('0' + n).slice(-2);
-  g.Utilities = { DigestAlgorithm: { MD5: 'md5' }, computeDigest: (a, str) => { let h = 5381; for (const c of String(str)) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return [h]; }, base64EncodeWebSafe: b => b.map(x => x.toString(36)).join(''), sleep: () => {}, formatDate: (d, tz, f) => { if (f === 'H') return String(d.getHours()); const y = d.getFullYear(), m = pad(d.getMonth() + 1), dd = pad(d.getDate()); return f === 'yyyyMMdd' ? `${y}${m}${dd}` : `${y}-${m}-${dd}`; } };
+  g.Utilities = { DigestAlgorithm: { MD5: 'md5' }, computeDigest: (a, str) => { let h = 5381; for (const c of String(str)) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return [h]; }, base64EncodeWebSafe: b => b.map(x => x.toString(36)).join(''), sleep: () => {}, formatDate: (d, tz, f) => { if (f === 'H') return String(d.getHours()); const y = d.getFullYear(), m = pad(d.getMonth() + 1), dd = pad(d.getDate()); return f === 'yyyyMMdd' ? `${y}${m}${dd}` : f === 'yyyy-MM' ? `${y}-${m}` : `${y}-${m}-${dd}`; } };
+  // v24: Blob·gzip·base64 (node 테스트는 실행기가 g.__zlib 를 넣으면 실제 gzip, 브라우저는 표식만 붙인 비압축)
+  const u8enc = str => Array.from(unescape(encodeURIComponent(str)), c => c.charCodeAt(0));
+  const u8dec = bytes => { let out = ''; for (let i = 0; i < bytes.length; i += 8192) out += String.fromCharCode.apply(null, bytes.slice(i, i + 8192).map(b => b & 255)); return decodeURIComponent(escape(out)); };
+  const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const b64enc = bytes => { let o = ''; for (let i = 0; i < bytes.length; i += 3) { const a = bytes[i] & 255, b = i + 1 < bytes.length ? bytes[i + 1] & 255 : 0, c = i + 2 < bytes.length ? bytes[i + 2] & 255 : 0, n = (a << 16) | (b << 8) | c; o += B64[n >> 18 & 63] + B64[n >> 12 & 63] + (i + 1 < bytes.length ? B64[n >> 6 & 63] : '=') + (i + 2 < bytes.length ? B64[n & 63] : '='); } return o; };
+  const b64dec = str => { const out = []; let buf = 0, bits = 0; for (const ch of String(str).replace(/[^A-Za-z0-9+/]/g, '')) { buf = (buf << 6) | B64.indexOf(ch); bits += 6; if (bits >= 8) { bits -= 8; out.push((buf >> bits) & 255); buf &= (1 << bits) - 1; } } return out; };
+  class Blob_ { constructor(bytes, type) { this.bytes = bytes; this.type = type || ''; } getBytes() { return this.bytes.slice(); } getDataAsString(cs) { if (cs && !/^utf-?8$/i.test(cs)) throw new Error('charset ' + cs); return u8dec(this.bytes); } setDataFromString(str, cs) { if (cs && !/^utf-?8$/i.test(cs)) throw new Error('charset ' + cs); this.bytes = u8enc(str); return this; } getContentType() { return this.type; } }
+  Object.assign(g.Utilities, {
+    newBlob: (data, type) => new Blob_(typeof data === 'string' ? u8enc(data) : Array.from(data, b => b & 255), type),
+    gzip: b => { g.MOCK_GZIP = (g.MOCK_GZIP || 0) + 1; return new Blob_(g.__zlib ? Array.from(g.__zlib.gzipSync(g.__Buffer.from(b.bytes))) : [0x1f, 0x8b].concat(b.bytes), 'application/x-gzip'); },
+    ungzip: b => { if (b.type !== 'application/x-gzip') throw new Error('ungzip: content type'); return new Blob_(g.__zlib ? Array.from(g.__zlib.gunzipSync(g.__Buffer.from(b.bytes))) : b.bytes.slice(2)); },
+    base64Encode: bytes => b64enc(Array.isArray(bytes) ? bytes : u8enc(String(bytes))),
+    base64Decode: str => b64dec(str)
+  });
   g.HtmlService = { createTemplateFromFile: () => ({ evaluate: () => ({ setTitle() { return this; }, addMetaTag() { return this; }, setXFrameOptionsMode() { return this; } }) }), createHtmlOutputFromFile: () => ({ getContent: () => '' }), XFrameOptionsMode: { ALLOWALL: 1 } };
 
   /* ── 모의 KRX: 결정적 난수로 ~320종목 생성, 2021-01 이후 성장 ── */

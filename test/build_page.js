@@ -2,6 +2,7 @@
 const fs = require('fs'), path = require('path');
 const gas = p => fs.readFileSync(path.join(__dirname, '..', 'gas', p), 'utf8');
 let html = gas('Index.html')
+  .replace('<?!= boot ?>', 'null')   // v24: doGet 의 첫 화면 묶음 자리 — 아래 모의 서버가 예열 뒤 채움
   .replace("<?!= include('Style'); ?>", gas('Style.html'))
   .replace("<?!= include('App'); ?>", gas('App.html'))
   .replace("<?!= include('Tabs'); ?>", gas('Tabs.html'))
@@ -15,7 +16,9 @@ ${gsFiles}
 (function(){ const s = ${store}; const ss = SpreadsheetApp.getActiveSpreadsheet();
   Object.keys(s.store).forEach(n => { const sh = ss.insertSheet(n); sh.rows = s.store[n]; });
   Object.keys(s.props).forEach(k => PropertiesService.getScriptProperties().setProperty(k, s.props[k]));
-  window.MOCK = { api: (a, p) => api(a, p) };
+  window.MOCK = { calls: [], api: (a, p) => { window.MOCK.calls.push(a); return api(a, p); } };
+  // v24: 메모리 캐시 + 예열 → doGet 처럼 첫 화면 묶음(BOOT)을 페이지에 넣음 (NOBOOT=1 이면 생략 → 화면이 직접 조회)
+  if (${process.env.NOBOOT ? 'false' : 'true'}) { window.MOCK_CACHE = true; try { warmAll(); } catch (e) { console.error(e); } const j = bootEmbed_(); window.BOOT = j === 'null' ? null : JSON.parse(j); }
 })();
 </script>`;
 html = html.replace('<?!= include(\'App\'); ?>', '').replace('</body>', '').replace(/<script>\n\/\* ── 코어/, inject + '\n<script>\n/* ── 코어');

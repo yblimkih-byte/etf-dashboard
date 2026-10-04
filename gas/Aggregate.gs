@@ -72,14 +72,17 @@ function rebuildAggregates_() {
   log_('집계 재계산 완료: ' + keys.length + '개월');
 }
 function writeAllAgg_(all) { aggSheets_().forEach(s => writeAgg_(s.name, s.header, all[s.key])); }
-/** 집계 시트 쓰기 시작 표시 → 쓰기 후 캐시 갱신(aggDone_) 전에 실행이 끊기면 다음 점검(healAgg_)에서 캐시 갱신 */
-function aggBegin_() { PropertiesService.getScriptProperties().setProperty(PROP.AGG_DIRTY, String(Date.now())); }
-/** 집계 반영 후: API 응답 캐시 무효화(CACHE_VER 갱신 → 블록 위치 캐시 포함) */
-function aggDone_() {
+/** 집계 시트 쓰기 시작 표시 → 쓰기 후 캐시 갱신(aggDone_) 전에 실행이 끊기면 다음 점검(healAgg_)에서 캐시 갱신
+ *  v24: 값 = 쓰는 월 목록('2026-09,2026-10') 또는 'all'(전체 재계산) → 복구 시 해당 월만 캐시 무효화 */
+function aggBegin_(yms) { PropertiesService.getScriptProperties().setProperty(PROP.AGG_DIRTY, yms && yms.length ? yms.join(',') : 'all'); }
+/** 집계 반영 후: API 응답 캐시 무효화. yms(바뀐 월)를 주면 그 월 이후 기준일 조회만, 없으면 전부(meta·블록 위치 캐시는 항상) */
+function aggDone_(yms) {
   CacheService.getScriptCache().removeAll(['agg_market', 'agg_mgr', 'agg_type', 'agg_mgrtype', 'agg_top', 'legend', 'dates']);
-  bumpCache_();
+  bumpCache_(yms);
   PropertiesService.getScriptProperties().deleteProperty(PROP.AGG_DIRTY);
 }
+/** AGG_DIRTY 값 → 월 목록(없거나 'all'·v23 형식(시각)이면 null = 전부) */
+function dirtyMonths_(v) { const ks = String(v || '').split(',').filter(k => /^\d{4}-\d{2}$/.test(k)); return ks.length ? ks : null; }
 /** 한 번의 쓰기로 r0 행부터 rows 를 쓰고, 그 아래 옛 행(~lr)은 빈 값으로 덮음 → 중간에 끊겨도 중복 행·빈 시트가 생기지 않음 */
 function putRows_(sh, r0, rows, w, lr) {
   const grid = rows.slice();
@@ -125,7 +128,8 @@ function aggStale_() {
  * 반환 {state: 'none'(최신)|'inc'(바뀐 월 갱신)|'full'(전체 재계산 예약)|'defer'(시한 부족 → 이어서 실행), msg}
  */
 function healAgg_(t0, getCtx, pre) {
-  if (PropertiesService.getScriptProperties().getProperty(PROP.AGG_DIRTY)) { aggDone_(); console.log('[healAgg] 이전 실행이 집계 쓰기 후 캐시 갱신 전에 끊김 → 캐시 갱신'); }
+  const dirty = PropertiesService.getScriptProperties().getProperty(PROP.AGG_DIRTY);
+  if (dirty) { aggDone_(dirtyMonths_(dirty)); console.log('[healAgg] 이전 실행이 집계 쓰기 후 캐시 갱신 전에 끊김 → 캐시 갱신(' + dirty + ')'); }
   const chk = aggStale_(), targets = chk.stale.concat(chk.extra).sort();
   if (!targets.length) return { state: 'none', msg: '최신' };
   const lab = k => k + (chk.map[k] ? '(' + chk.map[k][0] + ')' : '(삭제)');
@@ -153,9 +157,9 @@ function aggregateMonths_(keys, ctx, pre, chk) {
     mergeAgg_(all, aggMonth_(k, recs, ctx, idx));
   });
   let n = 0;
-  aggBegin_();
+  aggBegin_(keys);
   aggSheets_().forEach(s => { replaceAggMonths_(s.name, s.header, keys, all[s.key]); n += all[s.key].length; });
-  aggDone_();
+  aggDone_(keys);   // v24: 바뀐 월 이후 기준일 조회만 캐시 무효화(이전 월 기준 조회는 유지)
   log_('집계 갱신(바뀐 월만): ' + keys.map(k => k + (map[k] ? ' ' + map[k][0] : ' 삭제')).join(', ') + ' — ' + n + '행, ' + Math.round((Date.now() - t) / 1000) + 's');
 }
 
@@ -199,6 +203,15 @@ function legendHash_(ctx) {
     Object.keys(t).sort().map(k => [k, t[k].f1, t[k].f2, t[k].dom].join('|')).join('\n'),
     Object.keys(ms).sort().map(k => [k, ms[k].brand, ms[k].mgr].join('|')).join('\n')
   ].join('\n#\n');
+  return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s));
+}
+/** v24: 화면 계산(groupOf_·listDdOf_·신규상장 목록)이 읽는 범례·마스터 항목 전체의 지문 — legendHash_(전체 재계산 판단)에 없는 상장일·종목명·신규상장용 구분 포함.
+ *  야간 점검에서 바뀐 것이 확인되면 화면 캐시 전체 무효화(집계 재계산은 하지 않음). 예열이 캐시 보존 기간을 계속 연장하므로 이 점검이 없으면 범례 수정이 지난 기준일 화면에 반영되지 않음 */
+function ctxHash_(ctx) {
+  const t = ctx.types, ms = ctx.master;
+  const s = [legendHash_(ctx),
+    Object.keys(t).sort().map(k => [k, t[k].name, t[k].listDd, t[k].neu].join('|')).join('\n'),
+    Object.keys(ms).sort().map(k => [k, ms[k].name, ms[k].listDd].join('|')).join('\n')].join('\n#\n');
   return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s));
 }
 function fullAggState_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(PROP.FULL_AGG) || 'null'); } catch (e) { return null; } }
@@ -303,11 +316,15 @@ function nightlyAgg() {
     if (prev !== hash) { requestFullAgg_(prev ? '범례(유형·운용사·ETF마스터) 변경 반영' : '범례 지문 최초 기록'); return; }
     const r = healAgg_(Date.now(), () => ctx, null);
     console.log('[nightlyAgg] 집계 점검: ' + r.msg);
-    if (r.state === 'inc') warmDay_();
+    // v24: 상장일·종목명·신규상장용 구분 등 화면 계산이 읽는 항목이 바뀌었으면 화면 캐시 전체 무효화(처음 실행은 지문만 기록)
+    const ch = ctxHash_(ctx), pc = props.getProperty(PROP.CTX_HASH), changed = !!pc && pc !== ch;
+    if (pc !== ch) props.setProperty(PROP.CTX_HASH, ch);
+    if (changed) { bumpCache_(); log_('범례·마스터 항목 변경 감지 → 화면 캐시 전체 갱신'); }
+    if (r.state === 'inc' || changed) warmDay_();
   } finally { lock.releaseLock(); }
 }
-/** 예열 예약(낮 시간만). 22시~08:59 에는 생략 → 08:30 적재 뒤 예열·기존 예열 일정이 처리(야간 트리거 실행시간 절약) */
-function warmDay_() { const h = +Utilities.formatDate(new Date(), TZ, 'H'); if (h >= 9 && h < 22) warmCache_(); }
+/** 집계 갱신 뒤 예열 예약. v24: 시간대 제한 없음(밤에도 캐시를 채워 둠 — 예열은 바뀐 조회만 계산하므로 1~2분 이내) */
+function warmDay_() { warmCache_(); }
 /** 야간 점검 트리거가 없으면 설치(적재 실행에서 확인 → 별도 수동 설치 불필요) */
 function ensureNightly_() {
   if (ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'nightlyAgg')) return;
@@ -367,52 +384,47 @@ function rebuildDailySummary() {
   } finally { lock.releaseLock(); }
 }
 
-/** 집계 후 기본 조회(기준일 미지정) 응답을 미리 캐시에 채움 → 첫 방문자도 즉시 표시 */
-/** API 캐시 예열(v13). 캐시 키는 파라미터 JSON 그대로이므로 **화면이 실제로 보내는 형태**로 호출해야 적중함
- *  (v12 까지는 {} 로 예열해 화면 요청({date:…})과 키가 달라 효과가 없었음).
- *  순서: 최근 영업일 → 기본 기준일(전월말) → 당월의 나머지 일자(최근 순). 시한 내에서만 수행하고,
- *  CacheService 보존 한도(6시간)에 맞춰 5.5시간 뒤 자기 자신을 다시 예약 → 낮에도 첫 조회가 느려지지 않음 */
+/** API 캐시 예열(v13). 캐시 키는 파라미터로 정해지므로 **화면이 실제로 보내는 파라미터**로 호출해야 적중함
+ *  (v12 까지는 {} 로 예열해 화면 요청({date:…})과 키가 달라 효과가 없었음). v24: 키는 파라미터 키 순서와 무관(stableStr_) */
 function warmParams_(date, dv, months) {
   const to = dv.indexOf(date) >= 0 ? date : dv[dv.length - 1];
   let from = dv[0];
   if (to) { const py = months.filter(x => x.ym < to.slice(0, 4) + '-01').pop(); const f = py && dv.filter(d => d > py.date)[0]; if (f) from = f; }
-  // v19: 화면은 byMgr·byType·treemap 에 ref('py' 기본)를 붙여 호출하므로 같은 파라미터로 예열(캐시 키 일치). 경영진 요약 탭도 이 7건을 그대로 씀
-  const list = [['overview', { date: date }], ['byMgr', { date: date, ref: 'py' }], ['byType', { date: date, ref: 'py' }], ['shares', { date: date, mgr: '' }], ['topEtf', { date: date }],
-    ['newListings', { date: date, year: date.slice(0, 4), filter: 'exBond' }], ['treemap', { date: date, ref: 'py' }]];
+  // 첫 화면 묶음(bootList_: 요약 탭 6건 = 각 탭 기본 조회) → 히트맵 → 거래대금
+  const list = bootList_(date).concat([['treemap', { date: date, ref: 'py' }]]);
   if (to) list.push(['turnover', { from: from, to: to }]);
   return list;
 }
+/** v24 예열: 기본 기준일(전월말, 첫 화면) → 최근 영업일 → 상위 ETF 변천 순으로, 캐시에 있으면 보존 기간만 연장(다시 넣기)·없으면 계산.
+ *  5시간마다(밤낮 없이) 반복 → 캐시 만료(6시간)로 느려지는 시간대가 없음. 적재·집계로 바뀐 조회만 다시 계산하므로 보통 수 초~2분
+ *  (v17~v23: 캐시에 있으면 아무것도 하지 않아 보존 기간이 늘지 않음 → 넣은 지 6시간 뒤 만료되어 오후·야간에 첫 조회가 느렸음, 22~09시 예열 없음) */
 function warmAll() {
   clearTriggers_('cont_warmAll');
   const since = +(PropertiesService.getScriptProperties().getProperty(PROP.LOADING) || 0);
   if (since && Date.now() - since < 7 * 60 * 1000) { console.log('[warmAll] 적재 실행 중 → 10분 뒤 예열'); scheduleContinue_('warmAll', 10); return; }   // v17: 적재와 겹치지 않게
-  const t0 = Date.now(), limit = CFG.WARM_MS;
-  let n = 0, left = 0;
+  const t0 = Date.now(), limit = CFG.WARM_MS, cache = CacheService.getScriptCache();
+  scheduleWarm_(CFG.WARM_EVERY_MIN);   // 다음 정기 예열을 먼저 예약 → 이번 실행이 6분 한도로 강제 종료돼도 예열 주기가 끊기지 않음(남은 건이 있으면 아래에서 2분 뒤로 교체)
+  let put = 0, hit = 0, left = 0;
   try {
+    const P = PropertiesService.getScriptProperties().getProperties();
+    if (warmOne_(cache, 'meta', {}, P) === 'hit') hit++; else put++;
     const m = JSON.parse(api('meta', {})).data;
-    api('race', { n: 20 });
     const dv = m.dates.filter(d => d >= m.dailyFrom), latest = dv[dv.length - 1] || null;
-    // v17: 최근 영업일·기본 기준일(전월말)만 예열. 당월의 다른 일자는 처음 조회할 때 계산해 6시간 캐시
-    //      (v13~v16 은 당월 전 일자를 5.5시간마다 다시 예열 → 하루 40~57분 사용, 무료 계정 트리거 한도 90분/일에 근접)
-    const order = [latest, m.defaultDate].filter((d, i, a) => d && a.indexOf(d) === i);
-    order.forEach(d => warmParams_(d, dv, m.months).forEach(x => {
+    // 기본 기준일(전월말)·최근 영업일만 예열. 당월의 다른 일자는 처음 조회할 때 계산해 6시간 캐시
+    //  (v13~v16 은 당월 전 일자를 5.5시간마다 다시 예열 → 하루 40~57분 사용, 무료 계정 트리거 한도 90분/일에 근접)
+    const list = [];
+    [m.defaultDate, latest].filter((d, i, a) => d && a.indexOf(d) === i).forEach(d => warmParams_(d, dv, m.months).forEach(x => list.push(x)));
+    list.push(['race', { n: 20 }]);
+    list.forEach(x => {
       if (Date.now() - t0 > limit) { left++; return; }
-      try { api(x[0], x[1]); n++; } catch (e) {}
-    }));
+      try { if (warmOne_(cache, x[0], x[1], P) === 'hit') hit++; else put++; } catch (e) {}
+    });
   } catch (e) { console.log('warmAll 오류: ' + e.message); }
-  console.log('[warmAll] ' + n + '건 예열, 잔여 ' + left + '건, ' + ((Date.now() - t0) / 1000).toFixed(0) + 's');
-  scheduleWarm_(left ? 2 : 330);   // 남았으면 곧바로 이어서, 다 했으면 캐시 만료(6시간) 전에 재예열
+  console.log('[warmAll] 계산 ' + put + '건 · 보존 연장 ' + hit + '건 · 잔여 ' + left + '건, ' + ((Date.now() - t0) / 1000).toFixed(0) + 's');
+  if (left) scheduleWarm_(2);   // 남았으면 곧바로 이어서(아니면 처음에 예약한 5시간 뒤 정기 예열 유지)
 }
-/** 다음 예열 예약(v17): 22시~다음 날 08:50 에는 쉼(08:30 적재 뒤 예열과 겹치지 않게) → 야간 트리거 실행시간 절약 */
-function scheduleWarm_(min) {
-  const at = new Date(Date.now() + min * 60000), h = +Utilities.formatDate(at, TZ, 'H');
-  if (min <= 2 || (h >= 9 && h < 22)) { scheduleContinue_('warmAll', min); return; }
-  const base = h >= 22 ? new Date(at.getTime() + 10 * 3600000) : at;   // 22시 이후면 다음 날
-  const when = Utilities.parseDate(Utilities.formatDate(base, TZ, 'yyyy-MM-dd') + ' 08:50', TZ, 'yyyy-MM-dd HH:mm');
-  clearTriggers_('cont_warmAll');
-  ScriptApp.newTrigger('cont_warmAll').timeBased().at(when).create();
-  console.log('[warmAll] 다음 예열 ' + Utilities.formatDate(when, TZ, 'MM-dd HH:mm'));
-}
+/** 다음 예열 예약. v24: 시간대 제한 없이 min 분 뒤(1회성 트리거 cont_warmAll 하나만 유지) */
+function scheduleWarm_(min) { scheduleContinue_('warmAll', min); }
 function cont_warmAll() { warmAll(); }
 function warmCache_() { scheduleContinue_('warmAll', 1); }   // 적재 직후: 별도 실행(자체 6분)으로 예열
 

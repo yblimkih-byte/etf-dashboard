@@ -316,6 +316,8 @@ function loadDaily() {
     last = props.getProperty(PROP.LAST_DAILY) || indexDates_().pop() || null;
     let d = last ? addDays_(parse_(last), 1) : parse_(CFG.DAILY_FROM);
     let loaded = 0, cutByBudget = false, ctx = null;   // ctx: 실제로 적재할 자료가 있을 때만 준비(시트 읽기)
+    const changed = {};   // v24: 이번 실행에서 일별 자료(raw_일별·agg_일별요약)가 바뀐 월 → 그 월 이후 기준일 조회만 캐시 무효화
+    const mark = ds => { (ds || []).forEach(x => { changed[ym_(x)] = 1; }); };
     while (fmt_(d) < todayS) {                              // 당일분은 다음 영업일 오전에 게시됨 → 어제까지만 조회
       if (!ok()) { cutByBudget = true; break; }
       if (isWeekend_(d)) { d = addDays_(d, 1); continue; }
@@ -337,7 +339,7 @@ function loadDaily() {
         const ix = indexMap_(), il = Object.keys(ix).sort().pop();
         if (il && (!last || il > last)) { last = il; props.setProperty(PROP.LAST_DAILY, il); }   // _index 는 기록됐는데 LAST_DAILY 가 뒤처진 경우
         trimOrphanRows_(ix);
-        syncDailySummary_(ix, () => ctx);                                           // v23: 중단된 실행이 남긴 agg_일별요약 누락 보충(새 일자 추가 전에)
+        mark(syncDailySummary_(ix, () => ctx));                                     // v23: 중단된 실행이 남긴 agg_일별요약 누락 보충(새 일자 추가 전에)
         step_(t0, '적재 준비(ctx·index·잔여 행)');
       }
       if (last && ds <= last) { d = addDays_(d, 1); continue; }                     // 이미 적재된 일자
@@ -351,7 +353,7 @@ function loadDaily() {
       appendRows_(sheet_(CFG.SHEET.AGG_SNAP_D, CFG.SNAP_HEADER), summarize_(recs, ctx, ds));   // 일자별 요약(대시보드용) 즉시 적재
       props.setProperty(PROP.LAST_DAILY, ds);
       step_(t0, '일별 기록 완료 ' + ds + ' (' + rows.length + '행)');
-      last = ds; loaded++;
+      last = ds; loaded++; mark([ds]);
       d = addDays_(d, 1);
     }
     st.last = last;
@@ -366,17 +368,18 @@ function loadDaily() {
     const synced = {};   // 이번 실행에서 raw_월말에 쓴 월 → 레코드 (집계 때 다시 읽지 않음)
     const leftMonths = syncMonthly_(t0, CFG.HARD_MS, cutByBudget, synced);   // 예산 초과로 중단 → 당월 스냅샷은 마지막 회차에서만 갱신
     step_(t0, '월말 스냅샷 동기화' + (Object.keys(synced).length ? ' ' + Object.keys(synced).join(',') : ' (변경 없음)'));
+    // 새 일자(meta·일별 조회) 즉시 반영 — 집계 갱신·남은 적재가 이어서 실행으로 넘어가도. v24: 바뀐 월 이후 기준일 조회만 무효화(이어서 실행 전에도)
+    if (loaded || Object.keys(changed).length) bumpCache_(Object.keys(changed));
     if (cutByBudget || leftMonths > 0) {
       log_('일별 적재 진행 중: ' + loaded + '영업일, 최종 ' + last + (leftMonths ? ', 월말 갱신 잔여 ' + leftMonths + '개월' : '') + ' (이어서 실행 예약)');
       scheduleContinue_('loadDaily', 1); return;   // 집계는 마지막 회차에서만
     }
-    if (loaded) bumpCache_();   // 새 일자(meta·일별 조회) 즉시 반영 — 집계 갱신이 이어서 실행으로 넘어가도
     if (Date.now() - t0 > CFG.AGG_START_MS) {   // 시한 부족: 지수·집계는 이어서 실행(새 6분)에서 — 그 실행은 상태 비교로 할 일을 찾음
       log_('일별 적재 완료(' + loaded + '영업일, 최종 ' + last + ') → 지수·집계 갱신은 이어서 실행(1분 뒤)');
       scheduleContinue_('loadDaily', 1); return;
     }
     const getCtx = () => ctx || (ctx = ctx_());
-    if (!loaded && syncDailySummary_(indexMap_(), getCtx)) bumpCache_();
+    if (!loaded) { const filled = syncDailySummary_(indexMap_(), getCtx); if (filled.length) bumpCache_(filled.map(ym_)); }
     if (last && (loaded || indexBehind_(last))) { try { loadIndices_(last); } catch (e) { log_('지수 적재 실패: ' + e.message, 'WARN'); } step_(t0, '지수 갱신'); }
     const agg = healAgg_(t0, getCtx, synced);
     step_(t0, '집계 점검: ' + agg.state + ' — ' + agg.msg);
@@ -543,17 +546,17 @@ function syncMonthly_(t0, limitMs, skipCurrent, out) {   // out(v23): {ym: 레�
   return left;
 }
 
-/** v23: agg_일별요약 누락 보충 — 강제 종료로 _index 에는 기록됐으나 요약 행이 빠진 최근 일자(최대 3일)를 채움. 반환: 채운 일수 */
+/** v23: agg_일별요약 누락 보충 — 강제 종료로 _index 에는 기록됐으나 요약 행이 빠진 최근 일자(최대 3일)를 채움. 반환: 채운 일자 목록(v24, 캐시 무효화 월 판단용) */
 function syncDailySummary_(ix, getCtx) {
   const sh = sheet_(CFG.SHEET.AGG_SNAP_D, CFG.SNAP_HEADER), lr = sh.getLastRow();
   const lastS = lr >= 2 ? dstr_(sh.getRange(lr, 1, 1, 1).getValues()[0][0]) : '';
   const miss = Object.keys(ix).sort().filter(d => d > lastS);
-  if (!miss.length) return 0;
-  if (miss.length > 3) { log_('agg_일별요약 누락 ' + miss.length + '일(' + miss[0] + '~) → 메뉴 [일별 요약 재작성] 필요', 'WARN'); return 0; }
+  if (!miss.length) return [];
+  if (miss.length > 3) { log_('agg_일별요약 누락 ' + miss.length + '일(' + miss[0] + '~) → 메뉴 [일별 요약 재작성] 필요', 'WARN'); return []; }
   const ctx = getCtx(), shD = sheet_(CFG.SHEET.RAW_DAILY, CFG.RAW_HEADER);
   miss.forEach(d => appendRows_(sh, summarize_(shD.getRange(ix[d].start, 1, ix[d].count, CFG.RAW_HEADER.length).getValues().map(rowToRec_), ctx, d)));
   log_('agg_일별요약 누락 보충(중단된 실행 정리): ' + miss.join(', '), 'WARN');
-  return miss.length;
+  return miss;
 }
 /** v23: 지수 시트의 마지막 일자가 최종 적재일보다 이전이면 true → 다음 실행에서 지수 갱신 보충 */
 function indexBehind_(last) {

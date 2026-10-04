@@ -119,7 +119,10 @@ console.log('\n[A] 추석: 09-23분 09-28 08:00 게시');
   integrity(w, 'A');
   console.log('  실행 기록:'); w.events.filter(e => e[1] !== 'cont_warmAll').forEach(e => console.log('   ', e.filter(Boolean).join(' | ')));
   const warms = w.events.filter(e => e[1] === 'cont_warmAll').map(e => e[0].slice(5)); console.log('  예열 실행:', warms.join(', '));
-  check('야간(22~08:30) 예열 없음', warms.length > 0 && warms.every(t => { const h = +t.slice(6, 8), m = +t.slice(9, 11); return !(h >= 22 || h < 8 || (h === 8 && m < 30)); }), warms.length + '회');
+  // v24: 예열은 밤낮 없이 5시간 간격(캐시 보존 6시간보다 짧게) — 적재 뒤 예열 외에는 약 300분 간격으로만 실행(트리거 실행시간 보호)
+  const wt = w.events.filter(e => e[1] === 'cont_warmAll').map(e => new Date(e[0].replace(' ', 'T') + ':00+09:00').getTime());
+  const gaps = wt.slice(1).map((t, i) => (t - wt[i]) / 60000), perDay = wt.length / Math.max(1, (wt[wt.length - 1] - wt[0]) / 86400000);
+  check('예열 주기(v24): 밤낮 없이, 하루 7회 이하·간격 대부분 약 300분', warms.length > 0 && perDay <= 7 && gaps.filter(g => g >= 290).length >= gaps.length / 2, warms.length + '회, 하루 ' + perDay.toFixed(1) + '회, 간격(분) ' + gaps.map(g => Math.round(g)).join('/'));
 }
 
 console.log('\n[B] 09-23분 게시가 09-29 10:00 로 지연');

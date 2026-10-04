@@ -8,8 +8,12 @@ const App = {
 
   /* 서버 호출 (로컬 테스트 시 window.MOCK.api 사용). 같은 조회는 세션 내 재요청 없음 */
   _memo: {},
+  /** v24: 조회 기억 키 — 파라미터를 키 이름순으로(서버 캐시 키 stableStr_ 와 같은 규칙) → 첫 화면 묶음(boot)으로 받은 자료와 탭 조회가 같은 키 */
+  _key(action, params) { const p = params || {}; return action + ':{' + Object.keys(p).sort().filter(k => p[k] !== undefined).map(k => JSON.stringify(k) + ':' + JSON.stringify(p[k])).join(',') + '}'; },
+  /** 미리 받은 자료를 조회 기억에 넣음(이후 같은 조회는 서버 호출 없이 즉시) */
+  seed(action, params, data) { const k = this._key(action, params); if (!this._memo[k]) this._memo[k] = Promise.resolve(data); },
   call(action, params) {
-    const key = action + ':' + JSON.stringify(params || {});
+    const key = this._key(action, params);
     if (this._memo[key]) return this._memo[key];
     const pr = new Promise((res, rej) => {
       const done = raw => { const r = typeof raw === 'string' ? JSON.parse(raw) : raw; r.ok ? res(r.data) : rej(new Error(r.error)); };
@@ -24,9 +28,29 @@ const App = {
 
   registerTab(t) { this.tabs.push(t); },
 
+  /** v24: 첫 화면 묶음 — meta + 기본 기준일의 탭 기본 조회(서버 캐시에 있는 것). Apps Script 화면은 페이지에 들어 있고(window.BOOT),
+   *  없으면 서버에 boot 1건 요청, 그것도 안 되면(이전 서버) meta 만 */
+  boot() {
+    const B = window.BOOT && (window.BOOT.meta ? window.BOOT : window.BOOT.data);
+    if (B && B.meta) return Promise.resolve(B);
+    return this.call('boot', {}).then(b => (b && b.meta ? b : Promise.reject(new Error('boot 형식')))).catch(() => this.call('meta', {}).then(m => ({ meta: m, pre: [] })));
+  },
+  /** v24: 미리 받아 둘 조회 목록 — 각 탭의 기본 조회 + 탭이 화면을 그린 뒤 부르는 조회(prefetch: 히트맵·변천·거래대금). 값이 비어 있는 파라미터는 제외 */
+  prefetchList() {
+    const s = this.state, out = [];
+    this.tabs.forEach(t => {
+      if (t.action) out.push([t.action, t.params ? t.params(s) : {}]);
+      if (t.prefetch) (t.prefetch(s, this) || []).forEach(x => out.push(x));
+    });
+    const big = { treemap: 1, race: 1, turnover: 1 };   // 무거운 조회를 먼저(탭을 열기 전에 받아 두는 효과가 큼)
+    return out.filter(([, p]) => !Object.keys(p || {}).some(k => p[k] === null || p[k] === undefined)).sort((a, b) => (big[b[0]] || 0) - (big[a[0]] || 0));
+  },
+
   async init() {
     try {
-      this.meta = await this.call('meta', {});
+      const b = await this.boot();
+      this.meta = b.meta;
+      (b.pre || []).forEach(x => this.seed(x[0], x[1], x[2]));
     } catch (e) { document.getElementById('view').innerHTML = `<div class="error">${e.message}</div>`; return; }
     const m = this.meta;
     if (!m.dates.length) { document.getElementById('hdrMeta').textContent = '데이터 적재 전'; document.getElementById('view').innerHTML = '<div class="loading">아직 적재된 데이터가 없습니다. 시트 메뉴 [ETF Dashboard] › 월말 백필 / 일별 백필을 실행하십시오.</div>'; return; }
@@ -44,8 +68,8 @@ const App = {
     });
     const hash = location.hash.replace('#', '');
     this.show(this.tabs.some(t => t.id === hash) ? hash : this.tabs[0].id);
-    // 나머지 탭의 기본 조회를 미리 받아 두어 탭 전환이 즉시 되도록 함
-    setTimeout(() => this.tabs.forEach(t => { if (t.id !== this.state.tab && t.action) this.call(t.action, t.params ? t.params(this.state) : {}).catch(() => {}); }), 800);
+    // 나머지 탭의 조회(히트맵·변천 포함)를 미리 받아 두어 탭 전환이 즉시 되도록 함. 웹(Vercel) 화면은 shell.js 가 한 건씩 차례로 받음
+    if (!this.prefetchSeq) setTimeout(() => this.prefetchList().forEach(([a, p]) => this.call(a, p).catch(() => {})), 600);
   },
 
   /** v17: 적재 상태 — 최종 적재일 + 미게시 사유(예: '09-23(수)분 KRX 미게시 — 추석 연휴(09-24~09-25) 휴장, 09-28(월) 오전 게시 예상') 또는 오류 + 마지막 확인 시각 */
@@ -70,6 +94,15 @@ const App = {
     return out;
   },
 
+  /** 거래대금 기본 구간: To = 기준일(일별 자료가 있으면, 없으면 최근 영업일), From = 그해 첫 영업일 (v24: 미리 받기에서도 같은 구간을 쓰도록 분리) */
+  defaultRange(s) {
+    const m = this.meta, dv = m.dates.filter(d => d >= m.dailyFrom);
+    const to = s.to || (dv.includes(s.date) ? s.date : dv[dv.length - 1]);
+    if (!to) return { from: null, to: null };
+    const py = m.months.filter(x => x.ym < to.slice(0, 4) + '-01').pop();
+    return { from: s.from || (py && dv.some(d => d > py.date) ? dv.find(d => d > py.date) : dv[0]), to: to };
+  },
+
   /* 컨트롤 바: 탭이 선언한 컨트롤만 표시 */
   renderControls() {
     const t = this.tab(), el = document.getElementById('controls'), s = this.state, m = this.meta;
@@ -89,9 +122,7 @@ const App = {
       if (c === 'date') sel('기준일자', 'date', this.dateOptions(), v => { s.year = v.slice(0, 4); });
       if (c === 'range') {
         const daily = m.dates.filter(d => d >= m.dailyFrom).map(d => ({ value: d, label: d }));
-        const dv = daily.map(o => o.value);
-        if (!s.to) s.to = dv.includes(s.date) ? s.date : dv[dv.length - 1];
-        if (!s.from) { const py = m.months.filter(x => x.ym < s.to.slice(0, 4) + '-01').pop(); s.from = py && dv.some(d => d > py.date) ? dv.find(d => d > py.date) : dv[0]; }
+        if (!s.to || !s.from) { const r = this.defaultRange(s); if (!s.to) s.to = r.to; if (!s.from) s.from = r.from; }
         sel('From', 'from', daily); sel('To', 'to', daily);
       }
       if (c === 'year') {
@@ -166,7 +197,7 @@ const App = {
     // v19: 8행 이상 표에는 도구 줄(검색·CSV) + 머리글 클릭 정렬. 표 HTML 을 삽입한 뒤 A.tableTools(host) 를 호출하면 활성화(div() 가 자동 호출)
     const tools = opts.tools !== false && rows.length >= 8;
     let h = (tools ? `<div class="tbl-tools"><input type="search" class="tbl-q" placeholder="검색 (종목·운용사·유형)" aria-label="표 검색"><span class="tbl-cnt"></span><button type="button" class="tbl-csv" title="현재 표를 CSV 파일로 내려받기">CSV</button></div>` : '')
-      + `<div class="tbl-scroll"><table class="tbl${opts.compact ? ' compact' : ''}${tools ? ' sortable' : ''}"><thead>`;
+      + `<div class="tbl-scroll${opts.compact ? ' compact' : ''}"><table class="tbl${opts.compact ? ' compact' : ''}${tools ? ' sortable' : ''}"><thead>`;   // v24: compact = 내용 폭(옆으로 퍼지지 않음)
     if (hasG) {   // 1단: 그룹 헤더(연초 대비 / 전월 대비 …), 2단: 항목
       h += '<tr class="grp-row">';
       for (let i = 0; i < cols.length;) { const g = cols[i].g || ''; let j = i; while (j < cols.length && (cols[j].g || '') === g) j++; h += `<th colspan="${j - i}" class="${g ? 'grp' : 'nog'}">${g}</th>`; i = j; }
@@ -418,28 +449,33 @@ const App = {
     opts = opts || {};
     const N = opts.n || 10, H = opts.rowH || 30, dur = opts.step || 700;
     const box = document.createElement('div'); box.className = 'race';
+    // v18: 상위 N 내 운용사 M/S 한 줄 막대 · v24: 유형별 M/S 막대 추가 — 월 이동·재생과 함께 변함 (순서 고정, 색 = 운용사 고유색 / 유형색)
+    const bars = [];
+    if (opts.ms) { const mk = (this.meta.top5 || []).concat(['기타']); bars.push({ label: `상위 ${N} 내 운용사별 M/S`, keys: mk, of: r => (mk.indexOf(r.top) >= 0 ? r.top : '기타'), color: k => this.color(k) }); }
+    if (opts.typeMs) { const tk = opts.typeMs.keys; bars.push({ label: `상위 ${N} 내 유형별 M/S`, keys: tk, of: r => (tk.indexOf(r.type) >= 0 ? r.type : tk[tk.length - 1]), color: opts.typeMs.color }); }
     box.innerHTML = `<div class="race-bar"><button class="btn race-play">▶ 재생</button><div class="race-ym"></div><input type="range" class="race-range" min="0" max="${frames.length - 1}" value="0"></div>`
-      + (opts.ms ? `<div class="race-ms"><div class="race-ms-l">상위 ${N} 내 M/S</div><div class="race-ms-bar"></div></div>` : '')
+      + bars.map(b => `<div class="race-ms"><div class="race-ms-l">${b.label}</div><div class="race-ms-bar"></div></div>`).join('')
       + `<div class="race-stage" style="height:${N * H + 8}px"></div>`;
     parent.appendChild(box);
     const stage = box.querySelector('.race-stage'), ym = box.querySelector('.race-ym'), range = box.querySelector('.race-range'), btn = box.querySelector('.race-play');
-    // v18: 상위 N 내 운용사 M/S 한 줄 막대 — 월 이동·재생과 함께 변함 (순서 고정: 상위 5개사 → 기타, 색 = 운용사)
-    const msBar = box.querySelector('.race-ms-bar'), msKeys = (this.meta.top5 || []).concat(['기타']), msSeg = {};
+    box.querySelectorAll('.race-ms-bar').forEach((el, i) => { bars[i].el = el; bars[i].seg = {}; });
     const inkOn = hex => { const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; return (L + 0.05) / 0.05 > 1.05 / (L + 0.05) ? '#17171c' : '#fff'; };
-    const drawMs = (rows, instant) => {
-      if (!msBar) return;
-      const tot = rows.reduce((a, r) => a + r.nav, 0) || 1;
-      msKeys.forEach(k => {
-        const xs = rows.filter(r => (msKeys.indexOf(r.top) >= 0 && r.top !== '기타' ? r.top : '기타') === k), nav = xs.reduce((a, r) => a + r.nav, 0), pct = nav / tot * 100;
-        let el = msSeg[k];
-        if (!el) { el = document.createElement('div'); el.className = 'race-ms-seg'; const col = this.color(k); el.style.background = col; el.style.color = inkOn(col); msBar.appendChild(el); msSeg[k] = el; }
+    const mctx = document.createElement('canvas').getContext('2d');   // 칸 글자 폭 측정용
+    const fits = (el, txt, w) => { mctx.font = getComputedStyle(el).font || '12px sans-serif'; return mctx.measureText(txt).width + 14 <= w; };
+    const drawMs = (rows, instant) => bars.forEach(b => {
+      const tot = rows.reduce((a, r) => a + r.nav, 0) || 1, bw = b.el.clientWidth || 600;
+      b.keys.forEach(k => {
+        const xs = rows.filter(r => b.of(r) === k), nav = xs.reduce((a, r) => a + r.nav, 0), pct = nav / tot * 100, w = bw * pct / 100;
+        let el = b.seg[k];
+        if (!el) { el = document.createElement('div'); el.className = 'race-ms-seg'; const col = b.color(k); el.style.background = col; el.style.color = inkOn(col); b.el.appendChild(el); b.seg[k] = el; }
         el.style.transition = instant ? 'none' : `flex-grow ${dur * 0.85}ms cubic-bezier(.4,0,.2,1)`;
         el.style.display = nav > 0 ? '' : 'none';
         el.style.flexGrow = String(pct);
-        el.textContent = pct >= 7 ? `${k} ${pct.toFixed(1)}%` : pct >= 3 ? pct.toFixed(0) + '%' : '';
+        const full = `${k} ${pct.toFixed(1)}%`, short = pct.toFixed(0) + '%';
+        el.textContent = fits(el, full, w) ? full : fits(el, short, w) ? short : '';   // 칸 폭에 맞춰 이름·비율 / 비율만 / 생략
         el.title = `${k} · 상위 ${N} 내 ${xs.length}종목 · NAV ${App.eok(nav)}조원 · M/S ${pct.toFixed(1)}%`;
       });
-    };
+    });
     const nodes = {};
     const maxNav = Math.max.apply(null, frames.map(f => Math.max.apply(null, f.rows.map(r => r.nav))));
     let timer = null, cur = 0;
@@ -507,6 +543,8 @@ const App = {
       catch (e) { window.open('data:text/csv;charset=utf-8,' + encodeURIComponent(text)); }
     };
   },
+  /** v24: 항목·내용 2열 요약표(머리글 없음). rows: [[항목, 내용 HTML], ...] */
+  kv(parent, rows) { return this.div(parent, 'kv-wrap', '<table class="kv"><tbody>' + rows.map(r => `<tr><th>${r[0]}</th><td>${r[1]}</td></tr>`).join('') + '</tbody></table>'); },
   tiles(parent, items) { const t = this.div(parent, 'grid grid-' + Math.min(items.length, 4)); t.innerHTML = items.map(x => `<div class="tile"><div class="k">${x[0]}</div><div class="v">${x[1]}</div><div class="d">${x[2] || ''}</div></div>`).join(''); return t; }
 };
 window.addEventListener('DOMContentLoaded', () => App.init());

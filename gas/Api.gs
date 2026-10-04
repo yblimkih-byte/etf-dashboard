@@ -10,6 +10,7 @@ function doGet(e) {
     return ContentService.createTextOutput(api(String(e.parameter.action), p)).setMimeType(ContentService.MimeType.JSON);
   }
   const t = HtmlService.createTemplateFromFile('Index');
+  t.boot = bootEmbed_();   // v24: 첫 화면 자료(캐시에 있는 것만)를 페이지에 끼워 넣음 → 화면이 서버를 다시 부르지 않고 바로 그림
   return t.evaluate().setTitle('ETF Dashboard')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -18,38 +19,165 @@ function include(name) { return HtmlService.createHtmlOutputFromFile(name).getCo
 
 function api(action, params) {
   try {
+    if (action === 'boot') return bootJson_(false);
     const fn = ACTIONS[action];
     if (!fn) throw new Error('알 수 없는 action: ' + action);
-    // 응답 캐시: 적재·집계 때마다 CACHE_VER 가 바뀌므로 오래된 결과가 남지 않음 (6시간, 100KB 미만만)
-    const cache = CacheService.getScriptCache();
-    const key = cacheKey_(action, params);
-    const hit = cache.get(key);
-    if (hit) return action === 'meta' ? withLoadStatus_(hit) : hit;
+    // 응답 캐시(6시간): 적재·집계 때 캐시 버전이 바뀌므로 오래된 결과가 남지 않음. v24: 큰 응답(히트맵·변천)도 압축해 저장
+    const cache = CacheService.getScriptCache(), P = PropertiesService.getScriptProperties().getProperties();
+    const key = cacheKey_(action, params, P);
+    const hit = getCached_(cache, key);
+    if (hit) return action === 'meta' ? withLoadStatus_(hit, P) : hit;
     const out = JSON.stringify({ ok: true, data: fn(params || {}) });
-    if (out.length < 95000) cache.put(key, out, 21600);
-    return action === 'meta' ? withLoadStatus_(out) : out;
+    putCached_(cache, key, out);
+    return action === 'meta' ? withLoadStatus_(out, P) : out;
   } catch (err) {
     return JSON.stringify({ ok: false, error: err.message });
   }
 }
 
-function cacheKey_(action, params) {
-  const ver = PropertiesService.getScriptProperties().getProperty(PROP.CACHE_VER) || '0';
-  const h = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(params || {})));
-  return 'api:' + ver + ':' + action + ':' + h;
+/** 캐시 세대: 응답 형식이나 계산 로직(Api.gs 핸들러)을 바꾸는 배포 때 올릴 것 → 배포 직후 이전 코드가 만든 캐시를 쓰지 않음 */
+const CACHE_GEN_ = 'a24';
+/** 캐시 키 = 세대 + 버전 + action + 파라미터 해시. v24: 파라미터는 키 이름순으로 직렬화(보내는 쪽의 키 순서와 무관하게 같은 키) */
+function cacheKey_(action, params, P) {
+  const h = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, stableStr_(params)));
+  return CACHE_GEN_ + ':' + verFor_(action, params, P || PropertiesService.getScriptProperties().getProperties()) + ':' + action + ':' + h;
 }
+function stableStr_(p) { p = p || {}; return '{' + Object.keys(p).sort().filter(k => p[k] !== undefined).map(k => JSON.stringify(k) + ':' + JSON.stringify(p[k])).join(',') + '}'; }
+
+/** v24: 캐시 버전 — 기준일이 있는 조회는 '그 기준일 이하 월'이 바뀐 경우에만 무효화(MONTH_VER), 그 밖(meta·race 등)은 적재·집계마다 무효화(CACHE_VER).
+ *  → 10월 일자 적재 뒤에도 기본 기준일(전월말 9월) 조회는 캐시 유지. 기준일 조회의 결과는 그 기준일 이하 월의 자료로만 계산됨(Api.gs 각 핸들러) */
+const DATE_SCOPED_ = { overview: 'date', byMgr: 'date', byType: 'date', treemap: 'date', shares: 'date', topEtf: 'date', newListings: 'date', turnover: 'to' };
+function verFor_(action, params, P) {
+  // 전역 버전에는 현재 월(KST)을 붙임: meta 의 기본 기준일(전월말)·기준일 없는 조회는 날짜에 따라 달라지므로 월이 바뀌면 새로 계산(예열이 보존 기간을 계속 연장해도)
+  const g = ((P && P[PROP.CACHE_VER]) || '0') + '.' + curYm_(), f = DATE_SCOPED_[action], d = f && params ? String(params[f] || '') : '';
+  if (!/^\d{4}-\d{2}/.test(d)) return g;
+  const mv = parseMonthVer_(P && P[PROP.MONTH_VER]); if (!mv) return g;
+  const ym = d.slice(0, 7); let v = mv.f;
+  Object.keys(mv.m).forEach(k => { if (k <= ym && mv.m[k] > v) v = mv.m[k]; });
+  return 'm' + v;
+}
+function curYm_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM'); }
+function parseMonthVer_(s) { try { const o = JSON.parse(s || 'null'); return o && o.f ? { f: +o.f, m: o.m || {} } : null; } catch (e) { return null; } }
+/** 데이터 변경 시 호출 → 이후 API 응답 캐시 무효화. yms(바뀐 월 목록 'yyyy-MM')를 주면 그 월 이후 기준일 조회만, 없으면 전부 무효화 */
+function bumpCache_(yms) {
+  try { SpreadsheetApp.flush(); } catch (e) {}   // 시트 쓰기를 먼저 확정 → 동시 조회가 '새 버전 + 이전 행'을 캐시에 남기지 않게
+  const props = PropertiesService.getScriptProperties(), now = Math.max(Date.now(), (+props.getProperty(PROP.CACHE_VER) || 0) + 1);   // 항상 이전 버전보다 큼(같은 1ms 안 연속 호출 대비)
+  props.setProperty(PROP.CACHE_VER, String(now));   // meta·race·블록 위치 캐시(bix:)는 항상 무효화
+  let mv = parseMonthVer_(props.getProperty(PROP.MONTH_VER));
+  const ks = (yms || []).map(k => String(k).slice(0, 7)).filter(k => /^\d{4}-\d{2}$/.test(k));
+  if (!mv || !ks.length) mv = { f: now, m: {} };
+  else ks.forEach(k => { mv.m[k] = now; });
+  props.setProperty(PROP.MONTH_VER, JSON.stringify(mv));
+}
+
+/** v24: 응답 캐시 저장 — UTF-8 9만 바이트 미만은 그대로, 이상은 gzip+base64('z:'), 압축 후에도 9.5만 자를 넘으면 여러 키로 분할('zc:n' + key#0..n-1).
+ *  CacheService 값 1개 한도 100KB(바이트 기준 — 한글 1자 = 3바이트이므로 글자 수로 판단하면 넘칠 수 있음) */
+const CACHE_TTL_ = 21600, CACHE_PART_ = 95000;
+function utf8Len_(s) { return s.length + (s.match(/[\u0080-\u07ff]/g) || []).length + (s.match(/[\u0800-\uffff]/g) || []).length * 2; }   // 대리쌍은 많게 셈(안전 측)
+function putCached_(cache, key, out) {
+  try {
+    if (out.length < 30000 || utf8Len_(out) < 90000) { cache.put(key, out, CACHE_TTL_); return true; }
+    const z = Utilities.base64Encode(Utilities.gzip(Utilities.newBlob('', 'application/json').setDataFromString(out, 'UTF-8')).getBytes());
+    if (z.length < CACHE_PART_) { cache.put(key, 'z:' + z, CACHE_TTL_); return true; }
+    const n = Math.ceil(z.length / CACHE_PART_); if (n > 20) return false;
+    const parts = {}; for (let i = 0; i < n; i++) parts[key + '#' + i] = z.slice(i * CACHE_PART_, (i + 1) * CACHE_PART_);
+    cache.putAll(parts, CACHE_TTL_); cache.put(key, 'zc:' + n, CACHE_TTL_);   // 머리 키는 조각 저장 뒤에
+    return true;
+  } catch (e) { console.log('캐시 저장 실패(' + key + '): ' + e.message); return false; }
+}
+/** 캐시 읽기(압축·분할 해제). raw: 이미 읽은 값(getAll 결과) */
+function getCached_(cache, key, raw) {
+  const v = raw === undefined ? cache.get(key) : raw;
+  if (!v || v.charAt(0) !== 'z') return v || null;   // JSON 응답은 항상 '{' 로 시작
+  try {
+    let z;
+    if (v.slice(0, 2) === 'z:') z = v.slice(2);
+    else if (v.slice(0, 3) === 'zc:') {
+      const n = +v.slice(3), ks = []; for (let i = 0; i < n; i++) ks.push(key + '#' + i);
+      const got = cache.getAll(ks); if (ks.some(k => !got[k])) return null;   // 조각 유실 → 다시 계산
+      z = ks.map(k => got[k]).join('');
+    } else return null;
+    return Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(z), 'application/x-gzip')).getDataAsString('UTF-8');
+  } catch (e) { console.log('캐시 해제 실패(' + key + '): ' + e.message); return null; }
+}
+/** 여러 키 한 번에 읽기 → {key: json} (없는 키는 빠짐) */
+function getCachedMany_(cache, keys) {
+  const out = {}; if (!keys.length) return out;
+  const got = cache.getAll(keys);
+  keys.forEach(k => { if (got[k]) { const v = getCached_(cache, k, got[k]); if (v) out[k] = v; } });
+  return out;
+}
+/** 예열(v24): 캐시에 있으면 같은 값을 다시 넣어 보존 기간(6시간)을 연장, 없으면 계산. 반환 'hit'|'put' */
+function warmOne_(cache, action, params, P) {
+  const key = cacheKey_(action, params, P), v = cache.get(key);
+  if (!v) { api(action, params); return 'put'; }
+  if (v.slice(0, 3) === 'zc:') {
+    const n = +v.slice(3), ks = []; for (let i = 0; i < n; i++) ks.push(key + '#' + i);
+    const got = cache.getAll(ks); if (ks.some(k => !got[k])) { cache.remove(key); api(action, params); return 'put'; }
+    cache.putAll(got, CACHE_TTL_);
+  }
+  cache.put(key, v, CACHE_TTL_);
+  return 'hit';
+}
+
+/** v24 점검용(편집기에서 실행): 큰 응답(히트맵·변천)의 압축 캐시 왕복·소요시간을 로그로 확인 */
+function checkCacheV24() {
+  const cache = CacheService.getScriptCache(), out = [];
+  const sample = JSON.stringify({ ok: true, data: { s: '한글 ETF 이름 KODEX 미국S&P500 '.repeat(4000) } });
+  putCached_(cache, 'v24test', sample); const back = getCached_(cache, 'v24test'); cache.remove('v24test');
+  out.push('압축 왕복 ' + (back === sample ? '일치' : '불일치') + ' (' + sample.length + '자)');
+  const m = JSON.parse(api('meta', {})).data;
+  [['treemap', { date: m.defaultDate, ref: 'py' }], ['race', { n: 20 }]].forEach(x => {
+    const t0 = Date.now(), a = api(x[0], x[1]), t1 = Date.now(), b = api(x[0], x[1]), t2 = Date.now();
+    const raw = cache.get(cacheKey_(x[0], x[1])) || '';
+    out.push(x[0] + ': 응답 ' + Math.round(a.length / 1024) + 'KB, 1회 ' + (t1 - t0) + 'ms, 2회 ' + (t2 - t1) + 'ms, 캐시 ' + (raw ? raw.slice(0, 3) + '… ' + Math.round(raw.length / 1024) + 'KB' : '없음') + (a === b ? '' : ' (응답 불일치)'));
+  });
+  console.log(out.join('\n'));
+  return out;
+}
+
 /** v17: meta 응답에 최신 적재 상태를 덧붙임(캐시와 무관하게 매번 스크립트 속성에서 읽음) → 화면 상단 '최종 적재 · 미게시 사유 · 확인 시각' */
-function withLoadStatus_(json) {
+function withLoadStatus_(json, P) {
   try {
     const o = JSON.parse(json); if (!o.ok || !o.data) return json;
-    const props = PropertiesService.getScriptProperties();
-    o.data.lastLoaded = props.getProperty(PROP.LAST_DAILY) || o.data.lastLoaded;
-    o.data.loadStatus = loadStatus_();
+    P = P || PropertiesService.getScriptProperties().getProperties();
+    o.data.lastLoaded = P[PROP.LAST_DAILY] || o.data.lastLoaded;
+    try { o.data.loadStatus = JSON.parse(P[PROP.LOAD_STATUS] || 'null'); } catch (e) { o.data.loadStatus = null; }
     return JSON.stringify(o);
   } catch (e) { return json; }
 }
-/** 데이터 변경 시 호출 → 이후 API 응답 캐시 무효화 */
-function bumpCache_() { PropertiesService.getScriptProperties().setProperty(PROP.CACHE_VER, String(Date.now())); }
+
+/** v24: 첫 화면 묶음(boot) = meta + 기본 기준일의 탭별 기본 조회 중 '이미 캐시에 있는 것'만(새로 계산하지 않음).
+ *  Apps Script 화면은 doGet 이 페이지에 끼워 넣고(window.BOOT), Vercel 화면은 첫 요청 1건으로 받음 → meta → 탭 자료로 이어지던 왕복을 줄임.
+ *  cachedOnly: meta 도 캐시에 없으면 null(doGet 이 계산 때문에 늦어지지 않게) */
+function bootJson_(cachedOnly) {
+  const cache = CacheService.getScriptCache(), P = PropertiesService.getScriptProperties().getProperties();
+  let mj = getCached_(cache, cacheKey_('meta', {}, P));
+  if (mj) mj = withLoadStatus_(mj, P);
+  else if (cachedOnly) return null;
+  else mj = api('meta', {});
+  const mo = JSON.parse(mj); if (!mo.ok) return mj;
+  const m = mo.data, pre = [];
+  if (m.defaultDate) {
+    const list = bootList_(m.defaultDate), keys = list.map(x => cacheKey_(x[0], x[1], P)), got = getCachedMany_(cache, keys), head = '{"ok":true,"data":';
+    list.forEach((x, i) => { const v = got[keys[i]]; if (v && v.indexOf(head) === 0) pre.push('[' + JSON.stringify(x[0]) + ',' + JSON.stringify(x[1]) + ',' + v.slice(head.length, -1) + ']'); });
+  }
+  return '{"ok":true,"data":{"meta":' + JSON.stringify(m) + ',"pre":[' + pre.join(',') + ']}}';
+}
+/** 기본 기준일 화면의 조회 목록 — '요약' 탭(Tabs.html)이 보내는 6건과 같은 파라미터. 운용사별·유형별·유형 비중·상위 ETF·신규상장 탭의 기본 조회도 겸함 */
+function bootList_(date) {
+  return [['byMgr', { date: date, ref: 'py' }], ['overview', { date: date }], ['byType', { date: date, ref: 'py' }], ['topEtf', { date: date }],
+    ['newListings', { date: date, year: date.slice(0, 4), filter: 'exBond' }], ['shares', { date: date, mgr: '' }]];
+}
+/** doGet 용: boot 의 data({meta, pre})를 스크립트 태그 안에 넣을 수 있게 '<'·U+2028/2029 를 이스케이프. 실패·캐시 없음 → 'null'(화면이 직접 조회) */
+function bootEmbed_() {
+  try {
+    const j = bootJson_(true), head = '{"ok":true,"data":';
+    if (!j || j.indexOf(head) !== 0) return 'null';
+    return j.slice(head.length, -1).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');   // {meta, pre} 만
+  }
+  catch (e) { console.log('boot 생성 실패: ' + e.message); return 'null'; }
+}
 
 const ACTIONS = {
   meta: apiMeta_,
@@ -115,9 +243,13 @@ function snapshot_(date) {
   if (SNAP_MEMO_[date]) return SNAP_MEMO_[date];
   let recs = readDailyBlock_(date);
   if (!recs) {
-    // raw_월말: 블록 위치 인덱스(캐시)로 해당 범위만 읽기 — A열 전체 스캔은 데이터 버전당 1회
-    const ix = monthlyIndex_()[date];
-    if (ix) recs = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER).getRange(ix.start, 1, ix.count, CFG.RAW_HEADER.length).getValues().map(rowToRec_);
+    // v24: raw_월말은 스크립트 속성의 월별 블록 위치(MONTHLY_MAP, 시트 행 수가 같을 때 유효)로 해당 범위만 읽음 → 5만여 행 A열 읽기 생략
+    const sh = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), mm = monthlyMap_(sh)[ym_(date)];
+    if (mm && mm[0] === date) { const xs = sh.getRange(mm[1], 1, mm[2] - mm[1] + 1, CFG.RAW_HEADER.length).getValues().map(rowToRec_).filter(r => r.date === date); if (xs.length) recs = xs; }
+    if (!recs) {   // 위치 정보가 맞지 않으면 블록 위치 인덱스(캐시)로 — A열 전체 스캔은 데이터 버전당 1회
+      const ix = monthlyIndex_()[date];
+      if (ix) recs = sh.getRange(ix.start, 1, ix.count, CFG.RAW_HEADER.length).getValues().map(rowToRec_);
+    }
   }
   if (!recs) throw new Error('해당 일자 데이터 없음: ' + date);
   SNAP_MEMO_[date] = recs;
@@ -214,22 +346,18 @@ function apiByMgr_(p) {
   const rows = groups.map(k => ({ mgr: k, nav: cur[k] || 0, ms: total ? (cur[k] || 0) / total * 100 : 0,
     navPy: py[k] || 0, msPy: totalPy ? (py[k] || 0) / totalPy * 100 : null, navPm: pm[k] || 0, msPm: totalPm ? (pm[k] || 0) / totalPm * 100 : null,
     ytd: chg_(cur[k] || 0, py[k]), mom: chg_(cur[k] || 0, pm[k]) }));
-  // v19: M/S 변동 기여도 분해 — 운용사 M/S 변동(%p) = Σ유형 [유형 NAV/시장 NAV (기준일) − 유형 NAV/시장 NAV (비교 기준)]
+  // v24: M/S 변동 요인(증감률 비교)용 유형별 NAV — mix.mkt[유형] = [기준일, 비교 기준], mix.mgr[운용사][유형] = [기준일, 비교 기준]
+  //      (v19~v23 의 '점유율 효과·구성 효과' 기여도 분해는 보고·실무용으로 이해가 어려워 제거)
   const kT = r => topOf_(r.top) + '|' + r.f2, cT = sumBy_(S, kT), pT = sumBy_(Py, kT);
-  const types = CFG.TYPE_ORDER.concat(Object.keys(cT).concat(Object.keys(pT)).map(k => k.split('|')[1]).filter((k, i, a) => CFG.TYPE_ORDER.indexOf(k) < 0 && a.indexOf(k) === i));
-  // v21: 기여를 점유율 효과(유형 내 점유율 변동 × 기준일 유형 비중)와 구성 효과(시장 내 유형 비중 변동 × 비교기준 점유율)로 분해. comp + mix = d
-  const tT = {}, tP = {}; Object.keys(cT).forEach(k => { const t = k.split('|')[1]; tT[t] = (tT[t] || 0) + cT[k]; }); Object.keys(pT).forEach(k => { const t = k.split('|')[1]; tP[t] = (tP[t] || 0) + pT[k]; });
-  const contrib = groups.map(g => ({ mgr: g, items: types.map(t => {
-    const c = total ? (cT[g + '|' + t] || 0) / total * 100 : 0, b = totalPy ? (pT[g + '|' + t] || 0) / totalPy * 100 : 0;
-    const wC = total ? (tT[t] || 0) / total : 0, wP = totalPy ? (tP[t] || 0) / totalPy : 0;                       // 시장 내 유형 비중
-    const sC = tT[t] ? (cT[g + '|' + t] || 0) / tT[t] : 0, sP = tP[t] ? (pT[g + '|' + t] || 0) / tP[t] : 0;     // 유형 내 운용사 점유율
-    return { type: t, cur: c, py: b, d: totalPy ? c - b : null, wCur: wC * 100, wPy: wP * 100, sCur: sC * 100, sPy: sP * 100,
-      comp: totalPy ? (sC - sP) * wC * 100 : null, mix: totalPy ? (wC - wP) * sP * 100 : null };
-  }) }));
+  const allT = CFG.TYPE_ORDER.concat(Object.keys(cT).concat(Object.keys(pT)).map(k => k.split('|')[1]).filter((k, i, a) => CFG.TYPE_ORDER.indexOf(k) < 0 && a.indexOf(k) === i));
+  const mix = { mkt: {}, mgr: {} };
+  allT.forEach(t => { let c = 0, b = 0; groups.forEach(g => { c += cT[g + '|' + t] || 0; b += pT[g + '|' + t] || 0; }); if (c || b) mix.mkt[t] = [c, b]; });
+  const types = allT.filter(t => mix.mkt[t]);
+  groups.forEach(g => { const o = mix.mgr[g] = {}; types.forEach(t => { const c = cT[g + '|' + t] || 0, b = pT[g + '|' + t] || 0; if (c || b) o[t] = [c, b]; }); });
   // 월별 M/S 추이 (agg_운용사월별)
   const trend = {};
   aggRows_(CFG.SHEET.AGG_MGR).forEach(r => { const m = ymstr_(r[0]); if (m > ym_(date)) return; const t = trend[m] = trend[m] || {}; const g = topOf_(String(r[2])); t[g] = (t[g] || 0) + toNum_(r[3]); });
-  return { date: date, ref: ref, refLabel: ref.label, total: total, totalPy: totalPy, totalPm: totalPm, rows: rows, contrib: contrib, types: types, trend: Object.keys(trend).sort().map(m => Object.assign({ ym: m }, trend[m])) };
+  return { date: date, ref: ref, refLabel: ref.label, total: total, totalPy: totalPy, totalPm: totalPm, rows: rows, mix: mix, types: types, trend: Object.keys(trend).sort().map(m => Object.assign({ ym: m }, trend[m])) };
 }
 
 /** 유형별 NAV — 일자별 요약 사용 */
@@ -256,7 +384,11 @@ function apiByType_(p) {
   return { date: date, ref: ref, refLabel: ref.label, total: total, totalPy: totalPy, rows: rows, dom: domRows, trend: wanted.filter(m => trend[m]).map(m => Object.assign({ ym: m, isBase: prevYE && m === prevYE.ym }, trend[m])) };
 }
 
-/** 유형 > 개별 ETF 트리맵 (v14). 넓이 = 기준일 NAV, 증감 = 전년말(신규상장은 상장 이후) 대비 NAV 증가액 */
+/** 원 → 억원(소수 첫째 자리). v24 큰 응답(히트맵·변천) 축소용 — 화면은 조원 소수 첫째 자리로 표시하므로 정밀도 충분 */
+function eok1_(v) { return Math.round(v / 1e7) / 10; }
+
+/** 유형 > 개별 ETF 트리맵 (v14). 넓이 = 기준일 NAV, 증감 = 전년말(신규상장은 상장 이후) 대비 NAV 증가액
+ *  v24: 행 배열 형식 rows[[종목명, 운용사, 상위구분, 유형, NAV(억원), 증감(억원|null), 신규상장이면 상장일 아니면 0]] (약 200KB → 60KB, 화면에서 복원) */
 function apiTreemap_(p) {
   const months = aggMarket_();
   const date = p.date || defaultDate_(months);
@@ -264,12 +396,14 @@ function apiTreemap_(p) {
   const ctx = ctx_();
   const cur = snapshot_(date), py = {};
   if (ref.py) snapshot_(ref.py).forEach(r => py[r.code] = r.nav);
-  const items = cur.filter(r => r.nav > 0).map(r => {
+  let total = 0;
+  const rows = cur.filter(r => r.nav > 0).map(r => {
     const g = groupOf_(r, ctx), ld = listDdOf_(r.code, ctx), isNew = !!(ref.py && ld && ld > ref.py);
     const base = isNew ? 0 : (py[r.code] !== undefined ? py[r.code] : null);
-    return { code: r.code, name: r.name, mgr: g.short, top: g.top, type: g.f2, nav: r.nav, base: base, chg: base === null ? null : r.nav - base, isNew: isNew, listDd: ld || '' };
+    total += r.nav;
+    return [String(r.name), g.short, g.top, g.f2, eok1_(r.nav), base === null ? null : eok1_(r.nav - base), isNew ? ld : 0];
   });
-  return { date: date, ref: ref, refLabel: ref.label, total: items.reduce((s, i) => s + i.nav, 0), items: items };
+  return { date: date, ref: ref, refLabel: ref.label, total: total, unit: 1e8, cols: ['name', 'mgr', 'top', 'type', 'nav', 'chg', 'new'], rows: rows };
 }
 
 /** 상위 5개사 및 시장 전체의 유형별 비중 (+ 선택 운용사) — 일자별 요약 사용 */
@@ -303,13 +437,14 @@ function apiTopEtf_(p) {
   return { date: date, total: total, topTotal: topTotal, top: top, byMgr: byMgr };
 }
 
-/** bar chart race 자료: 월별 상위 N (agg_상위ETF월별) */
+/** bar chart race 자료: 월별 상위 N (agg_상위ETF월별)
+ *  v24: 행 배열 rows[[순위, 종목코드, 종목명, 상위구분, NAV(억원), 채권/금리 1|0, 유형최종2]] — 유형 추가(상위 N 내 유형별 M/S 막대), 크기 축소(약 150KB → 70KB) */
 function apiRace_(p) {
   const n = +p.n || 10;
-  const out = {}, types = ctx_().types;
+  const out = {}, types = typeLegend_();
   const isBond = c => { const t = types[c]; return !!t && (t.neu === '채권/금리' || t.f2 === '채권'); };   // 채권/금리형 → 회색 표시용
-  aggRows_(CFG.SHEET.AGG_TOP).forEach(r => { const k = ymstr_(r[0]); if (+r[1] <= n) { const c = padCode_(r[2]); (out[k] = out[k] || []).push({ rank: +r[1], code: c, name: r[3], mgr: r[4], top: r[5], nav: toNum_(r[6]), bond: isBond(c) }); } });
-  return { frames: Object.keys(out).sort().map(k => ({ ym: k, rows: out[k] })) };
+  aggRows_(CFG.SHEET.AGG_TOP).forEach(r => { const k = ymstr_(r[0]); if (+r[1] <= n) { const c = padCode_(r[2]); (out[k] = out[k] || []).push([+r[1], c, String(r[3]), String(r[5]), eok1_(toNum_(r[6])), isBond(c) ? 1 : 0, (types[c] && types[c].f2) || '미분류']); } });
+  return { unit: 1e8, cols: ['rank', 'code', 'name', 'top', 'nav', 'bond', 'type'], frames: Object.keys(out).sort().map(k => ({ ym: k, rows: out[k] })) };
 }
 
 /** 신규상장 ETF (기준일자 연도에 상장된 종목의 기준일자 NAV). 상장일 = ETF마스터 상장일 → 범례_유형 설정일 */
@@ -364,5 +499,5 @@ function apiTurnover_(p) {
   const top = Object.keys(sum).map(c => { const r = names[c], g = groupOf_(r, ctx); return { code: c, name: r.name, mgr: g.short, top: g.top, type: g.f2, sum: sum[c], avg: sum[c] / days, nav: r.nav, turn: r.nav ? sum[c] / r.nav : null }; })
     .sort((a, b) => b.sum - a.sum).slice(0, CFG.TOP_N).map((r, i) => Object.assign({ rank: i + 1 }, r));
   const marketSum = Object.keys(sum).reduce((s, c) => s + sum[c], 0);
-  return { from: from, to: to, days: days, top: top, marketSum: marketSum, dailyDates: dates };
+  return { from: from, to: to, days: days, top: top, marketSum: marketSum };   // v24: dailyDates(전체 일별 일자, 화면 미사용) 제외 → 결과가 'to' 이하 월 자료로만 정해져 월 단위 캐시 버전 적용
 }

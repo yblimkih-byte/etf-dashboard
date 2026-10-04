@@ -1,6 +1,6 @@
 /* Vercel 서버 함수: Apps Script JSON 엔드포인트 프록시 + CDN 캐시
    환경변수 GAS_URL = Apps Script 웹앱 /exec 주소 (브라우저에는 노출되지 않음) */
-const ACTIONS = ['meta', 'overview', 'byMgr', 'byType', 'shares', 'topEtf', 'race', 'newListings', 'turnover', 'treemap'];
+const ACTIONS = ['boot', 'meta', 'overview', 'byMgr', 'byType', 'shares', 'topEtf', 'race', 'newListings', 'turnover', 'treemap'];   // v116: boot = meta + 첫 화면 자료 묶음
 
 module.exports = async (req, res) => {
   const action = String(req.query.action || '');
@@ -24,8 +24,8 @@ module.exports = async (req, res) => {
     let body;
     try { body = await once(); } catch (e1) { console.warn('[retry]', action, e1.message); await new Promise(r => setTimeout(r, 1200)); body = await once(); }
     // 정상 응답만 CDN 에 캐시: 10분간 그대로, 이후 하루까지는 이전 값을 즉시 주고 뒤에서 갱신
-    // meta(선택 가능한 기준일 목록)는 새 적재가 곧바로 보이도록 1분만 캐시
-    res.setHeader('Cache-Control', body.ok ? 'public, s-maxage=' + (action === 'meta' ? 60 : 600) + ', stale-while-revalidate=86400' : 'no-store');
+    // meta(선택 가능한 기준일 목록)·boot(meta 포함)는 새 적재가 곧바로 보이도록 1분만 캐시
+    res.setHeader('Cache-Control', body.ok ? 'public, s-maxage=' + (action === 'meta' || action === 'boot' ? 60 : 600) + ', stale-while-revalidate=86400' : 'no-store');
     return res.status(200).json(body);
   } catch (e) {
     res.setHeader('Cache-Control', 'no-store');

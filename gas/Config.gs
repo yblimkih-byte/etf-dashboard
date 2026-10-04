@@ -116,6 +116,7 @@ const CFG = {
   FULL_CALC_MS: 3 * 60 * 1000,   // v23: 전체 재계산 분할 실행 1회의 월별 계산 시한
   FULL_WRITE_MS: 2 * 60 * 1000,  // v23: 계산을 마친 시점이 이보다 이르면 같은 실행에서 시트 쓰기, 아니면 다음 실행에서
   WARM_MS: 3.5 * 60 * 1000,      // 예열 허용 시한(v23: 4.5→3.5분, 마지막 조회가 6분 한도를 넘겨 강제 종료되던 문제 완화)
+  WARM_EVERY_MIN: 300,           // v24: 예열 주기(분, 밤낮 없이). 캐시 보존 6시간보다 짧게 → 예열 때 캐시에 있는 값은 다시 넣어 보존 기간 연장(만료로 느려지는 시간대 없음)
   TOP_N: 50
 };
 
@@ -129,7 +130,9 @@ const PROP = { KRX_KEY: 'KRX_AUTH_KEY', LAST_DAILY: 'LAST_DAILY_DATE', BACKFILL_
   FULL_AGG: 'FULL_AGG',           // v23: 전체 재계산(분할 실행) 진행 상태 {id, reason, hash, done[], tries, steps, redo}
   FULL_BLOCK: 'FULL_AGG_BLOCK',   // v23: 전체 재계산이 중단된 날(yyyy-MM-dd) → 그날은 다시 예약하지 않음(트리거 실행시간 보호)
   AGG_HASH: 'AGG_LEGEND_HASH',    // v23: 마지막 전체 재계산 때의 범례 지문 → 야간 점검에서 범례 변경 감지
-  AGG_DIRTY: 'AGG_DIRTY' };       // v23: 집계 시트를 쓰는 중 표시 → 캐시 갱신 전에 끊기면 다음 실행에서 캐시 갱신
+  AGG_DIRTY: 'AGG_DIRTY',         // v23: 집계 시트를 쓰는 중 표시 → 캐시 갱신 전에 끊기면 다음 실행에서 캐시 갱신(v24: 값 = 쓰는 월 목록 또는 'all')
+  MONTH_VER: 'MONTH_VER',         // v24: 기준일 조회 캐시 버전 {f: 전체 무효화 시각, m: {월: 그 월 이후 무효화 시각}} → 지난 달 기준 조회는 당월 적재 후에도 캐시 유지
+  CTX_HASH: 'CTX_HASH' };         // v24: 화면 계산이 읽는 범례·마스터 항목 지문(야간 점검) → 바뀌면 화면 캐시 전체 무효화
 
 function krxKey_() {
   const k = PropertiesService.getScriptProperties().getProperty(PROP.KRX_KEY);
