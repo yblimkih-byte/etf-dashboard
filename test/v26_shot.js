@@ -1,6 +1,7 @@
 /* v26 화면 점검 (web.html = Vercel 빌드, index.html = Apps Script 화면) — CHROME_PATH=/opt/pw-browsers/chromium node v26_shot.js
  *  요약 'M/S 변동 요인' = 유형별 M/S 기여 상위 유형 · 운용사별 M/S 변동 요인 표(유형별 M/S 기여, 합계 = M/S 변동) ·
- *  상위 ETF 변천 유형별 M/S(유형최종3)와 막대 바로 아래 주석 · 신규상장 유형별 주석 */
+ *  상위 ETF 변천 유형별 M/S(유형최종3)와 막대 바로 아래 주석 · 신규상장 유형별 주석
+ *  v28: 화면 문구에 내부 시트·열 이름(범례_유형·유형최종2/3·신규상장용·시트 메뉴) 없음 */
 const { chromium } = require('playwright'), fs = require('fs');
 const OUT = __dirname + '/shots_v26';
 (async () => {
@@ -81,7 +82,8 @@ const OUT = __dirname + '/shots_v26';
         note: nt ? nt.textContent : '', after: nt && nt.previousElementSibling === ms[ms.length - 1], listTypes: [...document.querySelectorAll('#view table.tbl tbody tr')].filter(tr => /KOFR|CD금리/.test(tr.textContent)).map(tr => tr.textContent).slice(0, 3) };
     });
     console.log('     ' + tp.bars.map(x => x.l + ': ' + x.segs.join(', ')).join('\n     '));
-    check('상위 ETF: 유형별 M/S 막대 바로 아래 주석(유형최종3 설명)', tp.after && /유형최종3/.test(tp.note) && /파생형 중 신규상장용이 '채권\/금리'/.test(tp.note) && /채권형으로 분류/.test(tp.note), tp.note);
+    const RAW = /범례|유형최종|신규상장용|시트/;   // v28: 화면에 내부 시트·열 이름 금지
+    check('상위 ETF: 유형별 M/S 막대 바로 아래 주석(내부 용어 없음)', tp.after && !RAW.test(tp.note) && /채권·금리를 기초로 하는 합성\(파생\) 상품/.test(tp.note) && /채권형으로 분류/.test(tp.note), tp.note);
     check('상위 ETF 목록: 금리 합성 종목 유형 = 채권형', tp.listTypes.length > 0 && tp.listTypes.every(t => /채권형/.test(t) && !/파생형/.test(t)), tp.listTypes.length + '종목');
     await p.evaluate(() => { const r = document.querySelector('.race'); window.scrollTo(0, r.getBoundingClientRect().top + window.scrollY - 160); }); await p.waitForTimeout(300);
     await p.screenshot({ path: `${OUT}/${name}_top.png`, fullPage: false });
@@ -92,7 +94,9 @@ const OUT = __dirname + '/shots_v26';
       const s = [...document.querySelectorAll('#view > .section')].find(x => /유형별/.test(x.querySelector('.h2').textContent));
       return s ? { desc: s.querySelector('.section-h .note').textContent, foot: [...s.querySelectorAll(':scope > .note')].map(x => x.textContent).join(' ') } : null;
     });
-    check('신규상장 유형별: 유형 = 유형최종3 · 아래 주석', !!nw && /유형최종3/.test(nw.desc) && /채권형으로 분류/.test(nw.foot), nw && nw.desc);
+    check('신규상장 유형별: 설명·주석에 내부 용어 없음 · 주석 있음', !!nw && !RAW.test(nw.desc + nw.foot) && /채권형으로 분류/.test(nw.foot), nw && nw.desc + ' / ' + nw.foot);
+    const raw = await p.evaluate(() => { const t = document.getElementById('view').innerText + ' ' + [...document.querySelectorAll('[title]')].map(e => e.title).join(' '); const m = t.match(/범례_\S+|유형최종\d|신규상장용|시트 메뉴/g); return m ? [...new Set(m)] : []; });
+    check('신규상장 화면 전체(표 머리글 포함): 내부 용어 없음', raw.length === 0, raw.join(', ') || 'none');
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_new.png`, fullPage: true });
 
     const real = errs.filter(e => !/ERR_FILE_NOT_FOUND/.test(e));
