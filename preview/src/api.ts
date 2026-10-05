@@ -5,13 +5,14 @@ const stable = (p: Record<string, any>) => '{' + Object.keys(p || {}).sort().fil
 const keyOf = (a: string, p: Record<string, any>) => a + ':' + stable(p);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-export function call<T = any>(action: string, params: Record<string, any> = {}): Promise<T> {
+export function call<T = any>(action: string, params: Record<string, any> = {}, opt: { retry?: boolean; timeoutMs?: number } = {}): Promise<T> {
   const k = keyOf(action, params);
   const hit = memo.get(k); if (hit) return hit;
   const url = `${BASE}?action=${encodeURIComponent(action)}&p=${encodeURIComponent(JSON.stringify(params))}`;
   const go = async (n: number): Promise<T> => {
-    const r = await fetch(url).catch(e => { throw new Error('네트워크 오류: ' + e.message); });
-    if (r.status >= 500 && n < 3) { await sleep([1500, 3000, 5000][n]); return go(n + 1); }
+    const ac = new AbortController(), tm = opt.timeoutMs ? setTimeout(() => ac.abort(), opt.timeoutMs) : 0;
+    const r = await fetch(url, { signal: ac.signal }).catch(e => { throw new Error(e.name === 'AbortError' ? '응답 지연(시간 초과)' : '네트워크 오류: ' + e.message); }).finally(() => tm && clearTimeout(tm));
+    if (r.status >= 500 && opt.retry !== false && n < 2) { await sleep([1500, 4000][n]); return go(n + 1); }
     const b = await r.json().catch(() => ({ ok: false, error: '응답 형식 오류 (HTTP ' + r.status + ')' }));
     if (!b.ok) throw new Error(b.error || '서버 오류');
     return b.data as T;
@@ -19,10 +20,11 @@ export function call<T = any>(action: string, params: Record<string, any> = {}):
   const pr = go(0); memo.set(k, pr); pr.catch(() => memo.delete(k));
   return pr;
 }
-/** 첫 화면 묶음: meta + 기본 기준일 자료(서버 캐시에 있는 것) → 같은 조회는 다시 요청하지 않음 */
+/** 첫 화면 묶음: meta + 기본 기준일 자료(서버 캐시에 있는 것) → 같은 조회는 다시 요청하지 않음.
+ *  묶음 응답이 늦으면(8초) 기다리지 않고 meta 와 개별 조회로 진행(데이터 서버 응답 지연 대비) */
 export async function boot(): Promise<any> {
   try {
-    const b: any = await call('boot', {});
+    const b: any = await call('boot', {}, { retry: false, timeoutMs: 8000 });
     (b.pre || []).forEach(([a, p, d]: [string, any, any]) => { const k = keyOf(a, p); if (!memo.has(k)) memo.set(k, Promise.resolve(d)); });
     return b.meta;
   } catch { return call('meta', {}); }
