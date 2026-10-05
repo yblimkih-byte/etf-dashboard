@@ -239,7 +239,7 @@ function TopManagers({ S, meta, date }: { S: SM; meta: any; date: string }) {
       </CardHeader>
       <CardContent>
         <ChartContainer config={config} className="aspect-auto h-[132px] w-full">
-          <BarChart data={data} layout="vertical" margin={{ left: 4, right: 8, top: 0, bottom: 0 }} barCategoryGap={10}>
+          <BarChart data={data} layout="vertical" margin={{ left: 4, right: 64, top: 0, bottom: 0 }} barCategoryGap={10}>
             <XAxis type="number" hide domain={[0, 'dataMax']} />
             <YAxis type="category" dataKey="row" width={84} tickLine={false} axisLine={false} tick={<YTick />} />
             <ChartTooltip cursor={false} content={<ChartTooltipContent valueFormatter={(v: number, k: string, pl: any) => `${fmt.eok(v)}조원 (${(v / (pl.row === '기준일' ? tot[1] : tot[0]) * 100).toFixed(1)}%)`} />} />
@@ -247,6 +247,8 @@ function TopManagers({ S, meta, date }: { S: SM; meta: any; date: string }) {
               <Bar key={k} dataKey={k} stackId="a" fill={`var(--color-${k})`} stroke="var(--background)" strokeWidth={2} isAnimationActive={false} barSize={44}
                 radius={i === keys.length - 1 ? [0, 4, 4, 0] : 0}>
                 <LabelList dataKey={k} content={SegLabel(k, config[k].color!)} />
+                {i === keys.length - 1 && <LabelList dataKey={k} content={(p: any) => (   // 막대 끝 = 행 합계(시장 전체 NAV)
+                  <text x={p.x + p.width + 8} y={p.y + p.height / 2} dominantBaseline="central" fontSize={12} fill="var(--foreground)" className="tnum">{fmt.eok(tot[p.index])}조</text>)} />}
               </Bar>
             ))}
           </BarChart>
