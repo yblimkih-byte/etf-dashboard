@@ -558,10 +558,16 @@ function syncDailySummary_(ix, getCtx) {
   log_('agg_일별요약 누락 보충(중단된 실행 정리): ' + miss.join(', '), 'WARN');
   return miss;
 }
-/** v23: 지수 시트의 마지막 일자가 최종 적재일보다 이전이면 true → 다음 실행에서 지수 갱신 보충 */
+/** v23: 지수 시트의 마지막 일자가 최종 적재일보다 이전이면 true → 다음 실행에서 지수 갱신 보충
+ *  v25: 최종 적재일 행에 KOSPI 가 비어 있어도 true — 미국 지수(S&P500·NASDAQ100)만 들어오고 KOSPI 가 빠진 행은 마지막 일자 비교로는
+ *       '최신'으로 보여 다시 받지 않았음(2026-10-01 KOSPI 누락 → 개관 탭 10-01 기준에 09-30 KOSPI 표시) */
 function indexBehind_(last) {
   const sh = sheet_(CFG.SHEET.INDEX, ['일자', 'KOSPI', 'S&P500', 'NASDAQ100']), lr = sh.getLastRow();
-  return lr < 2 || dstr_(sh.getRange(lr, 1, 1, 1).getValues()[0][0]) < last;
+  if (lr < 2) return true;
+  const rows = sh.getRange(2, 1, lr - 1, 2).getValues();   // 일자·KOSPI 2열만(약 1,500행) — 지수 백필로 최종 적재일 뒤 일자 행이 있을 수 있어 전체에서 찾음
+  if (dstr_(rows[rows.length - 1][0]) < last) return true;
+  for (let i = rows.length - 1; i >= 0; i--) { const d = dstr_(rows[i][0]); if (d === last) return !toNum_(rows[i][1]); if (d < last) break; }
+  return true;   // 최종 적재일 행 없음
 }
 
 /** raw_월말 전체 → {ym: [rec]} (ym 오름차순 키) */
@@ -586,16 +592,17 @@ function loadIndices_(toDate) {
   mergeIndices_(map, from, toDate);
   writeIndices_(sh, map);
 }
-/** Yahoo 3개 지수를 map 에 병합. KOSPI 가 비면 KRX API 로 최근 10영업일 보완 */
+/** Yahoo 3개 지수를 map 에 병합. KOSPI 가 빠진 최근 10일 이내 영업일(ETF 적재일)은 KRX API 로 보완
+ *  v25: 보완 조건을 'Yahoo KOSPI 응답 전체가 비었을 때' → '해당 일자 KOSPI 가 없을 때(일자별)'로 — Yahoo 가 최근 1일만 빠뜨리는 경우 대비 */
 function mergeIndices_(map, from, to) {
   const put = (obj, key) => Object.keys(obj).forEach(d => { (map[d] = map[d] || { k: 0, s: 0, n: 0 })[key] = obj[d]; });
-  const k = fetchYahoo_(CFG.YAHOO.KOSPI, from, to); put(k, 'k');
+  put(fetchYahoo_(CFG.YAHOO.KOSPI, from, to), 'k');
   put(fetchYahoo_(CFG.YAHOO.SP500, from, to), 's');
   put(fetchYahoo_(CFG.YAHOO.NDX100, from, to), 'n');
-  if (!Object.keys(k).length) {
-    let d = addDays_(parse_(to), -10); const end = parse_(to);
-    while (d <= end) { const ds = fmt_(d); if (!isWeekend_(d) && !(map[ds] && map[ds].k)) { const v = fetchKospi_(ds); if (v) (map[ds] = map[ds] || { k: 0, s: 0, n: 0 }).k = v; } d = addDays_(d, 1); }
-  }
+  const lo = fmt_(addDays_(parse_(to), -10));
+  Object.keys(indexMap_()).filter(ds => ds >= lo && ds <= to && !(map[ds] && map[ds].k)).forEach(ds => {
+    const v = fetchKospi_(ds); if (v) (map[ds] = map[ds] || { k: 0, s: 0, n: 0 }).k = v;
+  });
 }
 function writeIndices_(sh, map) {
   const rows = Object.keys(map).filter(d => map[d].k || map[d].s || map[d].n).sort().map(d => [d, map[d].k || '', map[d].s || '', map[d].n || '']);
