@@ -150,13 +150,22 @@ function msDrivers(gr) {
   if (!out.length) out = xs.slice().sort((a, b) => Math.abs(b.c) - Math.abs(a.c)).slice(0, 1);
   return out;
 }
-/* v26: 주요 유형 문구 — '하락 요인 국내주식형 −0.86%p · 파생형 −0.31%p (시장 증가분 중 한투 몫 3.9% · 1.4% vs 전년말 M/S 8.53%)' */
+/* v27: 반대 방향 최대 기여(0.1%p 이상) — M/S 가 늘었어도 크게 끌어내린 유형(또는 줄었어도 크게 끌어올린 유형)을 함께 표시
+   예: 2025-06 한투 M/S +0.23%p = 기타 +0.27 · 해외주식형 +0.20 · 혼합채권형 +0.12 … 국내주식형 −0.26%p(상쇄) */
+function msOffset(gr) {
+  const sg = gr.dms === null || Math.abs(gr.dms) < 0.005 ? 0 : Math.sign(gr.dms);
+  if (!sg) return null;
+  return gr.rows.filter(r => r.c !== null && Math.sign(r.c) === -sg && Math.abs(r.c) >= 0.1).sort((a, b) => Math.abs(b.c) - Math.abs(a.c))[0] || null;
+}
+/* v26: 주요 유형 문구 — '하락 요인 국내주식형 −0.86%p · 파생형 −0.31%p (시장 증가분 중 한투 몫 3.9% · 1.4% vs 전년말 M/S 8.53%)'
+   v27: 반대 방향 최대 기여가 0.1%p 이상이면 ' · 상쇄 요인 국내주식형 −0.26%p (한투 몫 3.3%)' 추가 */
 function msDriverText(A, gr, mgr, RL) {
-  const drv = msDrivers(gr), pp2 = v => A.pct(v, 2).replace('%', '%p');
+  const drv = msDrivers(gr), pp2 = v => A.pct(v, 2).replace('%', '%p'), cap = r => r.cap === null ? '시장 감소' : A.share(r.cap);
   if (!drv.length || gr.dms === null) return '';
-  const word = gr.dms < -0.005 ? '하락 요인' : gr.dms > 0.005 ? '상승 요인' : '유형별 기여 최대';
+  const word = gr.dms < -0.005 ? '하락 요인' : gr.dms > 0.005 ? '상승 요인' : '유형별 기여 최대', o = msOffset(gr);
   return `${word} ` + drv.map(r => `${r.type} <b>${pp2(r.c)}</b>`).join(' · ')
-    + ` (시장 증가분 중 ${mgr} 몫 ${drv.map(r => r.cap === null ? '시장 감소' : A.share(r.cap)).join(' · ')} vs ${RL} M/S ${A.share(gr.s0, 2)})`;
+    + ` (시장 증가분 중 ${mgr} 몫 ${drv.map(cap).join(' · ')} vs ${RL} M/S ${A.share(gr.s0, 2)})`
+    + (o ? ` · 상쇄 요인 ${o.type} <b>${pp2(o.c)}</b> (${mgr} 몫 ${cap(o)})` : '');
 }
 /* v26: 개별 종목 유형(상위 ETF·신규상장·거래대금) 분류 주석 — 범례_유형 '유형최종3' */
 const F3_NOTE = '※ 유형 = 범례_유형 \'유형최종3\': 유형최종2 기준이되, 파생형 중 신규상장용이 \'채권/금리\'인 종목(KOFR·CD금리 액티브(합성) 등 금리 추종 상품)은 채권형으로 분류';
