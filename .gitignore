@@ -16,3 +16,4 @@ test/gas_after/
 test/shots_*/
 
 preview/dist/
+test/package-lock.json
