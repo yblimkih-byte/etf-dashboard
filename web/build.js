@@ -12,4 +12,6 @@ fs.writeFileSync(path.join(out, 'app.css'), css);
 fs.writeFileSync(path.join(out, 'app.js'), js);
 fs.writeFileSync(path.join(out, 'index.html'), read('web/src/index.html').replace(/__VER__/g, ver));
 fs.writeFileSync(path.join(out, 'favicon.svg'), read('web/src/favicon.svg'));
+// 요약 탭 시안(React + shadcn/ui, preview/ 에서 빌드한 HTML 한 파일) → /preview (현재 화면과 비교용, 같은 /api/data 사용)
+if (fs.existsSync(path.join(root, 'web/preview.html'))) fs.copyFileSync(path.join(root, 'web/preview.html'), path.join(out, 'preview.html'));
 console.log('built web/public', ver, (css.length / 1024).toFixed(0) + 'KB css', (js.length / 1024).toFixed(0) + 'KB js');
