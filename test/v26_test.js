@@ -93,7 +93,7 @@ legRows().forEach(r => { if (isDB(r)) r[12] = '파생형'; });
 R(`nightlyAgg()`);
 check('야간 점검 실행 → 유형최종3 열 복원', legRows().every(r => r[12] === (isDB(r) ? '채권형' : r[8])));
 check('캐시 세대 a26 (이전 응답 캐시 전체 무효화)', /^a26:/.test(R(`cacheKey_('race', {n: 20})`)));
-check('README v26 · 범례_유형 행에 유형최종3 설명', R(`README.VER`) === 'v26' && /유형최종3/.test(R(`README.SHEETS.find(r => r[0] === '범례_유형').join(' ')`)));
+check('README v26+ · 범례_유형 행에 유형최종3 설명', /^v2[6-9]$/.test(R(`README.VER`)) && /유형최종3/.test(R(`README.SHEETS.find(r => r[0] === '범례_유형').join(' ')`)));
 check('메뉴: 범례_유형 유형최종3 갱신', /syncTypeF3/.test(fs.readFileSync(path.join(__dirname, '..', 'gas', 'Setup.gs'), 'utf8')));
 
 console.log(fails ? '\n실패 ' + fails + '건' : '\n모두 통과');

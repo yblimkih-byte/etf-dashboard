@@ -34,6 +34,16 @@ const OUT = __dirname + '/shots_v26';
     if (sm.chk) {
       check('계산: 운용사별 유형별 M/S 기여 합계 = M/S 변동(5개사)', sm.chk.length === 5 && sm.chk.every(x => Math.abs(x.sum - x.dms) < 1e-9 && Math.abs(x.dms - x.ms) < 1e-6), sm.chk.map(x => `${x.mgr} ${x.sum.toFixed(3)}/${x.ms.toFixed(3)}`).join(' · '));
     } else check('계산: byMgr 자료 찾음', false);
+    // v27: 반대 방향 최대 기여(상쇄 요인) — 실데이터 2025-06(전년말 대비) 한투 유형별 값으로 점검
+    const off = await p.evaluate(() => {
+      const mk = (type, c, cap) => ({ type, c, cap });
+      const gr = { dms: 0.227, s0: 7.56, rows: [mk('국내주식형', -0.262, 3.3), mk('해외주식형', 0.200, 12.7), mk('채권형', -0.070, 6.3), mk('파생형', -0.025, 3.2), mk('혼합채권형', 0.118, 37.4), mk('기타', 0.265, 34.7)] };
+      const g2 = { dms: -1.273, s0: 8.53, rows: [mk('국내주식형', -0.863, 3.9), mk('해외주식형', -0.090, 7.5), mk('채권형', -0.030, 3.5), mk('파생형', -0.312, 1.4), mk('혼합채권형', 0.016, 9.3), mk('기타', 0.007, 11.2)] };
+      return [msDriverText(App, gr, '한투', '전년말').replace(/<[^>]+>/g, ''), msDriverText(App, g2, '한투', '전년말').replace(/<[^>]+>/g, '')];
+    });
+    console.log('     ' + off.join('\n     '));
+    check('상쇄 요인: M/S 상승(+0.23%p)이어도 국내주식형 −0.26%p 표시', /^상승 요인 기타 \+0\.27%p · 해외주식형 \+0\.20%p .* · 상쇄 요인 국내주식형 -0\.26%p \(한투 몫 3\.3%\)$/.test(off[0]), off[0]);
+    check('상쇄 요인: 반대 방향 0.1%p 미만이면 생략(09-30)', /^하락 요인 국내주식형 -0\.86%p · 파생형 -0\.31%p /.test(off[1]) && !/상쇄/.test(off[1]), off[1]);
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_summary.png`, fullPage: true });
 
     // 운용사별
