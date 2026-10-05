@@ -21,6 +21,15 @@ function onOpen() {
     .addItem('시트 빈 열 정리 (셀 한도 여유 확보)', 'trimRawColumns')
     .addItem('README 시트 갱신 (시트·탭 안내)', 'writeReadme')
     .addItem('범례_유형 유형최종3 갱신', 'syncTypeF3')
+    .addSeparator()
+    .addItem('테마 분류 검수표 (범례_테마 규칙 반영)', 'menuThemeReview')
+    .addItem('기초지수명 채우기 (테마 분류용, 1회)', 'menuFillIndexNames')
+    .addItem('KIS Open API 키 설정 (종목→ETF 찾기)', 'setKisKey')
+    .addItem('KIS 연결 테스트', 'menuTestKis')
+    .addItem('구성종목 수집 (지금)', 'menuCollectHoldings')
+    .addItem('네이버 API 키 설정 (관심도)', 'setNaverKey')
+    .addItem('네이버 연결 테스트', 'menuTestNaver')
+    .addItem('관심도 수집 (지금)', 'menuCollectBuzz')
     .addToUi();
 }
 
@@ -30,6 +39,46 @@ function setApiKey() {
   if (r.getSelectedButton() !== ui.Button.OK) return;
   PropertiesService.getScriptProperties().setProperty(PROP.KRX_KEY, r.getResponseText().trim());
   ui.alert('저장되었습니다.');
+}
+
+/** v29: 키 입력(사용자가 직접) — 값은 스크립트 속성에만 저장, 화면·시트에 표시하지 않음 */
+function askSecrets_(title, fields) {
+  const ui = SpreadsheetApp.getUi(), props = PropertiesService.getScriptProperties(), vals = {};
+  for (let i = 0; i < fields.length; i++) {
+    const has = !!props.getProperty(fields[i][0]);
+    const r = ui.prompt(title, fields[i][1] + (has ? ' (이미 저장됨 — 비워 두고 확인하면 유지)' : ''), ui.ButtonSet.OK_CANCEL);
+    if (r.getSelectedButton() !== ui.Button.OK) return false;
+    vals[fields[i][0]] = r.getResponseText().trim();
+  }
+  Object.keys(vals).forEach(k => { if (vals[k]) props.setProperty(k, vals[k]); });
+  ui.alert('저장되었습니다.');
+  return true;
+}
+function setKisKey() {
+  if (!askSecrets_('한국투자증권 Open API', [[PROP.KIS_KEY, 'App Key 를 입력하세요'], [PROP.KIS_SECRET, 'App Secret 을 입력하세요']])) return;
+  PropertiesService.getScriptProperties().deleteProperty(PROP.KIS_TOKEN);   // 키가 바뀌었을 수 있으므로 토큰 새로 발급
+  installHoldingsTrigger_(); scheduleContinue_('collectHoldings', 1);
+  notify_('구성종목 첫 수집을 1분 뒤 시작합니다(약 3~10분). 이후 매주 월요일 07시대 자동 수집 · 끝나면 화면에 \'종목→ETF 찾기\' 탭이 나타납니다.');
+}
+function setNaverKey() {
+  if (!askSecrets_('네이버 개발자 API (DataLab·검색)', [[PROP.NAVER_ID, 'Client ID 를 입력하세요'], [PROP.NAVER_SECRET, 'Client Secret 을 입력하세요']])) return;
+  installBuzzTrigger_(); scheduleContinue_('collectBuzz', 1);
+  notify_('관심도 첫 수집을 1분 뒤 시작합니다(약 2~5분). 이후 매일 07시대 자동 수집 · 끝나면 화면에 \'관심도\' 탭이 나타납니다.');
+}
+function menuCollectHoldings() { scheduleContinue_('collectHoldings', 1); notify_('구성종목 수집을 1분 뒤 시작합니다(진행·결과는 _log 시트).'); }
+function menuCollectBuzz() { scheduleContinue_('collectBuzz', 1); notify_('관심도 수집을 1분 뒤 시작합니다(결과는 _log 시트).'); }
+function menuTestKis() { notify_(testKis().join('\n')); }
+function menuTestNaver() { notify_(testNaver().join('\n').slice(0, 1500)); }
+/** v29: 메뉴 — 테마 분류 검수표 작성 + 테마 맵 캐시 갱신 */
+function menuThemeReview() {
+  const r = buildThemeReview();
+  notify_('테마 분류 검수표 작성 완료\n기준일 ' + r.date + ' · ' + r.n + '종목 (기타 주식 ' + r.etc + '종목)\n시트: ' + THEME.REVIEW + ' — 분류를 바꾸려면 ' + THEME.SHEET + ' 시트의 키워드를 고친 뒤 이 메뉴를 다시 실행'
+    + (r.bad.length ? '\n해석할 수 없는 키워드: ' + r.bad.join(', ') : ''));
+}
+/** v29: 메뉴 — 기초지수명 채우기 */
+function menuFillIndexNames() {
+  const r = fillIndexNames();
+  notify_('기초지수명 채우기: ' + r.updated + '종목 갱신 · 남은 빈칸 ' + r.left + '종목 (조회 시점 ' + r.dates.join(', ') + ')' + (r.left ? '\n남은 종목은 오래전 상장폐지 종목일 수 있음(종목명으로만 분류)' : ''));
 }
 
 function setupSheets() {
@@ -82,13 +131,18 @@ function notify_(msg) {
 // ─────────────────────────── README 시트 (v18) ───────────────────────────
 
 const README = {
-  SHEET: 'README', VER: 'v27',
+  SHEET: 'README', VER: 'v29',
   /* [시트명, 구분, 내용·주요 열, 갱신 방식, 사용하는 대시보드 탭] */
   SHEETS: [
     ['README', '안내', '이 시트. 시트별 역할과 대시보드 탭별 원천 설명', '메뉴 [ETF Dashboard] › README 시트 갱신 (코드 변경 시 자동 1회)', '-'],
     ['범례_유형', '사용자 작성 (자동 보강)', '종목코드 · ETF명 · 설정일 · 유형1~4 · 유형최종1 · 유형최종2 · 국내해외 · 신규상장용 · 확인필요 · 유형최종3(v26 자동 계산: 유형최종2, 단 파생형 중 신규상장용 채권/금리 → 채권형. 머리글 메모에 설명)', '사용자 관리. 신규 종목은 적재 시 규칙 기반 유형으로 자동 추가되고 확인필요 표시됨. 유형최종3은 신규 종목 추가·매일 05시대 점검 시 자동 갱신(직접 수정 대신 유형최종2·신규상장용 수정)', '유형최종2: 유형별 NAV(히트맵 포함) · 운용사별 M/S 변동 요인 · 상위 5개사·시장 유형 비중 — 유형별 NAV 합계 기준 / 유형최종3: 상위 ETF(목록 유형, 변천의 유형별 M/S 막대) · 신규상장 ETF(유형별 합계·목록) · 거래대금 목록 — 개별 종목 유형 표시 / 신규상장용: 채권/금리 구분(변천 회색·신규상장 채권/금리 제외)'],
     ['범례_운용사', '사용자 작성 (자동 보강)', '운용사명 · 브랜드 · 약식_한글 · 약식_정식 · 약식_상위 · 운용사명_상위', '사용자 관리. 처음 보는 운용사는 적재 시 자동 추가됨', '전 탭 — 운용사 약식명, 상위 5개사(삼성·미래·KB·한투·신한)/기타 구분과 고유색, 개별 운용사 선택 목록'],
-    ['ETF마스터', '자동 적재', '종목코드 · 종목명 · 운용사명 · 브랜드 · 상장일 · 기초시장 · 기초자산 · 출처', '일별 적재 시 신규 종목 추가. 메뉴 운용사 보정·상장일 보정으로 보완', '전 탭(운용사 매칭) · 신규상장 ETF(상장일) · 유형별 NAV 히트맵(상장일 이후 증감)'],
+    ['ETF마스터', '자동 적재', '종목코드 · 종목명 · 운용사명 · 브랜드 · 상장일 · 기초시장 · 기초자산 · 출처 · 기초지수(v29: KRX 기초지수명)', '일별 적재 시 신규 종목 추가·기초지수명 갱신. 메뉴 운용사 보정·상장일 보정·기초지수명 채우기로 보완', '전 탭(운용사 매칭) · 신규상장 ETF(상장일) · 유형별 NAV 히트맵(상장일 이후 증감) · 테마 맵(기초지수명으로 테마 분류)'],
+    ['범례_테마', '사용자 수정 (v29, 없으면 기본 규칙으로 생성)', '순서 · 구분(상품구조/테마/지역) · 값 · 테마군 · 자산(전체/주식/채권) · 키워드 · 제외 키워드 · 찾는 곳(종목명/종목명·기초지수) · 메모 · 관심도 검색어. 구분별로 순서가 작은 행부터 검사해 처음 맞는 값 적용(키워드 문법은 키워드 머리글 메모)', '사용자 관리. 고친 뒤 메뉴 테마 분류 검수표 실행 → 화면 즉시 반영(야간 점검도 변경 감지)', '테마 맵(테마·상품구조·지역 분류) · 관심도(관심도 검색어)'],
+    ['테마_분류검토', '자동 작성 (v29)', '테마군 · 테마 · 상품구조 · 지역 · 자산 · 종목코드 · 종목명 · 기초지수 · 운용사 · NAV(억원) — 최근 영업일 전 종목 분류 결과', '메뉴 테마 분류 검수표 실행 시 다시 작성(직접 수정해도 반영되지 않음 — 범례_테마를 고칠 것)', '-(검수용)'],
+    ['구성종목', '자동 수집 (v29, KIS 키 설정 시)', 'ETF코드 · ETF명 · 구성종목코드 · 구성종목명 · 비중(%) · 평가금액(원) — 최근 수집분만(수집 중에는 구성종목_수집중 시트에 쓰고 끝나면 교체)', '매주 월요일 07시대 collectHoldings (한국투자증권 Open API ETF 구성종목시세) · 메뉴 구성종목 수집', '종목→ETF 찾기'],
+    ['범례_종목별칭', '사용자 수정 (v29, 없으면 기본값으로 생성)', '대표 표기 · 검색어(한글·영문·티커·종목코드, 쉼표 구분)', '사용자 관리 — 해외 종목 한/영 표기 등', '종목→ETF 찾기(검색어 확장)'],
+    ['관심도', '자동 수집 (v29, 네이버 키 설정 시)', '구분(검색/뉴스/단어) · 대상 · 기간 · 값 — 검색 관심도(ETF 검색 = 100 환산 주간 지수) · 뉴스 기사 수(최근 7일·이전 7일) · ETF 뉴스 제목 단어 빈도', '매일 07시대 collectBuzz (네이버 DataLab 검색어 트렌드·뉴스 검색) · 메뉴 관심도 수집', '관심도'],
     ['raw_일별', '자동 적재', '2026-01-02 이후 매 영업일 전 종목: 기준일자 · 종목코드 · 종목명 · 자산운용사 · 순자산총액 · 거래대금 · 해당연도거래대금계 · 해당월거래대금계', '매일 08:30/19:00 loadDaily (KRX Open API ETF 일별매매정보, 전 영업일분)', '거래대금(누적 차분) · 일별 기준일 선택 시 상위 ETF · 유형별 NAV 히트맵 · 신규상장 ETF의 NAV / raw_월말·agg_* 의 원천'],
     ['raw_월말', '자동 적재', '2021-01 이후 월별 마지막 영업일 전 종목 스냅샷(당월은 최근 영업일). 열 구성은 raw_일별과 같음(2025년 이전 거래대금 누적 열은 공란)', '월말 백필(과거) · 일별 적재 시 해당 월 스냅샷 교체', '월말 기준일 선택 시 상위 ETF · 유형별 NAV 히트맵 · 신규상장 ETF의 NAV / 집계(agg_*) 원천'],
     ['_index', '시스템', 'raw_일별의 기준일자별 시작행 · 행수', '일별 적재 시 1행 추가', '전 탭 — 선택 가능한 일별 기준일 목록, raw_일별 블록 빠른 조회'],
@@ -113,14 +167,18 @@ const README = {
     ['상위 5개사·시장 유형 비중', '시장 전체 · 상위 5개사 · 선택 운용사의 유형별 비중', 'shares', 'agg_일별요약 또는 agg_월말요약 · 범례_운용사(선택 목록)'],
     ['상위 ETF', '상위 20 막대 · NAV 상위 20 변천(월별)과 상위 20 내 운용사별·유형별 M/S 막대 · 상위 50 운용사별 요약·종목 목록', 'topEtf · race', 'topEtf: raw_일별 또는 raw_월말(기준일) · 범례_유형 · 범례_운용사 · ETF마스터 / race: agg_상위ETF월별 · 범례_유형(유형최종3·채권/금리 구분)'],
     ['신규상장 ETF', '연도별 신규상장 종목수·NAV · 운용사별·유형별 합계 · 종목 목록', 'newListings', 'ETF마스터(상장일) · 범례_유형(설정일·신규상장용 구분·유형최종3) · raw_일별 또는 raw_월말(기준일 NAV) · 범례_운용사'],
-    ['거래대금', '구간(from~to) 거래대금 상위 50 · 운용사별 합계', 'turnover', 'raw_일별(해당연도거래대금계 차분) · _index · 범례_유형(유형최종3) · 범례_운용사']
+    ['거래대금', '구간(from~to) 거래대금 상위 50 · 운용사별 합계', 'turnover', 'raw_일별(해당연도거래대금계 차분) · _index · 범례_유형(유형최종3) · 범례_운용사'],
+    ['테마 맵 (v29)', '테마(또는 상품구조)별 NAV·증감·1위 운용사·한투 점유율 · 사분면(증감액 × 한투 점유율) · 테마 상세(운용사별 2행 막대·종목 목록) · 보기·자산·지역·레버리지 제외 선택', 'theme', 'raw_일별 또는 raw_월말(기준일·비교 기준일) · 범례_테마 · ETF마스터(기초지수·상장일) · 범례_유형(채권·금리 구분·국내해외) · 범례_운용사'],
+    ['종목→ETF 찾기 (v29, 수집 후 표시)', '종목명·코드·별칭으로 그 종목을 담은 ETF 목록(비중·보유 평가액) · 많이 담긴 종목', 'holders', '구성종목 · 범례_종목별칭 · raw_일별(최근 영업일 NAV) · 범례_운용사'],
+    ['관심도 (v29, 수집 후 표시)', '테마별 검색 관심도(주간)·뉴스 기사 수 변화 · 테마 맵 NAV 증감과 비교 · ETF 뉴스 새 단어', 'buzz (+ theme)', '관심도 · 범례_테마(관심도 검색어·키워드)']
   ],
   FLOW: [
     '적재: KRX Open API(ETF 일별매매정보) → raw_일별 · _index · agg_일별요약 → raw_월말(해당 월 스냅샷) → 지수 갱신 → 집계 갱신(스냅샷 일자·지수가 agg_시장월별과 다른 월만 agg_* 6개 시트의 해당 월 행 교체, agg_시장월별을 마지막에 씀)',
     '일정: 매일 08:30 · 19:00 자동 실행. D일분은 KRX가 다음 영업일 오전에 게시하므로 보통 다음 날 08:30 실행에서 적재됨. 휴장일(Config.gs KRX_HOLIDAYS)은 건너뜀',
     '점검·복구: 모든 적재 실행(새 자료가 없어도)이 raw_월말 스냅샷 일자·지수와 agg_시장월별을 비교해 어긋난 월을 다시 집계 → 실행이 시간 초과로 끊겨도 감시 재시도(12분 뒤)·다음 실행에서 자동 복구. 매일 05시대 점검: 범례(범례_유형·범례_운용사·ETF마스터)가 바뀌었으면 전체 재계산(약 3분 단위 분할 실행)',
     '화면·캐시: 두 화면(Apps Script 웹앱, Vercel)은 같은 API를 사용. 응답 캐시(6시간) — 기준일 조회는 그 기준일 이하 월의 자료가 바뀔 때만, meta·변천은 적재·집계마다 새로 계산. 큰 응답(히트맵·변천)은 압축 저장. 5시간마다(밤낮 없이) 예열해 캐시 보존 기간을 연장 → 만료로 느려지는 시간대 없음. 범례·마스터 수정은 05시대 야간 점검에서 반영(즉시 반영: 메뉴 집계 재계산)',
-    '수동 작업: 시트 메뉴 [ETF Dashboard] — 오늘분 수동 적재 · 집계 재계산 · 운용사/상장일 보정 · NAV 0 일자 보정 · 일별 요약 재작성 · 시트 빈 열 정리 · README 시트 갱신 · 범례_유형 유형최종3 갱신',
+    '수동 작업: 시트 메뉴 [ETF Dashboard] — 오늘분 수동 적재 · 집계 재계산 · 운용사/상장일 보정 · NAV 0 일자 보정 · 일별 요약 재작성 · 시트 빈 열 정리 · README 시트 갱신 · 범례_유형 유형최종3 갱신 · (v29) 테마 분류 검수표 · 기초지수명 채우기 · KIS/네이버 키 설정·연결 테스트·지금 수집',
+    '외부 API 키(v29): KRX·한국투자증권·네이버 키는 메뉴로 직접 입력(스크립트 속성에만 저장, 시트·화면에 표시하지 않음). 종목→ETF 찾기·관심도 탭은 첫 수집이 끝난 뒤에만 화면에 나타남',
     '주의: 범례_유형·범례_운용사는 사용자 작성 시트이므로 열 순서를 바꾸지 말 것. raw_* · agg_* · _index 는 자동 생성 시트이므로 직접 수정하지 말 것'
   ]
 };

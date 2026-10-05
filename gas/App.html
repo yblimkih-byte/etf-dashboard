@@ -61,6 +61,7 @@ const App = {
     const ll = this.loadLine(m), hm = document.getElementById('hdrMeta');
     hm.innerHTML = `${ll.head}${ll.at ? ` · 확인 ${ll.at}` : ''}` + (ll.note ? `<br><span class="ld-note${ll.warn ? ' warn' : ''}"></span>` : '');
     if (ll.note) hm.querySelector('.ld-note').textContent = ll.note;
+    this.tabs = this.tabs.filter(t => !t.when || t.when(m));   // v29: 자료가 있어야 보이는 탭(종목→ETF 찾기·관심도 — 첫 수집 뒤)
     const nav = document.getElementById('tabs');
     this.tabs.forEach(t => {
       const b = document.createElement('button'); b.className = 'tab'; b.textContent = t.label; b.dataset.id = t.id;
@@ -371,7 +372,8 @@ const App = {
           } else {   // 'end': 막대 끝 바깥
             const p = el.getProps(['x', 'y', 'base'], true);
             ctx.fillStyle = o.color || '#212121';
-            if (horiz) { ctx.textAlign = 'left'; ctx.fillText(txt, p.x + 6, p.y); } else { ctx.textAlign = 'center'; ctx.fillText(txt, p.x, p.y - 10); }
+            const neg = horiz ? p.x < p.base - 0.5 : p.y > p.base + 0.5;   // v29: 음수 막대는 반대쪽 끝 바깥
+            if (horiz) { ctx.textAlign = neg ? 'right' : 'left'; ctx.fillText(txt, neg ? p.x - 6 : p.x + 6, p.y); } else { ctx.textAlign = 'center'; ctx.fillText(txt, p.x, neg ? p.y + 10 : p.y - 10); }
           }
         });
       });
@@ -431,6 +433,7 @@ const App = {
     o.plugins.valueLabels = {};
     if (opts.pctAxis) o.scales.y.ticks.callback = v => (v > 0 ? '+' : '') + v + '%';
     else if (opts.area) o.scales.y.ticks.callback = v => v + '%';
+    else if (opts.yFmt) o.scales.y.ticks.callback = opts.yFmt;   // v29: 조원이 아닌 값(관심도 지수 등)
     else o.scales.y.ticks.callback = v => App.eok(v, 0);
     if (opts.area) { o.scales.y.stacked = true; o.scales.y.max = opts.max || 100; o.scales.y.min = 0; }
     if (opts.unit) o.scales.y.title = { display: true, text: opts.unit, font: { size: 11 } };
@@ -442,6 +445,67 @@ const App = {
     const ch = this.chart(canvas, { type: 'line', data: { labels, datasets: ds }, options: o, plugins: [this.valueLabels] });
     ch.$labels = opts.labels || null; if (opts.labels) ch.update('none');
     return ch;
+  },
+
+  /* ── v29 사분면 버블(테마 맵): points[{key, label, x(원), y(%), size(원), color}]
+     opts: {xSplit(원), ySplit(%), quads:{a(우상),b(우하),c(좌상),d(좌하)}, xTitle, yTitle, tooltip(p)→[줄…], onClick(key), labelMax}
+     가로축은 부호 있는 제곱근 눈금(증감액 편차가 커도 작은 테마가 한쪽에 몰리지 않게), 눈금 글자는 원래 값(조원) */
+  bubble(canvas, points, opts) {
+    opts = opts || {};
+    const U = 1e12, tr = v => Math.sign(v) * Math.sqrt(Math.abs(v) / U), inv = t => Math.sign(t) * t * t;   // inv → 조원
+    const maxS = Math.max.apply(null, points.map(p => p.size || 0).concat([1]));
+    const rad = p => 4 + 24 * Math.sqrt(Math.max(p.size || 0, 0) / maxS);
+    const ds = [{ data: points.map(p => ({ x: tr(p.x), y: p.y, r: rad(p), p: p })), backgroundColor: points.map(p => this.fade(p.color, 0.38)), borderColor: points.map(p => p.color), borderWidth: 1.2, hoverBorderWidth: 2 }];
+    const xs = points.map(p => tr(p.x)).concat([tr(opts.xSplit || 0), 0]), ys = points.map(p => p.y).concat([opts.ySplit || 0]);
+    const xMin = Math.min.apply(null, xs), xMax = Math.max.apply(null, xs), padX = Math.max((xMax - xMin) * 0.08, 0.15);
+    const yMax = Math.max.apply(null, ys.concat([1])) * 1.12;
+    const NICE = [-100, -50, -20, -10, -5, -2, -1, -0.5, -0.2, 0, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200];
+    const o = this.baseOpts();
+    o.interaction = { mode: 'nearest', intersect: true };
+    o.plugins.legend.display = false;
+    o.plugins.tooltip.displayColors = false;
+    o.plugins.tooltip.callbacks = { title: items => items.length ? items[0].raw.p.label : '', label: c => opts.tooltip ? opts.tooltip(c.raw.p) : '' };
+    o.scales = {
+      x: { type: 'linear', min: xMin - padX, max: xMax + padX, grid: { color: '#f0f0f2' }, border: { display: false },
+        afterBuildTicks: sc => { const lo = inv(sc.min), hi = inv(sc.max); let t = NICE.filter(v => v >= lo && v <= hi); if (t.length > 9) t = t.filter(v => Math.abs(v) >= 1 || v === 0); sc.ticks = t.map(v => ({ value: tr(v * U) })); },
+        ticks: { callback: v => { const r = Math.round(inv(v) * 10) / 10; return (r > 0 ? '+' : '') + r; }, autoSkip: false, maxRotation: 0 },
+        title: { display: true, text: opts.xTitle || '증감액 (조원, 제곱근 눈금)', font: { size: 11 } } },
+      y: { min: 0, max: Math.ceil(yMax), grid: { color: '#f0f0f2' }, border: { display: false }, ticks: { callback: v => v + '%' },
+        title: { display: true, text: opts.yTitle || '점유율 (%)', font: { size: 11 } } }
+    };
+    o.layout = { padding: { top: 8, right: 16 } };
+    o.onClick = (e, els) => { if (els && els.length && opts.onClick) opts.onClick(points[els[0].index].key); };
+    o.onHover = (e, els) => { const t = e.native && e.native.target; if (t) t.style.cursor = els && els.length ? 'pointer' : 'default'; };
+    const quad = {
+      id: 'quadrants',
+      beforeDatasetsDraw(ch) {
+        const { ctx, chartArea: a, scales: { x, y } } = ch, px = x.getPixelForValue(tr(opts.xSplit || 0)), py = y.getPixelForValue(opts.ySplit || 0);
+        ctx.save(); ctx.strokeStyle = '#a1a1aa'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+        if (px > a.left && px < a.right) { ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); }
+        if (py > a.top && py < a.bottom) { ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke(); }
+        ctx.setLineDash([]); ctx.font = '600 12px ' + Chart.defaults.font.family; ctx.fillStyle = '#a1a1aa';
+        const q = opts.quads || {};
+        ctx.textBaseline = 'top'; ctx.textAlign = 'right'; if (q.a) ctx.fillText(q.a, a.right - 6, a.top + 4); ctx.textAlign = 'left'; if (q.c) ctx.fillText(q.c, a.left + 6, a.top + 4);
+        ctx.textBaseline = 'bottom'; ctx.textAlign = 'right'; if (q.b) ctx.fillText(q.b, a.right - 6, a.bottom - 4); ctx.textAlign = 'left'; if (q.d) ctx.fillText(q.d, a.left + 6, a.bottom - 4);
+        ctx.restore();
+      },
+      afterDatasetsDraw(ch) {   // 원 옆 이름: 큰 원부터, 다른 이름과 겹치면 생략
+        const ctx = ch.ctx, meta = ch.getDatasetMeta(0), placed = [], a = ch.chartArea;
+        ctx.save(); ctx.font = '12px ' + Chart.defaults.font.family; ctx.textBaseline = 'middle'; ctx.fillStyle = '#3f3f46';
+        const order = points.map((p, i) => i).sort((i, j) => (points[j].size || 0) - (points[i].size || 0)).slice(0, opts.labelMax || 40);
+        meta.data.forEach((el, i) => placed.push({ x: el.x - el.options.radius, y: el.y - el.options.radius, w: el.options.radius * 2, h: el.options.radius * 2, ball: true, i: i }));
+        order.forEach(i => {
+          const el = meta.data[i]; if (!el) return;
+          const txt = points[i].label, w = ctx.measureText(txt).width, h = 14, r = el.options.radius;
+          const cands = [[el.x + r + 4, el.y - h / 2, 'left'], [el.x - r - 4 - w, el.y - h / 2, 'left'], [el.x - w / 2, el.y - r - h - 1, 'left'], [el.x - w / 2, el.y + r + 1, 'left']];
+          const hit = (x, y) => x < a.left || x + w > a.right || y < a.top || y + h > a.bottom || placed.some(q => !(q.ball && q.i === i) && x < q.x + q.w && x + w > q.x && y < q.y + q.h && y + h > q.y);
+          const c = cands.find(c => !hit(c[0], c[1])); if (!c) return;
+          ctx.textAlign = 'left'; ctx.fillText(txt, c[0], c[1] + h / 2); placed.push({ x: c[0], y: c[1], w: w, h: h });
+        });
+        ctx.restore();
+      }
+    };
+    return this.chart(canvas, { type: 'bubble', data: { datasets: ds }, options: o, plugins: [quad] });
   },
 
   /* ── bar chart race (DOM 기반): 막대가 순위 사이를 미끄러지며 이동, 신규 진입은 아래에서 올라옴 ── */
