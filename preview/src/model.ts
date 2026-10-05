@@ -63,4 +63,8 @@ export function dateOptions(meta: any) {
   meta.dates.filter((d: string) => d.slice(0, 7) === cur).forEach((d: string) => out.push({ value: d, label: d }));
   return out.reverse();
 }
+/** 조사 '와/과' — 받침 있으면 '과'(한글), 그 밖(영문 등)은 '와' */
+export function wa(word: string) { const c = String(word || '').trim().slice(-1).charCodeAt(0); return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? '과' : '와'; }
+/** 월말 선택 표기: 2026-09 → 2026년 9월말 */
+export const ymLabel = (ym: string) => ym.replace(/^(\d{4})-(\d{2})$/, (_, y, m) => `${y}년 ${+m}월말`);
 export const dlabel = (d: string) => d ? d.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1.$2.$3') : '-';

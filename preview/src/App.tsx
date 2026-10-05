@@ -11,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/ui/t
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table';
 import { ChartContainer, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/ui/chart';
 import { boot, loadSummary } from '@/api';
-import { FOCUS, REF_OPTS, dateOptions, dirOf, dlabel, fmt, summaryModel, tc, type SM } from '@/model';
+import { FOCUS, REF_OPTS, dateOptions, dirOf, dlabel, fmt, summaryModel, tc, wa, ymLabel, type SM } from '@/model';
 import { cn } from '@/utils';
 
 /* ───────────── 공통 조각 ───────────── */
@@ -78,7 +78,7 @@ function Toolbar({ meta, date, setDate, refv, setRef, busy }: any) {
           <SelectTrigger aria-label="기준일" className="min-w-[9.5rem]"><span className="text-muted-foreground">기준일</span><SelectValue placeholder="선택" /></SelectTrigger>
           <SelectContent align="end" className="max-h-80">
             {daily.length > 0 && <SelectGroup><SelectLabel>이번 달 영업일</SelectLabel>{daily.map(o => <SelectItem key={o.value} value={o.value}>{dlabel(o.label)}</SelectItem>)}</SelectGroup>}
-            <SelectGroup><SelectLabel>월말</SelectLabel>{monthly.map(o => <SelectItem key={o.value} value={o.value}>{o.label.replace('-', '.')}월말</SelectItem>)}</SelectGroup>
+            <SelectGroup><SelectLabel>월말</SelectLabel>{monthly.map(o => <SelectItem key={o.value} value={o.value}>{ymLabel(o.label)}</SelectItem>)}</SelectGroup>
           </SelectContent>
         </Select>
         <div role="radiogroup" aria-label="비교 기준" className="inline-flex h-8 items-center rounded-md bg-muted p-0.5">
@@ -112,8 +112,8 @@ function FocusShare({ S, color }: { S: SM; color: string }) {
         </div>
         <p className="mt-2 text-[13px] text-muted-foreground tnum">
           {RL} {f.msPy.toFixed(2)}% → {f.ms.toFixed(2)}%
-          {ahead && <><br />{rank - 1}위 {ahead.mgr}({ahead.ms.toFixed(2)}%)와 {(ahead.ms - f.ms).toFixed(2)}%p 차이</>}
-          {behind && <>, {rank + 1}위 {behind.mgr}와 {(f.ms - behind.ms).toFixed(2)}%p 차이</>}
+          {ahead && <><br />{rank - 1}위 {ahead.mgr}({ahead.ms.toFixed(2)}%){wa(ahead.mgr)} {(ahead.ms - f.ms).toFixed(2)}%p 차이</>}
+          {behind && <>, {rank + 1}위 {behind.mgr}({behind.ms.toFixed(2)}%){wa(behind.mgr)} {(f.ms - behind.ms).toFixed(2)}%p 차이</>}
         </p>
       </CardContent>
       <Separator className="my-5" />
