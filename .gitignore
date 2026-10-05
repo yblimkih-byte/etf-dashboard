@@ -14,3 +14,5 @@ web/public/
 .vercel
 test/gas_after/
 test/shots_*/
+
+preview/dist/
