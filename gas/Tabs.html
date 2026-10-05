@@ -167,8 +167,9 @@ function msDriverText(A, gr, mgr, RL) {
     + ` (시장 증가분 중 ${mgr} 몫 ${drv.map(cap).join(' · ')} vs ${RL} M/S ${A.share(gr.s0, 2)})`
     + (o ? ` · 상쇄 요인 ${o.type} <b>${pp2(o.c)}</b> (${mgr} 몫 ${cap(o)})` : '');
 }
-/* v26: 개별 종목 유형(상위 ETF·신규상장·거래대금) 분류 주석 — 범례_유형 '유형최종3' */
-const F3_NOTE = '※ 유형 = 범례_유형 \'유형최종3\': 유형최종2 기준이되, 파생형 중 신규상장용이 \'채권/금리\'인 종목(KOFR·CD금리 액티브(합성) 등 금리 추종 상품)은 채권형으로 분류';
+/* v26: 개별 종목 유형(상위 ETF·신규상장·거래대금) 분류 주석
+   v28: 화면 문구에 내부 시트·열 이름(범례_유형·유형최종2/3·신규상장용)을 쓰지 않음 — 일반 용어로만 설명 */
+const F3_NOTE = '※ 채권·금리를 기초로 하는 합성(파생) 상품(KOFR·CD금리 액티브(합성) 등)은 파생형이 아닌 채권형으로 분류';
 /* 증감률 표기: 비교 기준 NAV 가 없으면 '신규'(기준일 NAV 가 있을 때) */
 const gpct = (A, g, cur) => g === null || g === undefined ? (cur > 0 ? '신규' : '-') : A.pct(g);
 
@@ -254,7 +255,7 @@ App.registerTab({
     // (아래) 월별 총 NAV 막대
     A.bar(A.canvas(s2, 'short'), labels, [{ label: '총 NAV', data: M.map(m => m.nav), colors: M.map(m => m.isBase ? '#93939f' : '#17171c') }],
       { intTicks: true, tickFmt: v => A.eok(v, 0), padTop: true, yWidth: Y_W, labels: { mode: 'end', fmt: v => A.eok(v) } });
-    if (series.length < 4) A.div(s2, 'note', '지수 값이 없는 구간은 표시되지 않습니다. 시트 메뉴 [ETF Dashboard] › 5. 지수 백필 을 실행하십시오.');
+    if (series.length < 4) A.div(s2, 'note', '지수 값이 없는 구간은 표시되지 않음');
     const ytd = (r, k) => r.isBase || r[k] === null || r[k] === undefined ? '-' : A.pct(r[k]);
     A.div(s2, '', A.table(M, [
       { h: '월', k: 'ym', l: 1 }, { h: 'NAV(조원)', f: r => A.eok(r.nav) }, { h: '종목수', f: r => A.num(r.n) },
@@ -437,7 +438,7 @@ App.registerTab({
       // 슬라이더 아래: 상위 20 내 운용사별 M/S 막대 + (v24) 유형별 M/S 막대(유형 순서·색은 다른 탭과 같음)
       const seen = {}; frames.forEach(f => f.rows.forEach(x => { if (x.type) seen[x.type] = 1; }));
       const tk = A.meta.typeOrder.concat(Object.keys(seen).filter(t => A.meta.typeOrder.indexOf(t) < 0));
-      A.race(s2, frames, { n: 20, rowH: 28, step: 900, start: i, ms: true, typeMs: Object.keys(seen).length ? { keys: tk, color: tc, note: F3_NOTE } : null });   // v26: 유형 = 유형최종3, 막대 바로 아래 주석
+      A.race(s2, frames, { n: 20, rowH: 28, step: 900, start: i, ms: true, typeMs: Object.keys(seen).length ? { keys: tk, color: tc, note: F3_NOTE } : null });   // v26: 유형 = 유형최종3, 막대 바로 아래 주석(v28: 내부 용어 없이)
     }).catch(e => { holder.className = 'error'; holder.textContent = e.message; });
 
     // ③ 상위 50 요약 + ④ 목록 (v18: 한 섹션으로 묶고 제목·운용사 칩을 스크롤 고정)
@@ -462,7 +463,7 @@ App.registerTab({
   id: 'new', label: '신규상장 ETF', controls: ['year', 'date', 'filter'], action: 'newListings', params: s => ({ date: s.date, year: s.year, filter: s.filter }),
   render(d, root, A) {
     A.tiles(root, [['신규상장 종목수', A.num(d.items.length) + '종목', d.year + '년 상장 · ' + (d.filter === 'exBond' ? '채권/금리형 제외' : '전체')], ['신규상장 NAV 합계', A.eok(d.total) + '조원', `기준일 ${dlabel(d.date)}`], ['운용사 수', d.byMgr.length + '사', ''], ['종목당 평균 NAV', d.items.length ? A.eok(d.total / d.items.length) + '조원' : '-', '']]);
-    if (!d.items.length) { A.div(root, 'empty', `${d.year}년 상장 종목이 없습니다. (상장일 미확정 종목 ${d.noDate}개 → 시트 메뉴 [ETF Dashboard] › 상장일 보정 실행)`); return; }
+    if (!d.items.length) { A.div(root, 'empty', `${d.year}년 상장 종목 없음` + (d.noDate ? ` (상장일 미확정 ${d.noDate}종목 제외)` : '')); return; }
     const s1 = A.section(root, `${d.year}년 신규상장 ETF — 운용사별`, 'NAV 합계(조원) 상위 8개사 + 기타');
     const g = A.div(s1, 'grid grid-2');
     // v19: 막대는 상위 8개사 + '기타 n사' 한 줄로 축약(0.0조 막대 나열 제거), 표와 높이를 맞춤
@@ -477,7 +478,7 @@ App.registerTab({
       { attr: r => r.etc ? 'class="fold-head"' : r.hidden ? 'class="fold-item" hidden' : '', total: { '운용사': '합계', '종목수': d.items.length, 'NAV 합계(조원)': A.eok(d.total), '비중': '100.0%' } }));
     const fh = tb.querySelector('.fold-head'); if (fh) fh.onclick = () => { const open = fh.classList.toggle('open'); fh.querySelector('.fold-btn').textContent = open ? '▾' : '▸'; fh.querySelector('.fold-btn').setAttribute('aria-expanded', open); tb.querySelectorAll('.fold-item').forEach(tr => { tr.hidden = !open; }); };
     // v24: 유형별 — 운용사별과 같은 양식(막대 + 표). 주요 4개 유형(국내주식형·해외주식형·채권형·파생형)은 항상, 그 밖의 유형은 해당 종목이 있을 때만
-    const sT = A.section(root, `${d.year}년 신규상장 ETF — 유형별`, 'NAV 합계(조원) · 유형 = 범례_유형 유형최종3' + (d.filter === 'exBond' ? ' · 채권/금리형 제외' : ''));
+    const sT = A.section(root, `${d.year}년 신규상장 ETF — 유형별`, 'NAV 합계(조원)' + (d.filter === 'exBond' ? ' · 채권/금리형 제외' : ''));
     const byT = {}; d.items.forEach(i => { const k = i.type || '미분류', b = byT[k] = byT[k] || { type: k, n: 0, nav: 0 }; b.n++; b.nav += i.nav; });
     const MAIN = ['국내주식형', '해외주식형', '채권형', '파생형'], tOrd = MAIN.concat(A.meta.typeOrder, Object.keys(byT)).filter((t, i, a) => a.indexOf(t) === i);
     const tRows = tOrd.filter(t => MAIN.indexOf(t) >= 0 || byT[t]).map(t => byT[t] || { type: t, n: 0, nav: 0 });
@@ -489,9 +490,9 @@ App.registerTab({
     const s2 = A.section(root, '신규상장 종목 목록', 'NAV 순');
     const chipBox = A.div(s2, 'sticky-chips');
     stickyHead(s2);   // 제목·운용사 선택 칩을 스크롤 시 상단에 고정
-    const host = A.div(s2, '', A.table(d.items, [{ h: '상장일', k: 'listDd', l: 1 }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: '신규상장용 구분', k: 'neu', l: 1 }, { h: 'NAV(조원)', f: r => r.listed ? navSmall(A, r.nav) : '-' }], { attr: r => `data-top="${r.top}"` }));
+    const host = A.div(s2, '', A.table(d.items, [{ h: '상장일', k: 'listDd', l: 1 }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 }, { h: '유형', k: 'type', l: 1 }, { h: '기초자산 구분', k: 'neu', l: 1 }, { h: 'NAV(조원)', f: r => r.listed ? navSmall(A, r.nav) : '-' }], { attr: r => `data-top="${r.top}"` }));
     mgrChips(A, chipBox, { filterHosts: [host], reset: true, hint: '운용사 선택 시 해당 운용사 종목만 표시' });
-    if (d.noDate) A.div(s2, 'note', `상장일 미확정 종목 ${d.noDate}개는 집계에서 제외됨 → 시트 메뉴 [ETF Dashboard] › 상장일 보정`);
+    if (d.noDate) A.div(s2, 'note', `상장일 미확정 ${d.noDate}종목은 집계에서 제외`);
   }
 });
 
