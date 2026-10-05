@@ -212,6 +212,7 @@ function ctxHash_(ctx) {
   const s = [legendHash_(ctx),
     Object.keys(t).sort().map(k => [k, t[k].name, t[k].listDd, t[k].neu].join('|')).join('\n'),
     Object.keys(ms).sort().map(k => [k, ms[k].name, ms[k].listDd].join('|')).join('\n')].join('\n#\n');
+  // v29: 테마 맵 입력(범례_테마 규칙·기초지수명)은 별도 지문 → 바뀌면 테마 맵 캐시만 갱신(themeCtxCheck_)
   return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s));
 }
 function fullAggState_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(PROP.FULL_AGG) || 'null'); } catch (e) { return null; } }
@@ -321,6 +322,10 @@ function nightlyAgg() {
     const ch = ctxHash_(ctx), pc = props.getProperty(PROP.CTX_HASH), changed = !!pc && pc !== ch;
     if (pc !== ch) props.setProperty(PROP.CTX_HASH, ch);
     if (changed) { bumpCache_(); log_('범례·마스터 항목 변경 감지 → 화면 캐시 전체 갱신'); }
+    try {   // v29: 테마 규칙(범례_테마)·기초지수명이 바뀌었으면 테마 맵 캐시만 갱신(처음 실행은 지문만 기록)
+      const th = themeHash_(ctx), pt = props.getProperty(PROP.THEME_HASH);
+      if (pt !== th) { props.setProperty(PROP.THEME_HASH, th); if (pt) { bumpThemeCache_(); log_('테마 규칙·기초지수명 변경 감지 → 테마 맵 갱신'); } }
+    } catch (e) { log_('테마 규칙 점검 실패: ' + e.message, 'WARN'); }
     if (r.state === 'inc' || changed) warmDay_();
   } finally { lock.releaseLock(); }
 }
@@ -392,7 +397,7 @@ function warmParams_(date, dv, months) {
   let from = dv[0];
   if (to) { const py = months.filter(x => x.ym < to.slice(0, 4) + '-01').pop(); const f = py && dv.filter(d => d > py.date)[0]; if (f) from = f; }
   // 첫 화면 묶음(bootList_: 요약 탭 6건 = 각 탭 기본 조회) → 히트맵 → 거래대금
-  const list = bootList_(date).concat([['treemap', { date: date, ref: 'py' }]]);
+  const list = bootList_(date).concat([['treemap', { date: date, ref: 'py' }], ['theme', { date: date, ref: 'py' }]]);   // v29: 테마 맵
   if (to) list.push(['turnover', { from: from, to: to }]);
   return list;
 }

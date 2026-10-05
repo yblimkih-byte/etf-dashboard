@@ -8,6 +8,7 @@ const store = fs.readFileSync(path.join(__dirname, 'store.json'), 'utf8');
 const mock = `<script>${fs.readFileSync(path.join(__dirname, 'shim.js'), 'utf8')}</script>\n${gs}\n<script>(function(){ const s = ${store}; const ss = SpreadsheetApp.getActiveSpreadsheet();
   Object.keys(s.store).forEach(n => { const sh = ss.insertSheet(n); sh.rows = s.store[n]; });
   Object.keys(s.props).forEach(k => PropertiesService.getScriptProperties().setProperty(k, s.props[k]));
+  ${process.env.V29B ? "(function(){ const P = PropertiesService.getScriptProperties(); P.setProperty(PROP.KIS_KEY, 'K'); P.setProperty(PROP.KIS_SECRET, 'S'); P.setProperty(PROP.NAVER_ID, 'I'); P.setProperty(PROP.NAVER_SECRET, 'S'); KIS.GAP_MS = 0; try { collectHoldings(); collectBuzz(); } catch (e) { console.error(e); } })();" : ''}   // v29: V29B=1 이면 모의 KIS·네이버로 구성종목·관심도 수집(종목→ETF 찾기·관심도 탭 표시)
   window.MOCK = { calls: [], api: (a, p) => { window.MOCK.calls.push(a); return api(a, p); } };
   if (${process.env.NOBOOT ? 'false' : 'true'}) { window.MOCK_CACHE = true; try { warmAll(); } catch (e) { console.error(e); } } })();</script>`;   // v24: 예열된 캐시 → boot 요청에 첫 화면 자료 포함
 const fav = 'data:image/svg+xml,' + encodeURIComponent(pub('favicon.svg'));

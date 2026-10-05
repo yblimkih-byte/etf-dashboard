@@ -19,7 +19,7 @@ const OUT = __dirname + '/shots_v24';
     const first = await p.evaluate(() => ({ calls: window.MOCK.calls.slice(), tab: App.state.tab, kv: [...document.querySelectorAll('table.kv tr')].map(tr => tr.cells[0].textContent + ' | ' + tr.cells[1].textContent), sumLines: document.querySelectorAll('.sum-lines').length,
       lede: (document.getElementById('lede') || {}).className || '-', cards: document.querySelectorAll('.cards .cd').length, tiles: document.querySelectorAll('#view > .grid:first-child .tile').length, narrow: document.body.classList.contains('narrow-tab') }));
     check('첫 탭 = 요약, 폭 제한', first.tab === 'summary' && first.narrow);
-    const bg = ['treemap', 'race', 'turnover'];   // 첫 화면을 그린 뒤 시작되는 선조회
+    const bg = ['treemap', 'race', 'turnover', 'theme', 'holders', 'buzz'];   // 첫 화면을 그린 뒤 시작되는 선조회 (v29: 테마 맵·종목→ETF 찾기·관심도 포함)
     check('첫 화면: 서버 조회는 boot 1건(웹) / 없음(Apps Script, 페이지에 포함) — 그 밖에는 선조회만', name === 'web' ? first.calls[0] === 'boot' && first.calls.slice(1).every(a => bg.includes(a)) : first.calls.every(a => bg.includes(a)), first.calls.join(',') || '(없음)');
     check('핵심 요약 표 5행·설명 문장 목록 없음', first.kv.length === 5 && first.sumLines === 0, first.kv.map(x => x.split(' | ')[0]).join(' · '));
     console.log('     ' + first.kv.join('\n     '));

@@ -119,9 +119,9 @@ function syncTypeF3() {
 
 /** ETF마스터 헤더 → 열 인덱스 (사용자가 열을 바꿔도 헤더명으로 인식) */
 function masterCols_(sh) {
-  return hdrCols_(sh, { CODE: '종목코드', NAME: '종목명', MGR: '운용사명', BRAND: '브랜드', LIST_DD: '상장일', MKT: '기초시장', ASSET: '기초자산', SRC: '출처' });
+  return hdrCols_(sh, { CODE: '종목코드', NAME: '종목명', MGR: '운용사명', BRAND: '브랜드', LIST_DD: '상장일', MKT: '기초시장', ASSET: '기초자산', SRC: '출처', IDX: '기초지수' });   // v29: 기초지수(테마 분류용)
 }
-/** ETF마스터 → { code: {name, mgr, brand, listDd, mkt, asset, src} } */
+/** ETF마스터 → { code: {name, mgr, brand, listDd, mkt, asset, src, idx} } (v29: idx = 기초지수명) */
 function master_() {
   const sh = sheet_(CFG.SHEET.MASTER, CFG.MASTER_HEADER), C = masterCols_(sh), out = {};
   const g = (r, i) => i >= 0 ? r[i] : '';
@@ -129,7 +129,7 @@ function master_() {
     const code = padCode_(g(r, C.CODE)); if (!code || code === '000000') return;
     const ld = g(r, C.LIST_DD);
     out[code] = { name: g(r, C.NAME), mgr: String(g(r, C.MGR) || '').trim(), brand: String(g(r, C.BRAND) || '').trim(),
-                  listDd: ld instanceof Date ? fmt_(ld) : String(ld || '').slice(0, 10), mkt: g(r, C.MKT), asset: g(r, C.ASSET), src: g(r, C.SRC) };
+                  listDd: ld instanceof Date ? fmt_(ld) : String(ld || '').slice(0, 10), mkt: g(r, C.MKT), asset: g(r, C.ASSET), src: g(r, C.SRC), idx: String(g(r, C.IDX) || '').trim() };
   });
   return out;
 }
@@ -192,10 +192,10 @@ function ensureMaster_(records, ctx, asOf) {
     const listDd = (b && b.listDd) || (types[r.code] && types[r.code].listDd) || asOf || '';
     const brand = entry ? (entry.brands.find(x => String(r.name).toUpperCase().startsWith(x.toUpperCase())) || entry.brands[0] || '') : String(r.name).split(/\s+/)[0];
     const mgrText = entry ? entry.short : (webMgr || '미확인');
-    master[r.code] = { name: r.name, mgr: mgrText, brand: brand, listDd: listDd, mkt: b ? b.mkt : '', asset: b ? b.asset : '', src: src || (webMgr ? 'KRX웹' : '미확인') };
+    master[r.code] = { name: r.name, mgr: mgrText, brand: brand, listDd: listDd, mkt: b ? b.mkt : '', asset: b ? b.asset : '', src: src || (webMgr ? 'KRX웹' : '미확인'), idx: r.idx || '' };
     const row = new Array(CM.width).fill('');
     row[CM.CODE] = r.code; if (CM.NAME >= 0) row[CM.NAME] = r.name; if (CM.MGR >= 0) row[CM.MGR] = mgrText; if (CM.BRAND >= 0) row[CM.BRAND] = brand;
-    if (CM.LIST_DD >= 0) row[CM.LIST_DD] = listDd; if (CM.MKT >= 0) row[CM.MKT] = b ? b.mkt : ''; if (CM.ASSET >= 0) row[CM.ASSET] = b ? b.asset : ''; if (CM.SRC >= 0) row[CM.SRC] = master[r.code].src;
+    if (CM.LIST_DD >= 0) row[CM.LIST_DD] = listDd; if (CM.MKT >= 0) row[CM.MKT] = b ? b.mkt : ''; if (CM.ASSET >= 0) row[CM.ASSET] = b ? b.asset : ''; if (CM.SRC >= 0) row[CM.SRC] = master[r.code].src; if (CM.IDX >= 0) row[CM.IDX] = r.idx || '';
     mRows.push(row);
 
     if (!types[r.code]) {
@@ -389,6 +389,7 @@ function loadDaily() {
       }
       if (last && ds <= last) { d = addDays_(d, 1); continue; }                     // 이미 적재된 일자
       ensureMaster_(recs, ctx, ds);
+      try { const ni = syncIndexNames_(recs, ctx); if (ni) bumpThemeCache_(); } catch (e) { log_('기초지수명 갱신 실패: ' + e.message, 'WARN'); }   // v29: 테마 분류용 기초지수명
       step_(t0, '마스터 확인');
       const prev = last ? readDailyBlock_(last) : null;
       const rows = buildDailyRows_(recs, prev, ds, ctx);

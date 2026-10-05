@@ -40,13 +40,15 @@ const CACHE_GEN_ = 'a26';   // v26: 개별 종목 유형 = 유형최종3 → 이
 /** 캐시 키 = 세대 + 버전 + action + 파라미터 해시. v24: 파라미터는 키 이름순으로 직렬화(보내는 쪽의 키 순서와 무관하게 같은 키) */
 function cacheKey_(action, params, P) {
   const h = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, stableStr_(params)));
-  return CACHE_GEN_ + ':' + verFor_(action, params, P || PropertiesService.getScriptProperties().getProperties()) + ':' + action + ':' + h;
+  P = P || PropertiesService.getScriptProperties().getProperties();
+  const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : '';   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산
+  return CACHE_GEN_ + ':' + verFor_(action, params, P) + tv + ':' + action + ':' + h;
 }
 function stableStr_(p) { p = p || {}; return '{' + Object.keys(p).sort().filter(k => p[k] !== undefined).map(k => JSON.stringify(k) + ':' + JSON.stringify(p[k])).join(',') + '}'; }
 
 /** v24: 캐시 버전 — 기준일이 있는 조회는 '그 기준일 이하 월'이 바뀐 경우에만 무효화(MONTH_VER), 그 밖(meta·race 등)은 적재·집계마다 무효화(CACHE_VER).
  *  → 10월 일자 적재 뒤에도 기본 기준일(전월말 9월) 조회는 캐시 유지. 기준일 조회의 결과는 그 기준일 이하 월의 자료로만 계산됨(Api.gs 각 핸들러) */
-const DATE_SCOPED_ = { overview: 'date', byMgr: 'date', byType: 'date', treemap: 'date', shares: 'date', topEtf: 'date', newListings: 'date', turnover: 'to' };
+const DATE_SCOPED_ = { overview: 'date', byMgr: 'date', byType: 'date', treemap: 'date', shares: 'date', topEtf: 'date', newListings: 'date', turnover: 'to', theme: 'date' };
 function verFor_(action, params, P) {
   // 전역 버전에는 현재 월(KST)을 붙임: meta 의 기본 기준일(전월말)·기준일 없는 조회는 날짜에 따라 달라지므로 월이 바뀌면 새로 계산(예열이 보존 기간을 계속 연장해도)
   const g = ((P && P[PROP.CACHE_VER]) || '0') + '.' + curYm_(), f = DATE_SCOPED_[action], d = f && params ? String(params[f] || '') : '';
@@ -189,7 +191,10 @@ const ACTIONS = {
   race: apiRace_,
   newListings: apiNewListings_,
   treemap: apiTreemap_,
-  turnover: apiTurnover_
+  turnover: apiTurnover_,
+  theme: p => apiTheme_(p),  // v29: 테마 맵 (Theme.gs — 파일 실행 순서와 무관하게 호출 시점에 찾도록 함수로 감쌈)
+  holders: p => apiHolders_(p),   // v29: 종목→ETF 찾기 (Kis.gs)
+  buzz: p => apiBuzz_(p)          // v29: 관심도 (Buzz.gs)
 };
 
 // ─────────────────────────── 공통 ───────────────────────────
@@ -303,7 +308,9 @@ function apiMeta_() {
   return {
     dates: av.dates, months: av.months, daily: indexDates_(), defaultDate: defaultDate_(av.months),
     dailyFrom: CFG.DAILY_FROM, top5: CFG.TOP5, colors: CFG.COLOR, typeOrder: CFG.TYPE_ORDER, mgrs: mgrs,
-    lastLoaded: last, curMonth: last ? ym_(last) : ym_(fmt_(new Date()))
+    lastLoaded: last, curMonth: last ? ym_(last) : ym_(fmt_(new Date())),
+    holdingsDate: PropertiesService.getScriptProperties().getProperty(PROP.KIS_DATE) || null,   // v29: 종목→ETF 찾기 탭 표시(첫 수집 뒤)
+    buzzDate: PropertiesService.getScriptProperties().getProperty(PROP.BUZZ_DATE) || null       // v29: 관심도 탭 표시(첫 수집 뒤)
   };
 }
 

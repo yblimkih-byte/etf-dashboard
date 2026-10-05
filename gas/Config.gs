@@ -51,6 +51,7 @@ const CFG = {
       NAV_TOT: ['INVSTASST_NETASST_TOTAMT', 'NETASST_TOTAMT', 'NAV_TOTAMT'],
       TRDVAL: ['ACC_TRDVAL', 'TRDVAL'],
       IDX_NM: ['IDX_NM'],
+      IDX_IND: ['IDX_IND_NM'],           // v29: ETF 기초지수명
       IDX_CLS: ['CLSPRC_IDX', 'CLSPRC']
     }
   },
@@ -74,7 +75,7 @@ const CFG = {
   // 지수: Yahoo Finance chart API (키 불필요, Apps Script 에서 접근 확인). stooq 는 봇 차단으로 사용 불가
   YAHOO: { KOSPI: '^KS11', SP500: '^GSPC', NDX100: '^NDX', URL: 'https://query1.finance.yahoo.com/v8/finance/chart/{sym}?period1={p1}&period2={p2}&interval=1d' },
   // ETF마스터 헤더 (사용자 관리 열 포함). 코드는 헤더명으로 열을 찾음
-  MASTER_HEADER: ['종목코드', '종목명', '운용사명', '브랜드', '상장일', '기초시장', '기초자산', '출처'],
+  MASTER_HEADER: ['종목코드', '종목명', '운용사명', '브랜드', '상장일', '기초시장', '기초자산', '출처', '기초지수'],   // v29: 기초지수(KRX 기초지수명, 테마 분류용)
   SNAP_HEADER: ['기준일자', '운용사', '상위구분', '유형최종2', '국내해외', 'NAV', '종목수'],
 
   // ── 상위 운용사 & 고유색 (약식_상위 값 기준) ─────────────
@@ -135,7 +136,13 @@ const PROP = { KRX_KEY: 'KRX_AUTH_KEY', LAST_DAILY: 'LAST_DAILY_DATE', BACKFILL_
   AGG_HASH: 'AGG_LEGEND_HASH',    // v23: 마지막 전체 재계산 때의 범례 지문 → 야간 점검에서 범례 변경 감지
   AGG_DIRTY: 'AGG_DIRTY',         // v23: 집계 시트를 쓰는 중 표시 → 캐시 갱신 전에 끊기면 다음 실행에서 캐시 갱신(v24: 값 = 쓰는 월 목록 또는 'all')
   MONTH_VER: 'MONTH_VER',         // v24: 기준일 조회 캐시 버전 {f: 전체 무효화 시각, m: {월: 그 월 이후 무효화 시각}} → 지난 달 기준 조회는 당월 적재 후에도 캐시 유지
-  CTX_HASH: 'CTX_HASH' };         // v24: 화면 계산이 읽는 범례·마스터 항목 지문(야간 점검) → 바뀌면 화면 캐시 전체 무효화
+  CTX_HASH: 'CTX_HASH',           // v24: 화면 계산이 읽는 범례·마스터 항목 지문(야간 점검) → 바뀌면 화면 캐시 전체 무효화
+  THEME_VER: 'THEME_VER',         // v29: 테마 맵 캐시 버전(테마 규칙 수정·검수표 실행·기초지수명 보충 시 갱신 → 테마 맵만 새로 계산)
+  THEME_HASH: 'THEME_HASH',       // v29: 테마 규칙·기초지수명 지문(야간 점검)
+  KIS_KEY: 'KIS_APP_KEY', KIS_SECRET: 'KIS_APP_SECRET',          // v29: 한국투자증권 Open API(ETF 구성종목 — 역인덱스 탭 준비)
+  NAVER_ID: 'NAVER_CLIENT_ID', NAVER_SECRET: 'NAVER_CLIENT_SECRET',   // v29: 네이버 개발자 API(DataLab·뉴스 — 관심도 탭)
+  KIS_TOKEN: 'KIS_TOKEN', KIS_STATE: 'KIS_PDF_STATE', KIS_RUN: 'KIS_PDF_RUN', KIS_DATE: 'KIS_PDF_DATE', KIS_INFO: 'KIS_PDF_INFO', KIS_TOP: 'KIS_PDF_TOP',   // v29: 구성종목 수집(Kis.gs)
+  BUZZ_DATE: 'BUZZ_DATE', BUZZ_INFO: 'BUZZ_INFO' };   // v29: 관심도 수집(Buzz.gs)
 
 function krxKey_() {
   const k = PropertiesService.getScriptProperties().getProperty(PROP.KRX_KEY);
