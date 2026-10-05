@@ -39,8 +39,9 @@
     mgr(d) {
       const R = d.rows.filter(r => r.mgr !== '기타').slice().sort((a, b) => b.nav - a.nav), f = R.find(r => r.mgr === FOCUS), RL = A.refLabel(d);
       const lines = [`1·2위 ${esc(R[0].mgr)} ${A.share(R[0].ms)} · ${esc(R[1].mgr)} ${A.share(R[1].ms)}, 합산 ${A.share(R[0].ms + R[1].ms)}`];
-      if (f) { const rank = R.indexOf(f) + 1, dv = f.ms - f.msPy, ahead = R[rank - 2], gr = growthRows(d, FOCUS);   // v24: 기여도 분해 대신 NAV 증감률 비교
-        lines.unshift(`${FOCUS} M/S <b>${A.share(f.ms)}</b>, ${RL} 대비 ${sg(dv, pp(dv))}, 상위 5개사 중 ${rank}위` + (ahead ? ` (${rank - 1}위 ${esc(ahead.mgr)}와 ${(ahead.ms - f.ms).toFixed(1)}%p)` : '') + (gr.gf !== null && gr.gm !== null ? ` · NAV ${sg(gr.gf, A.pct(gr.gf))} (시장 ${sg(gr.gm, A.pct(gr.gm))})` : '')); }
+      if (f) { const rank = R.indexOf(f) + 1, dv = f.ms - f.msPy, ahead = R[rank - 2], gr = growthRows(d, FOCUS);   // v24: NAV 증감률 비교 · v26: 유형별 M/S 기여 최대 유형
+        lines.unshift(`${FOCUS} M/S <b>${A.share(f.ms)}</b>, ${RL} 대비 ${sg(dv, pp(dv))}, 상위 5개사 중 ${rank}위` + (ahead ? ` (${rank - 1}위 ${esc(ahead.mgr)}와 ${(ahead.ms - f.ms).toFixed(1)}%p)` : '') + (gr.gf !== null && gr.gm !== null ? ` · NAV ${sg(gr.gf, A.pct(gr.gf))} (시장 ${sg(gr.gm, A.pct(gr.gm))})` : '')
+          + (() => { const x = msDrivers(gr)[0]; return x && gr.dms !== null && Math.abs(gr.dms) >= 0.005 ? ` · ${gr.dms < 0 ? '하락' : '상승'} 요인 ${esc(x.type)} ${sg(x.c, A.pct(x.c, 2).replace('%', '%p'))}` : ''; })()); }   // v26: 유형별 M/S 기여 최대 유형
       return { lines, cards: d.rows.filter(r => r.mgr !== '기타').map(r => ({ k: esc(r.mgr) + ' M/S', d: DEF.ms + '. ' + DEF.ref, c: A.meta.colors[r.mgr], f: r.mgr === FOCUS, v: U(r.ms.toFixed(1), '%'), b: bd(r.ms - r.msPy, pp(r.ms - r.msPy)),
           l1: `잔고 ${A.eok(r.nav)}조원`, l2: `${RL} 대비 ${sj(r.nav - r.navPy)}` })) };
     },
