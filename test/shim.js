@@ -9,6 +9,8 @@
     setValue(v) { return this.setValues([[v]]); }
     clearContent() { for (let i = 0; i < this.nr; i++) { const row = this.sh.rows[this.r - 1 + i]; if (row) for (let j = 0; j < this.nc; j++) row[this.c - 1 + j] = ''; } this.sh.trim(); return this; }
     setNumberFormat() { return this; }
+    setNote(n) { (this.sh.notes = this.sh.notes || {})[this.r + ',' + this.c] = String(n); return this; }
+    getNote() { return (this.sh.notes && this.sh.notes[this.r + ',' + this.c]) || ''; }
   }
   class Sheet {
     constructor(name) { this.name = name; this.rows = []; }

@@ -41,7 +41,7 @@ const OUT = __dirname + '/shots_v24';
     check('운용사별: 폭 제한', mgr.narrow && mgr.viewW <= 1060, mgr.viewW + 'px');
     check('운용사별: 상위 5개사 표 폭 < 섹션 폭(내용 폭)', mgr.tblW < mgr.secW - 40, mgr.tblW + ' / ' + mgr.secW);
     check('운용사별: 점유율/구성 효과·기여도 표시 없음', !mgr.contrib);
-    check('운용사별: M/S 변동 요인(증감률 비교) 5열 표', mgr.titles[1] && mgr.titles[1].indexOf('M/S 변동 요인') === 0 && mgr.gcols.length === 5, mgr.gcols.join('|'));
+    check('운용사별: M/S 변동 요인 표(v26: 유형별 M/S 기여 6열)', mgr.titles[1] && mgr.titles[1].indexOf('M/S 변동 요인') === 0 && mgr.gcols.length === 6, mgr.gcols.join('|'));
     console.log('     ' + mgr.sub);
     await p.evaluate(() => { const c = [...document.querySelectorAll('.chip-m')].find(b => b.dataset.k === '삼성'); c.click(); });
     const sub2 = await p.evaluate(() => [...document.querySelectorAll('#view > .section')][1].querySelector('.h3').textContent);
