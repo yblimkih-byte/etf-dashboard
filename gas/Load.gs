@@ -60,16 +60,61 @@ function brandMap_(mgrs) {
   return out;
 }
 
-/** 범례_유형 → { code: {name, listDd, f1, f2, dom, neu} } */
+/** 범례_유형 → { code: {name, listDd, f1, f2, f3, dom, neu} }. f3(v26 유형최종3)는 시트 열이 아니라 유형최종2·신규상장용에서 바로 계산(열은 표시용) */
 function typeLegend_() {
   const C = CFG.TYPE_COL, out = {};
   readAll_(sheet_(CFG.SHEET.TYPE_LEGEND)).forEach(r => {
     const code = padCode_(r[C.CODE]);
     if (!code || code === '000000') return;
     out[code] = { name: r[C.NAME], listDd: r[C.LIST_DD] instanceof Date ? fmt_(r[C.LIST_DD]) : String(r[C.LIST_DD] || ''),
-                  f1: r[C.F1], f2: r[C.F2], dom: r[C.DOM], neu: r[C.NEW] };
+                  f1: r[C.F1], f2: r[C.F2], f3: typeF3_(r[C.F2], r[C.NEW]), dom: r[C.DOM], neu: r[C.NEW] };
   });
   return out;
+}
+
+/** v26: 유형최종3 = 유형최종2. 단 유형최종2 '파생형' 이면서 신규상장용 '채권/금리'(KOFR·CD금리 액티브(합성) 등 금리 추종) → '채권형'
+ *  개별 종목 유형 표시(상위 ETF 목록·NAV 상위 20 변천·신규상장·거래대금)에 사용. 유형별 NAV 합계 집계(agg_*·유형별 NAV·운용사별·시장 유형 비중·히트맵)는 유형최종2 유지 */
+function typeF3_(f2, neu) {
+  const T = CFG.TYPE_F3;
+  return String(f2 || '').trim() === T.FROM && String(neu || '').trim() === T.NEU ? T.TO : f2;
+}
+/** v26: 범례_유형 '유형최종3' 머리글 메모(분류 설명) */
+const TYPE_F3_NOTE = [
+  '유형최종3 (자동 계산 · v26)',
+  '= 유형최종2와 같음. 단, 유형최종2가 \'파생형\'이고 신규상장용이 \'채권/금리\'인 종목(KOFR·CD금리 액티브(합성) 등 금리 추종 상품)은 \'채권형\'으로 분류.',
+  '사용처: 개별 종목 유형 표시 — 상위 ETF 탭(상위 50 목록, NAV 상위 20 변천의 유형별 M/S 막대) · 신규상장 ETF 탭(유형별 합계·목록) · 거래대금 탭 목록.',
+  '유형별 NAV 합계(유형별 NAV 탭·히트맵 · 운용사별 M/S 변동 요인 · 상위 5개사·시장 유형 비중)는 유형최종2 기준.',
+  '갱신: 신규 종목 추가 시·매일 05시대 점검 시 자동. 이 열을 직접 고쳐도 다음 갱신 때 덮어쓰므로, 분류를 바꾸려면 유형최종2·신규상장용을 수정할 것.'
+].join('\n');
+/** v26: 범례_유형 '유형최종3' 열 위치(0-base). 머리글명으로 찾고, 없으면 확인필요(L열) 다음 빈 열에 만들고 메모를 담 */
+function typeF3Col_(sh) {
+  const C = CFG.TYPE_COL, T = CFG.TYPE_F3, lc = Math.max(sh.getLastColumn(), 1);
+  const head = sh.getRange(1, 1, 1, lc).getValues()[0].map(v => String(v).trim());
+  let col = head.indexOf(T.HEADER);
+  if (col < 0) {
+    if (lc < C.CHECK + 1) sh.getRange(1, C.CHECK + 1).setValue('확인필요');
+    col = Math.max(lc, C.CHECK + 1);
+    sh.getRange(1, col + 1).setValue(T.HEADER);
+  }
+  const h = sh.getRange(1, col + 1);
+  if (h.getNote() !== TYPE_F3_NOTE) h.setNote(TYPE_F3_NOTE);
+  return col;
+}
+/** v26: 범례_유형 '유형최종3' 열을 유형최종2·신규상장용 기준으로 맞춤(다른 행이 있을 때만 열 전체 1회 쓰기) → 바뀐 행 수 */
+function syncTypeF3_() {
+  const sh = sheet_(CFG.SHEET.TYPE_LEGEND), C = CFG.TYPE_COL, col = typeF3Col_(sh), lr = sh.getLastRow();
+  if (lr < 2) return 0;
+  const rows = sh.getRange(2, 1, lr - 1, col + 1).getValues();
+  let diff = 0;
+  const want = rows.map(r => { const v = String(r[C.CODE]).trim() ? String(typeF3_(r[C.F2], r[C.NEW]) || '') : ''; if (String(r[col]).trim() !== v) diff++; return [v]; });
+  if (diff) sh.getRange(2, col + 1, want.length, 1).setValues(want);
+  return diff;
+}
+/** 메뉴·편집기 실행용: 범례_유형 '유형최종3' 열 갱신 */
+function syncTypeF3() {
+  const n = syncTypeF3_();
+  log_('범례_유형 유형최종3 갱신: ' + n + '행');
+  return n;
 }
 
 /** ETF마스터 헤더 → 열 인덱스 (사용자가 열을 바꿔도 헤더명으로 인식) */
@@ -155,8 +200,8 @@ function ensureMaster_(records, ctx, asOf) {
 
     if (!types[r.code]) {
       const t = inferType_(r.name, b ? b.mkt : '', b ? b.asset : '');
-      types[r.code] = { name: r.name, listDd: listDd, f1: t.f1, f2: t.f2, dom: t.dom, neu: t.neu };
-      // 범례_유형 컬럼: 종목코드/ETF명/설정일/유형1/유형2/유형3/유형4/유형최종1/유형최종2/국내해외/신규상장용/확인필요
+      types[r.code] = { name: r.name, listDd: listDd, f1: t.f1, f2: t.f2, f3: typeF3_(t.f2, t.neu), dom: t.dom, neu: t.neu };
+      // 범례_유형 컬럼: 종목코드/ETF명/설정일/유형1/유형2/유형3/유형4/유형최종1/유형최종2/국내해외/신규상장용/확인필요 (+ v26 유형최종3, 머리글명으로 찾은 열)
       tRows.push([r.code, r.name, listDd, t.f2, t.f2, t.f1, '', t.f1, t.f2, t.dom, t.neu, '확인필요']);
     }
     if (!entry && webMgr && !mgrs[webMgr]) {   // 범례에 없는 새 운용사 → 상위 '기타' 로 추가 (사용자 검토)
@@ -170,8 +215,8 @@ function ensureMaster_(records, ctx, asOf) {
   });
   if (mRows.length) appendRows_(shM, mRows);
   if (tRows.length) {
-    if (shT.getLastColumn() < 12) shT.getRange(1, 12).setValue('확인필요');
-    appendRows_(shT, tRows);
+    const c3 = typeF3Col_(shT), w = Math.max(c3 + 1, 12);   // v26: 유형최종3 열까지 채워 추가
+    appendRows_(shT, tRows.map(x => { const row = x.concat(new Array(w - x.length).fill('')); row[c3] = typeF3_(x[CFG.TYPE_COL.F2], x[CFG.TYPE_COL.NEW]); return row; }));
   }
   if (gRows.length) appendRows_(shG, gRows);
   log_('신규 종목 ' + mRows.length + '건, 유형 추가 ' + tRows.length + '건, 운용사 추가 ' + gRows.length + '건');

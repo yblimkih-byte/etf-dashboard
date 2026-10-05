@@ -36,7 +36,7 @@ function api(action, params) {
 }
 
 /** 캐시 세대: 응답 형식이나 계산 로직(Api.gs 핸들러)을 바꾸는 배포 때 올릴 것 → 배포 직후 이전 코드가 만든 캐시를 쓰지 않음 */
-const CACHE_GEN_ = 'a24';
+const CACHE_GEN_ = 'a26';   // v26: 개별 종목 유형 = 유형최종3 → 이전 캐시 전체 무효화
 /** 캐시 키 = 세대 + 버전 + action + 파라미터 해시. v24: 파라미터는 키 이름순으로 직렬화(보내는 쪽의 키 순서와 무관하게 같은 키) */
 function cacheKey_(action, params, P) {
   const h = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, stableStr_(params)));
@@ -431,19 +431,20 @@ function apiTopEtf_(p) {
   const ctx = ctx_();
   const recs = snapshot_(date).slice().sort((a, b) => b.nav - a.nav);
   const total = recs.reduce((s, r) => s + r.nav, 0);
-  const top = recs.slice(0, CFG.TOP_N).map((r, i) => { const g = groupOf_(r, ctx); return { rank: i + 1, code: r.code, name: r.name, mgr: g.short, top: g.top, type: g.f2, nav: r.nav, share: total ? r.nav / total * 100 : 0 }; });
+  const top = recs.slice(0, CFG.TOP_N).map((r, i) => { const g = groupOf_(r, ctx); return { rank: i + 1, code: r.code, name: r.name, mgr: g.short, top: g.top, type: g.f3, nav: r.nav, share: total ? r.nav / total * 100 : 0 }; });
   const topTotal = top.reduce((s, t) => s + t.nav, 0);
   const byMgr = CFG.TOP5.concat(['기타']).map(k => { const xs = top.filter(t => t.top === k); const nav = xs.reduce((s, t) => s + t.nav, 0); return { top: k, n: xs.length, nav: nav, share: topTotal ? nav / topTotal * 100 : 0 }; });
   return { date: date, total: total, topTotal: topTotal, top: top, byMgr: byMgr };
 }
 
 /** bar chart race 자료: 월별 상위 N (agg_상위ETF월별)
- *  v24: 행 배열 rows[[순위, 종목코드, 종목명, 상위구분, NAV(억원), 채권/금리 1|0, 유형최종2]] — 유형 추가(상위 N 내 유형별 M/S 막대), 크기 축소(약 150KB → 70KB) */
+ *  v24: 행 배열 rows[[순위, 종목코드, 종목명, 상위구분, NAV(억원), 채권/금리 1|0, 유형]] — 유형 추가(상위 N 내 유형별 M/S 막대), 크기 축소(약 150KB → 70KB)
+ *  v26: 유형 = 유형최종3(파생형 중 신규상장용 '채권/금리' → 채권형). KOFR·CD금리 액티브(합성)가 파생형으로 잡혀 파생형 비중이 커 보이던 착시 해소 */
 function apiRace_(p) {
   const n = +p.n || 10;
   const out = {}, types = typeLegend_();
   const isBond = c => { const t = types[c]; return !!t && (t.neu === '채권/금리' || t.f2 === '채권'); };   // 채권/금리형 → 회색 표시용
-  aggRows_(CFG.SHEET.AGG_TOP).forEach(r => { const k = ymstr_(r[0]); if (+r[1] <= n) { const c = padCode_(r[2]); (out[k] = out[k] || []).push([+r[1], c, String(r[3]), String(r[5]), eok1_(toNum_(r[6])), isBond(c) ? 1 : 0, (types[c] && types[c].f2) || '미분류']); } });
+  aggRows_(CFG.SHEET.AGG_TOP).forEach(r => { const k = ymstr_(r[0]); if (+r[1] <= n) { const c = padCode_(r[2]); (out[k] = out[k] || []).push([+r[1], c, String(r[3]), String(r[5]), eok1_(toNum_(r[6])), isBond(c) ? 1 : 0, (types[c] && (types[c].f3 || types[c].f2)) || '미분류']); } });
   return { unit: 1e8, cols: ['rank', 'code', 'name', 'top', 'nav', 'bond', 'type'], frames: Object.keys(out).sort().map(k => ({ ym: k, rows: out[k] })) };
 }
 
@@ -459,7 +460,7 @@ function apiNewListings_(p) {
   let items = codes.map(c => ({ c: c, ld: listDdOf_(c, ctx) })).filter(x => x.ld.slice(0, 4) === year && x.ld <= date).map(x => {
     const m = ctx.master[x.c], t = ctx.types[x.c];
     const g = groupOf_({ code: x.c, name: (m && m.name) || (t && t.name) || '', mgr: m ? m.mgr : '' }, ctx);
-    return { code: x.c, name: (m && m.name) || (t && t.name) || x.c, listDd: x.ld, mgr: g.short, top: g.top, type: g.f2, neu: g.neu, nav: nav[x.c] || 0, listed: nav[x.c] !== undefined };
+    return { code: x.c, name: (m && m.name) || (t && t.name) || x.c, listDd: x.ld, mgr: g.short, top: g.top, type: g.f3, neu: g.neu, nav: nav[x.c] || 0, listed: nav[x.c] !== undefined };
   });
   if ((p.filter || 'exBond') === 'exBond') items = items.filter(i => i.neu !== '채권/금리');
   items.sort((a, b) => b.nav - a.nav);
@@ -496,7 +497,7 @@ function apiTurnover_(p) {
   });
   const days = inRange.length;
   // v19: 회전율 = 구간 거래대금 ÷ 구간 말일 NAV (배)
-  const top = Object.keys(sum).map(c => { const r = names[c], g = groupOf_(r, ctx); return { code: c, name: r.name, mgr: g.short, top: g.top, type: g.f2, sum: sum[c], avg: sum[c] / days, nav: r.nav, turn: r.nav ? sum[c] / r.nav : null }; })
+  const top = Object.keys(sum).map(c => { const r = names[c], g = groupOf_(r, ctx); return { code: c, name: r.name, mgr: g.short, top: g.top, type: g.f3, sum: sum[c], avg: sum[c] / days, nav: r.nav, turn: r.nav ? sum[c] / r.nav : null }; })
     .sort((a, b) => b.sum - a.sum).slice(0, CFG.TOP_N).map((r, i) => Object.assign({ rank: i + 1 }, r));
   const marketSum = Object.keys(sum).reduce((s, c) => s + sum[c], 0);
   return { from: from, to: to, days: days, top: top, marketSum: marketSum };   // v24: dailyDates(전체 일별 일자, 화면 미사용) 제외 → 결과가 'to' 이하 월 자료로만 정해져 월 단위 캐시 버전 적용

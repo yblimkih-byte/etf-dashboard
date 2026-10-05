@@ -455,6 +455,7 @@ const App = {
     if (opts.typeMs) { const tk = opts.typeMs.keys; bars.push({ label: `상위 ${N} 내 유형별 M/S`, keys: tk, of: r => (tk.indexOf(r.type) >= 0 ? r.type : tk[tk.length - 1]), color: opts.typeMs.color }); }
     box.innerHTML = `<div class="race-bar"><button class="btn race-play">▶ 재생</button><div class="race-ym"></div><input type="range" class="race-range" min="0" max="${frames.length - 1}" value="0"></div>`
       + bars.map(b => `<div class="race-ms"><div class="race-ms-l">${b.label}</div><div class="race-ms-bar"></div></div>`).join('')
+      + (opts.typeMs && opts.typeMs.note ? `<div class="note race-note">${opts.typeMs.note}</div>` : '')   // v26: 유형 분류 주석(유형별 M/S 막대 바로 아래)
       + `<div class="race-stage" style="height:${N * H + 8}px"></div>`;
     parent.appendChild(box);
     const stage = box.querySelector('.race-stage'), ym = box.querySelector('.race-ym'), range = box.querySelector('.race-range'), btn = box.querySelector('.race-play');

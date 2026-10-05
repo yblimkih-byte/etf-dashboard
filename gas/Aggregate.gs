@@ -312,6 +312,7 @@ function nightlyAgg() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) return;
   try {
+    try { const n = syncTypeF3_(); if (n) log_('범례_유형 유형최종3 갱신: ' + n + '행'); } catch (e) { log_('유형최종3 갱신 실패: ' + e.message, 'WARN'); }   // v26
     const props = PropertiesService.getScriptProperties(), ctx = ctx_(), hash = legendHash_(ctx), prev = props.getProperty(PROP.AGG_HASH);
     if (prev !== hash) { requestFullAgg_(prev ? '범례(유형·운용사·ETF마스터) 변경 반영' : '범례 지문 최초 기록'); return; }
     const r = healAgg_(Date.now(), () => ctx, null);
@@ -332,7 +333,7 @@ function ensureNightly_() {
   log_('야간 집계 점검 트리거 설치 (매일 05시대)');
 }
 
-/** 스냅샷 레코드 → {short(약식_정식), top(상위구분), f1, f2, dom, neu}. 운용사는 ETF마스터 브랜드/운용사명 → 범례_운용사 */
+/** 스냅샷 레코드 → {short(약식_정식), top(상위구분), f1, f2, f3(v26 유형최종3), dom, neu}. 운용사는 ETF마스터 브랜드/운용사명 → 범례_운용사 */
 function groupOf_(r, ctx) {
   const e = resolveMgr_(r.code, r.name, ctx);
   let short = e ? e.short : (r.mgr || '미확인');
@@ -340,7 +341,7 @@ function groupOf_(r, ctx) {
   if (!e && r.mgr && ctx.lookup.byName[r.mgr]) { short = ctx.lookup.byName[r.mgr].short; top = ctx.lookup.byName[r.mgr].top; }
   if (CFG.TOP5.indexOf(top) < 0) top = '기타';
   const t = ctx.types[r.code] || { f1: '미분류', f2: '미분류', dom: '미분류', neu: '미분류' };
-  return { short: short, top: top, f1: t.f1 || '미분류', f2: t.f2 || '미분류', dom: t.dom || '미분류', neu: t.neu || '미분류' };
+  return { short: short, top: top, f1: t.f1 || '미분류', f2: t.f2 || '미분류', f3: t.f3 || t.f2 || '미분류', dom: t.dom || '미분류', neu: t.neu || '미분류' };
 }
 
 /** 스냅샷 레코드 → 요약 행 [기준일자, 운용사, 상위구분, 유형최종2, 국내해외, NAV, 종목수] (운용사×유형×국내해외) */
