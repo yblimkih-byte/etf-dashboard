@@ -103,6 +103,16 @@ for (let i = 0; i < targets.length; i += 20) { const items = {}; targets.slice(i
 post({ k: tok, op: 'end', date: date });
 info = JSON.parse(P().KIS_PDF_INFO || '{}');
 check('다시 반영 → 정상 교체', !info.failed && info.src === 'F' && !S['구성종목_수집중']);
+// v36: 응답이 끊겨 다시 보낸 경우 — 같은 묶음 번호(seq) put 은 무시, end 는 방금 결과를 다시 돌려줌
+post({ k: tok, op: 'start' });
+const it1 = Object.fromEntries(targets.slice(0, 20).map(t => [t[0], pdf(t[0], t[1])]));
+const p1 = post({ k: tok, op: 'put', date: date, seq: 1, items: it1 }).data, n1 = S['구성종목_수집중'].rows.length;
+const p1b = post({ k: tok, op: 'put', date: date, seq: 1, items: it1 }).data;
+check('같은 묶음 다시 보냄(seq 같음) → 중복 추가 안 함', p1b.dup === true && S['구성종목_수집중'].rows.length === n1 && p1b.got === p1.got, n1);
+for (let i = 20, q = 2; i < targets.length; i += 20, q++) post({ k: tok, op: 'put', date: date, seq: q, items: Object.fromEntries(targets.slice(i, i + 20).map(t => [t[0], pdf(t[0], t[1])])) });
+const e1 = post({ k: tok, op: 'end', date: date }), e2 = post({ k: tok, op: 'end', date: date });
+check('끝내기 다시 보냄 → 같은 결과(오류 아님)', e1.ok && e2.ok && e2.data.ok === e1.data.ok && e2.data.rows === e1.data.rows && e1.data.n === targets.length, JSON.stringify({ ok: e2.data && e2.data.ok, err: e2.error }));
+check('다른 기준일 끝내기 → 거부', !post({ k: tok, op: 'end', date: '2000-01-01' }).ok);
 
 console.info('[C] 월요일 KIS 자동 수집');
 R(`PropertiesService.getScriptProperties().setProperty(PROP.KIS_KEY, 'K'); PropertiesService.getScriptProperties().deleteProperty(PROP.KIS_RUN)`);
@@ -144,7 +154,9 @@ const top = api('holders', {}).top;
 check('많이 담긴 종목에 해외 주식 포함(한글 대표 표기)', top.some(t => t[0] === '엔비디아/NVIDIA Corp') && !top.some(t => t[0] === 'NVIDIA CORP'), top.slice(0, 5).map(t => t[0]).join(', '));
 
 console.info('[E] 즐겨찾기 버튼 · 화면 문구');
-check('버튼: javascript: 주소, 웹앱 주소·토큰 포함, 해독하면 문법 정상', /^javascript:/.test(code) && (() => { const js = decodeURIComponent(code.slice(11)); try { new Function(js); } catch (e) { return false; } return js.includes('TESTDEPLOY/exec') && js.includes(tok) && js.includes('/api/public/product/view/etfpdf?itemId=') && /funetf/.test(js); })());
+check('버튼: javascript: 주소, 웹앱 주소·토큰 포함, 해독하면 문법 정상', /^javascript:/.test(code) && (() => { const js = decodeURIComponent(code.slice(11)); try { new Function(js); } catch (e) { return false; } return js.includes('AKfycbwF4iZ_1BilAMgSFAySTPrS8gaEOVdTQdMPE3QaVhEd--A38x1l9sQXJWIk_RXuHbO0dA/exec') && js.includes(tok) && js.includes('/api/public/product/view/etfpdf?itemId=') && /funetf/.test(js); })());
+R(`menuFunButton()`);
+check('메뉴: 구성종목_버튼 시트 A3 = 버튼 코드(대화상자 없음 → 권한 범위 그대로)', S['구성종목_버튼'] && S['구성종목_버튼'].rows[2][0] === code && !/HtmlService|getService/.test(fs.readFileSync(path.join(gasDir, 'Setup.gs'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '') + fs.readFileSync(path.join(gasDir, 'Kis.gs'), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')));
 check('버튼 다시 만들기(기존 토큰 유지) · 새 토큰은 renew 일 때만', R(`funBookmarklet_(false)`) === code && R(`funBookmarklet_(true)`) !== code && P().FUN_IMPORT_TOKEN !== tok);
 const tabs = fs.readFileSync(path.join(gasDir, 'Tabs.html'), 'utf8'), shell = fs.readFileSync(path.join(__dirname, '..', 'web', 'src', 'shell.js'), 'utf8');
 check('화면 문구: 원천별(FunETF = 해외 포함 · KIS = 국내 상장 상위 30)', /hdF\(info\) \? '해외 주식 포함' : '국내 상장 종목'/.test(tabs) && /엔비디아, NVDA/.test(tabs) && /상위 30종목까지/.test(tabs) && /info\.src === 'F'/.test(shell));
