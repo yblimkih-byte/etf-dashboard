@@ -41,7 +41,8 @@ const FUN = {
   BASE: 'https://www.funetf.co.kr', PDF: '/api/public/product/view/etfpdf',
   MAX: 600,     // ETF 1개당 비중 상위 최대 행 수(전 세계·전체 시장형 ETF 의 수천 종목 중 극소 비중 생략)
   CHUNK: 20,    // 브라우저가 한 번에 보내는 ETF 수
-  STATE: 'FUN_IMPORT_STATE', TOKEN: 'FUN_IMPORT_TOKEN',
+  STATE: 'FUN_IMPORT_STATE', TOKEN: 'FUN_IMPORT_TOKEN', LAST: 'FUN_IMPORT_LAST',
+  NEED_MAX: 300,   // KIS 보완 대기 목록 최대(스크립트 속성 값 9KB 한도)
   // 운영 웹앱 주소(배포 ID 고정 — docs/GitHub_유지관리_가이드.md). ScriptApp.getService() 를 쓰지 않음
   EXEC: 'https://script.google.com/macros/s/AKfycbwF4iZ_1BilAMgSFAySTPrS8gaEOVdTQdMPE3QaVhEd--A38x1l9sQXJWIk_RXuHbO0dA/exec',
   SHEET: '구성종목_버튼'
@@ -81,7 +82,8 @@ function funParsePdf_(code, text) {
 }
 
 /** 브라우저(FunETF 화면의 즐겨찾기 버튼) → 웹앱 doPost 로 받은 구성종목 반영. body = {k: 토큰, op, date, items: {ETF코드: [[ISIN, 티커, 이름, 비중, 평가금액]] | null(받기 실패)}}
- *  start: 대상(기준일 NAV>0 전 종목 + ETF ISIN)·기준일을 돌려주고 수집중 시트 새로 만듦 / put: 받은 묶음을 시트에 추가 / end: 빈 응답·실패 ETF 는 KIS 로 보완 후 '구성종목'과 교체 */
+ *  start: 대상(기준일 NAV>0 전 종목 + ETF ISIN)·기준일을 돌려주고 수집중 시트 새로 만듦 / put: 받은 묶음을 시트에 추가 / end: 빈 응답·실패 ETF 는 KIS 로 보완 후 '구성종목'과 교체
+ *  v36: 응답이 중간에 끊겨 브라우저가 다시 보내도 안전 — put 은 묶음 번호(seq)로 중복 무시, end 는 방금 끝난 결과를 다시 돌려줌 */
 function funImport_(b) {
   const P = PropertiesService.getScriptProperties(), tok = P.getProperty(FUN.TOKEN);
   if (!tok || !b || String(b.k || '') !== tok) throw new Error('수집 버튼 인증 실패: 메뉴 [ETF Dashboard] › 구성종목 수집 버튼(FunETF) 만들기로 버튼을 다시 만드세요');
@@ -95,18 +97,27 @@ function funImport_(b) {
       const date = dates[dates.length - 1], targets = holdingsTargets_(date).map(t => [t[0], isinKr_(t[0])]);
       P.deleteProperty(PROP.KIS_STATE); clearTriggers_('cont_collectHoldings');   // 진행 중이던 KIS 이어서 실행은 중단(같은 시트를 씀)
       holdingsTmpSheet_(ss);
-      P.setProperty(FUN.STATE, JSON.stringify({ date: date, n: targets.length, got: 0, ok: 0, empty: 0, err: 0, f: 0, k: 0, rows: 0, need: [], errs: [], start: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm') }));
+      P.setProperty(FUN.STATE, JSON.stringify({ date: date, n: targets.length, seq: 0, got: 0, ok: 0, empty: 0, err: 0, f: 0, k: 0, rows: 0, need: [], errs: [], start: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm') }));
       return { date: date, ymd: date.replace(/-/g, ''), targets: targets, chunk: FUN.CHUNK };
     }
     const st = kisJson_(P.getProperty(FUN.STATE)), sh = ss.getSheetByName(KIS.TMP);
+    if ((!st.date || st.date !== b.date || !sh) && b.op === 'end') {   // 끝내기 응답이 끊겨 다시 보낸 경우 → 방금 결과
+      const last = kisJson_(P.getProperty(FUN.LAST));
+      if (last.date === b.date && Date.now() - (last.t || 0) < 30 * 60 * 1000) return last.info;
+    }
     if (!st.date || st.date !== b.date || !sh) throw new Error('반영 상태가 없습니다(시간이 지났거나 다른 반영이 시작됨). 버튼을 다시 누르세요');
     if (b.op === 'put') {
+      if (b.seq && b.seq <= (st.seq || 0)) return { got: st.got, n: st.n, rows: st.rows, dup: true };   // 이미 반영한 묶음(다시 보냄)
+      st.seq = b.seq || (st.seq || 0) + 1;
       const names = {}; readDailyBlock_(st.date).forEach(r => names[r.code] = String(r.name));
       const buf = [];
       Object.keys(b.items || {}).forEach(code => {
         const c = padCode_(code), items = b.items[code]; st.got++;
         if (!names[c]) return;
-        if (!Array.isArray(items) || !items.length) { st.need.push(c); return; }   // 받기 실패·빈 응답 → 끝에서 KIS 보완
+        if (!Array.isArray(items) || !items.length) {   // 받기 실패·빈 응답 → 끝에서 KIS 보완(목록이 너무 길면 오류로)
+          if (st.need.length < FUN.NEED_MAX) st.need.push(c); else { st.err++; if (st.errs.length < 5) st.errs.push(c + ' FunETF 응답 없음'); }
+          return;
+        }
         const rows = funRows_(items);
         if (!rows.length) { st.empty++; return; }
         st.ok++; st.f++; rows.forEach(y => buf.push([c, names[c], y[0], y[1], y[2], y[3], y[4], 'F']));
@@ -128,9 +139,10 @@ function funImport_(b) {
         });
         if (buf.length) { appendRows_(sh, buf); st.rows += buf.length; }
       }
-      st.empty += Math.max(0, st.n - st.got - 0);   // 브라우저가 보내지 못한 ETF(창을 닫는 등)는 구성종목 없음으로
-      P.deleteProperty(FUN.STATE);
-      return holdingsFinish_(ss, sh, Object.assign(st, { src: 'F' }));
+      st.empty += Math.max(0, st.n - st.got);   // 브라우저가 보내지 못한 ETF(창을 닫는 등)는 구성종목 없음으로
+      const info = holdingsFinish_(ss, sh, Object.assign(st, { src: 'F' }));
+      P.deleteProperty(FUN.STATE); P.setProperty(FUN.LAST, JSON.stringify({ date: st.date, t: Date.now(), info: info }));
+      return info;
     }
     throw new Error('알 수 없는 요청: ' + b.op);
   } finally { lock.releaseLock(); }
@@ -144,11 +156,11 @@ function funBookmarklet_(renew) {
   const js = "(async()=>{const EX='" + ex + "',K='" + tok + "';" +
     "if(!/(^|\\.)funetf\\.co\\.kr$/.test(location.hostname)){alert('FunETF(www.funetf.co.kr) 화면에서 눌러 주세요');return;}" +
     "const bx=document.createElement('div');bx.style.cssText='position:fixed;z-index:2147483647;right:16px;bottom:16px;background:#fff;border:1px solid #17171c;padding:12px 16px;font:14px/1.5 sans-serif;color:#17171c;max-width:340px';document.body.appendChild(bx);const say=s=>bx.textContent='ETF 구성종목 반영: '+s;" +
-    "const post=async o=>{const r=await fetch(EX,{method:'POST',body:JSON.stringify(Object.assign({k:K},o)),headers:{'Content-Type':'text/plain;charset=utf-8'}});const j=JSON.parse(await r.text());if(!j.ok)throw new Error(j.error);return j.data;};" +
     "const zz=ms=>new Promise(z=>setTimeout(z,ms));" +
-    "try{say('대상 목록 받는 중…');const s=await post({op:'start'});const T=s.targets,N=T.length;let B={},n=0;" +
+    "const post=async o=>{let j=null,e0=null;for(let a=0;a<4&&!j;a++){if(a)await zz(3000*a);try{const r=await fetch(EX,{method:'POST',body:JSON.stringify(Object.assign({k:K},o)),headers:{'Content-Type':'text/plain;charset=utf-8'}});j=JSON.parse(await r.text());}catch(e){e0=e;}}if(!j)throw new Error('웹앱 응답 없음('+(e0&&e0.message)+')');if(!j.ok)throw new Error(j.error);return j.data;};" +
+    "try{say('대상 목록 받는 중…');const s=await post({op:'start'});const T=s.targets,N=T.length;let B={},n=0,q=0;" +
     "const one=async t=>{if(!t[1]){B[t[0]]=null;return;}for(let a=0;a<2;a++){try{const r=await fetch('/api/public/product/view/etfpdf?itemId='+t[1]+'&etfPdfYmd='+s.ymd,{headers:{'X-Requested-With':'XMLHttpRequest'}});if(r.ok){const j=await r.json();B[t[0]]=Array.isArray(j)?j.map(x=>[x.grpItmNo,x.ticker,x.citmNm,x.evP,x.evAmt]):null;return;}}catch(e){}await zz(1500);}B[t[0]]=null;};" +
-    "for(let x=0;x<N;x+=2){await Promise.all(T.slice(x,x+2).map(one));n=Math.min(N,x+2);say(n+' / '+N+' 종목 받는 중 (창을 닫지 마세요)');await zz(500);if(Object.keys(B).length>=s.chunk||n>=N){await post({op:'put',date:s.date,items:B});B={};}}" +
+    "for(let x=0;x<N;x+=2){await Promise.all(T.slice(x,x+2).map(one));n=Math.min(N,x+2);say(n+' / '+N+' 종목 받는 중 (창을 닫지 마세요)');await zz(500);if(Object.keys(B).length>=s.chunk||n>=N){await post({op:'put',date:s.date,seq:++q,items:B});B={};}}" +
     "say('시트에 반영 중…');const e=await post({op:'end',date:s.date});say('완료 — '+e.date+' 기준 '+e.ok+' / '+e.n+'종목 · '+e.rows+'행');}catch(err){say('오류 — '+err.message);}})();";
   return 'javascript:' + encodeURIComponent(js).replace(/%20/g, ' ');
 }
