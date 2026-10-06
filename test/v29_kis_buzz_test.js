@@ -48,7 +48,7 @@ R(`PropertiesService.getScriptProperties().setProperty(PROP.KIS_KEY, 'K'); Prope
 R(`KIS.RUN_MS = 1; KIS.GAP_MS = 0`); ctx.Utilities.sleep = () => {};
 R(`collectHoldings()`);
 const s1 = JSON.parse(P().KIS_PDF_STATE || '{}');
-check('시한 초과 → 진행 상태 저장(이어서 실행)', s1.i === 15 && !!S['구성종목_수집중'] && !S['구성종목'], JSON.stringify({ i: s1.i, ok: s1.ok }));
+check('시한 초과 → 진행 상태 저장(이어서 실행)', s1.i === R('KIS.BATCH') && !!S['구성종목_수집중'] && !S['구성종목'], JSON.stringify({ i: s1.i, ok: s1.ok }));
 check('토큰 1회 발급 후 재사용', ctx.MOCK_KIS_TOKENS === 1);
 check('한도 초과 1건 → 재시도로 성공(오류 0)', s1.err === 0 && ctx.MOCK_KIS_LIMITED === 1, JSON.stringify(s1));
 R(`KIS.RUN_MS = 4 * 60 * 1000`);
@@ -58,7 +58,7 @@ const targets = J(`holdingsTargets_(${JSON.stringify(info.date)}).length`);
 check('완료: 구성종목 시트로 교체·수집중 시트 제거·상태 삭제', !!S['구성종목'] && !S['구성종목_수집중'] && !P().KIS_PDF_STATE && P().KIS_PDF_DATE === info.date, JSON.stringify(info));
 check('대상 = 기준일 NAV>0 전 종목, 성공+구성 없음+오류 = 대상', info.n === targets && info.ok + info.empty + info.err === targets && info.ok > 0, `${info.ok}+${info.empty}+${info.err}=${targets}`);
 check('토큰은 여전히 1회 발급(같은 날 재사용)', ctx.MOCK_KIS_TOKENS === 1);
-check('구성종목 시트 머리글', S['구성종목'].rows[0].join('|') === 'ETF코드|ETF명|구성종목코드|구성종목명|비중(%)|평가금액(원)');
+check('구성종목 시트 머리글(v34 ISIN·출처)', S['구성종목'].rows[0].join('|') === 'ETF코드|ETF명|구성종목코드|구성종목명|비중(%)|평가금액(원)|ISIN|출처');
 const top = JSON.parse(P().KIS_PDF_TOP || '[]');
 check('많이 담긴 종목(보유액 순) — 1위 삼성전자, 현금 제외', top.length > 3 && top[0][0] === '삼성전자' && !top.some(t => /원화예금/.test(t[0])), top.slice(0, 4).map(t => t[0] + ' ' + t[2] + '억').join(', '));
 const m = api('meta');
