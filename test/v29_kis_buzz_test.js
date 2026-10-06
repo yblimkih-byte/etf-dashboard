@@ -101,6 +101,7 @@ const tg = J(`buzzTargets_()`);
 check('대상: 범례_테마의 관심도 검색어(테마·상품구조, 빈 칸 제외)', tg.length >= 25 && tg.some(t => t[0] === '반도체' && t[1] === 'theme') && tg.some(t => t[1] === 'struct') && !tg.some(t => t[0] === '기타 주식'), tg.length);
 check('범례_테마 머리글 10열(관심도 검색어)', S['범례_테마'].rows[0][9] === '관심도 검색어' && S['범례_테마'].rows.find(r => r[2] === '반도체')[9] === '반도체 ETF');
 R(`collectBuzz()`);
+check('NAVER API HUB 주소·인증 헤더(401 없음)', !ctx.MOCK_NAVER_401 && /naverapihub\.apigw\.ntruss\.com\/search-trend\/v1\/search/.test(R('BUZZ.DATALAB')) && /naverapihub\.apigw\.ntruss\.com\/search\/v1\/news/.test(R('BUZZ.NEWS')), ctx.MOCK_NAVER_401 || 0);
 check('DataLab 요청 수 = ⌈대상/4⌉ (기준어 포함 5그룹)', ctx.MOCK_NAVER_DL === Math.ceil(tg.length / 4), ctx.MOCK_NAVER_DL + ' / ' + tg.length);
 const BS = S['관심도'];
 check('관심도 시트: 검색·뉴스·단어 행', BS && BS.rows[0].join('|') === '구분|대상|기간|값' && ['검색', '뉴스', '단어'].every(k => BS.rows.some(r => r[0] === k)), BS && BS.rows.length);
