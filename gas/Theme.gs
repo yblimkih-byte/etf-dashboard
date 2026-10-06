@@ -279,7 +279,7 @@ function buildThemeReview() {
 /** 테마 맵 입력 지문 = 범례_테마 규칙 + 기초지수명 (야간 점검에서 비교) */
 function themeHash_(ctx) {
   const ms = ctx.master, s = themeRulesSig_() + '\n#\n' + Object.keys(ms).sort().map(k => k + '|' + (ms[k].idx || '')).join('\n');
-  return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s));
+  return md5_(s);   // v31: UTF-8
 }
 /** 테마 맵 화면 캐시만 새로 계산되게 함(다른 탭 캐시는 유지) */
 function bumpThemeCache_() { PropertiesService.getScriptProperties().setProperty(PROP.THEME_VER, String(Date.now())); }

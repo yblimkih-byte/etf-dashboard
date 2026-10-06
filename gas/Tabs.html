@@ -665,7 +665,7 @@ function hdModel(A, d) {
 }
 function hdSearch(A, root, d, st) {
   const w = A.div(root, 'hd-bar');
-  w.innerHTML = `<form class="hd-form" autocomplete="off"><input type="search" class="hd-q" placeholder="종목명·티커·종목코드 (예: 엔비디아, NVDA, 삼성전자, 005930)" aria-label="종목 검색"><button type="submit" class="seg-one on">찾기</button>${st.q ? '<button type="button" class="seg-one hd-clear">처음으로</button>' : ''}</form>`;
+  w.innerHTML = `<form class="hd-form" autocomplete="off"><input type="search" class="hd-q" placeholder="국내 상장 주식 종목명·종목코드 (예: 삼성전자, 005930, 한화에어로스페이스)" aria-label="종목 검색"><button type="submit" class="seg-one on">찾기</button>${st.q ? '<button type="button" class="seg-one hd-clear">처음으로</button>' : ''}</form>`;
   const inp = w.querySelector('input'); inp.value = st.q || '';
   const go = (q, pick) => { st.q = String(q || '').trim(); st.pick = pick || ''; A.load(); };
   w.querySelector('form').onsubmit = e => { e.preventDefault(); go(inp.value); };
@@ -690,10 +690,10 @@ App.registerTab({
       const t0 = H.top[0];
       A.tiles(root, [['구성종목 기준일', d.date, info.ok ? `ETF ${A.num(info.ok)}종목 · 매주 월요일 갱신` : '매주 월요일 갱신'],
         ['ETF가 가장 많이 담은 종목', t0 ? hdEsc(t0.name) : '-', t0 ? `보유 추정 ${A.eok(t0.amt)}조원 · ETF ${A.num(t0.n)}종목` : ''],
-        ['찾는 방법', '종목명·티커·코드', '한글·영문 이름, 미국 종목 티커(NVDA 등), 종목코드']]);   // 웹 화면은 첫 요소인 이 줄을 숨기고 상단 카드로 표시
+        ['찾는 방법', '종목명·종목코드', '국내 상장 주식(해외 주식은 원천 자료 미제공)']]);   // 웹 화면은 첫 요소인 이 줄을 숨기고 상단 카드로 표시
       const go = hdSearch(A, root, d, st);
       if (!H.top.length) return;
-      const s1 = A.section(root, `ETF가 많이 담은 종목 상위 ${H.top.length}`, `보유 추정 = 그 종목을 담은 ETF마다 NAV × 구성 비중을 더한 값 · ${src} · 행을 누르면 담은 ETF 목록`);
+      const s1 = A.section(root, `ETF가 많이 담은 종목 상위 ${H.top.length}`, `보유 추정 = 그 종목을 담은 ETF마다 NAV × 구성 비중을 더한 값 · ${src} · 국내 상장 종목만, ETF마다 비중 상위 30종목까지 · 행을 누르면 담은 ETF 목록`);
       const t20 = H.top.slice(0, 20);
       A.bar(A.canvas(s1, 'tall'), t20.map(r => r.name), [{ label: '보유 추정', data: t20.map(r => r.amt), color: '#17171c' }], { horizontal: true, noLegend: true, padRight: 40, labels: { mode: 'end', fmt: v => A.eok(v) } });
       const host = A.div(s1, '', A.table(H.top, [{ h: '순위', k: 'rank' }, { h: '종목명', f: r => hdEsc(r.name), l: 1 }, { h: '종목코드', f: r => hdEsc(r.comp), l: 1 }, { h: '보유 추정(조원)', f: r => navSmall(A, r.amt) }, { h: '담은 ETF 수', f: r => A.num(r.n) }],
@@ -705,9 +705,9 @@ App.registerTab({
     A.tiles(root, sel ? [['종목', hdEsc(sel.name), hdEsc(sel.comp)], ['담은 ETF', A.num(H.items.length) + '종목', `NAV 합계 ${A.eok(H.nav)}조원`],
       ['ETF 보유 추정', A.eok(H.amt) + '조원', `최대 비중 ${hdEsc(b.name)} ${A.num(b.w, 1)}%`],
       [`${F} 보유 비중`, H.fShare === null ? '-' : A.share(H.fShare), H.fi.length ? `${F} ${H.fi.length}종목 · 최대 ${hdEsc(H.fi[0].name)} ${A.num(H.fi[0].w, 1)}%` : `${F} 상품 중 담은 ETF 없음`]]
-      : [['검색어', hdEsc(st.q), ''], ['결과', '없음', '다른 표기(영문 이름·티커·종목코드)로 검색']]);
+      : [['검색어', hdEsc(st.q), ''], ['결과', '없음', '종목명·종목코드로 다시 검색 (해외 주식은 미제공)']]);
     const go = hdSearch(A, root, d, st);
-    if (!sel || !H.items.length) { A.div(root, 'empty', `'${hdEsc(st.q)}'을(를) 담은 ETF를 찾지 못했습니다. 영문 이름·티커·종목코드로도 검색해 보십시오`); return; }
+    if (!sel || !H.items.length) { A.div(root, 'empty', `'${hdEsc(st.q)}'을(를) 담은 ETF를 찾지 못했습니다. 종목코드로도 검색해 보십시오 — 구성종목 원천(한국투자증권 Open API)이 국내 상장 종목만 제공해 해외 주식은 현재 검색되지 않습니다`); return; }
     if ((d.cands || []).length > 1) {
       const c = A.div(root, 'chips');
       c.innerHTML = '<span class="chips-hint">이름이 비슷한 종목 — 눌러서 바꾸기</span>' + d.cands.map(x => `<button type="button" class="chip-m hd-c${x.key === sel.key ? ' on' : ''}" data-k="${hdEsc(x.key)}">${hdEsc(x.name)}<small class="hd-cn">${hdEsc(x.comp)} · ETF ${x.n}</small></button>`).join('');
@@ -732,7 +732,7 @@ App.registerTab({
       { h: '운용사', f: r => A.sw(hdTop(r.top)) + hdEsc(r.mgr), l: 1 }, { h: '유형', f: r => hdEsc(r.type || ''), l: 1 }, { h: '구성 비중', f: r => A.num(r.w, 2) + '%' },
       { h: 'NAV(조원)', f: r => r.nav > 0 ? navSmall(A, r.nav) : '-' }, { h: '보유 추정(조원)', f: r => navSmall(A, r.amt) }], { attr: r => `data-top="${hdTop(r.top)}"` }));
     mgrChips(A, cb3, { filterHosts: [tb], reset: true, hint: '운용사 선택 시 해당 운용사 종목만 표시' });
-    A.div(s3, 'note', `구성 비중 = 한국투자증권 Open API ETF 구성종목의 평가금액 비중(${d.date} 기준, 매주 월요일 갱신) · NAV = KRX 순자산총액 · 찾은 표기: ${hdEsc((d.terms || [st.q]).join(', '))}`);
+    A.div(s3, 'note', `구성 비중 = 한국투자증권 Open API ETF 구성종목의 평가금액 ÷ ETF 순자산(${d.date} 기준, 매주 월요일 갱신) · 국내 상장 종목만, ETF마다 비중 상위 30종목까지 제공 · NAV = KRX 순자산총액 · 찾은 표기: ${hdEsc((d.terms || [st.q]).join(', '))}`);
   }
 });
 

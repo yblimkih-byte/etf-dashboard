@@ -60,18 +60,21 @@ function kisPdfReq_(code, token, k) {
     headers: { authorization: 'Bearer ' + token, appkey: k.key, appsecret: k.sec, tr_id: KIS.PDF_TR, custtype: 'P' } };
 }
 /** 응답 → {ok, rows:[[구성종목코드, 구성종목명, 비중(%), 평가금액]], n(ETF 측 구성종목 수), err, retry, expired}.
- *  비중 = etf_cnfg_issu_rlim. 값이 모두 비어 있으면 평가금액(etf_vltn_amt) 비율로 계산 */
+ *  v31: 비중 = 평가금액(etf_vltn_amt, CU 1개 기준) ÷ CU 금액(output1 etf_cu_unit_scrt_cnt × nav) × 100 — ETF 전체 순자산 대비 실제 비중.
+ *       (etf_cnfg_issu_rlim 은 '응답에 나온 국내 상장 종목끼리'의 비중이라 해외 종목이 섞인 ETF 에서 과대 — 예: 해외 21종목 중 국내 1종목이면 100%)
+ *  CU 금액을 모르면 etf_cnfg_issu_rlim, 그것도 없으면 응답 종목이 전부일 때만 평가금액 비율 */
 function kisParsePdf_(code, text) {
   const b = kisJson_(text), msg = String((b.msg_cd || '') + ' ' + (b.msg1 || '')).trim();
   if (code !== 200 || (b.rt_cd !== undefined && String(b.rt_cd) !== '0')) {
     const expired = /EGW00123|EGW00121|token/i.test(msg) || code === 401;
     return { ok: false, err: (code !== 200 ? 'HTTP ' + code + ' ' : '') + (msg || String(text || '').slice(0, 80)), expired: expired, retry: expired || code >= 500 || code === 429 || /EGW00201|초당|건수/.test(msg) };
   }
-  const items = Array.isArray(b.output2) ? b.output2 : [];
+  const items = Array.isArray(b.output2) ? b.output2 : [], o1 = b.output1 || {}, n = toNum_(o1.etf_cnfg_issu_cnt);
+  const cuv = toNum_(o1.etf_cu_unit_scrt_cnt) * toNum_(o1.nav), r4 = v => Math.round(v * 1e4) / 1e4;
   let rows = items.map(x => [String(x.stck_shrn_iscd || '').trim(), String(x.hts_kor_isnm || '').trim(), toNum_(x.etf_cnfg_issu_rlim), toNum_(x.etf_vltn_amt)]).filter(r => r[0] || r[1]);
-  if (rows.length && rows.every(r => !r[2])) { const s = rows.reduce((a, r) => a + Math.max(r[3], 0), 0); if (s > 0) rows = rows.map(r => [r[0], r[1], Math.round(Math.max(r[3], 0) / s * 1e6) / 1e4, r[3]]); }
-  const o1 = b.output1 || {};
-  return { ok: true, rows: rows, n: toNum_(o1.etf_cnfg_issu_cnt) };
+  if (cuv > 0 && rows.some(r => r[3] > 0)) rows = rows.map(r => [r[0], r[1], r4(Math.max(r[3], 0) / cuv * 100), r[3]]);
+  else if (rows.length && rows.every(r => !r[2]) && !(n > rows.length)) { const s = rows.reduce((a, r) => a + Math.max(r[3], 0), 0); if (s > 0) rows = rows.map(r => [r[0], r[1], r4(Math.max(r[3], 0) / s * 100), r[3]]); }
+  return { ok: true, rows: rows, n: n, part: n > rows.length };
 }
 const kisCash_ = (code, name) => KIS.CASH.test(String(name || '').replace(/\s+/g, '')) || /^KRD0/.test(String(code || ''));
 
@@ -113,7 +116,7 @@ function collectHoldings() {
         const c = batch[j];
         if (!r.ok) { st.err++; if (st.errs.length < 5) st.errs.push(c[0] + ' ' + r.err); return; }
         if (!r.rows.length) { st.empty++; return; }
-        st.ok++; r.rows.forEach(x => buf.push([c[0], c[1], x[0], x[1], x[2], x[3]]));
+        st.ok++; if (r.part) st.part = (st.part || 0) + 1; r.rows.forEach(x => buf.push([c[0], c[1], x[0], x[1], x[2], x[3]]));
       });
       st.i += batch.length;
       if (buf.length >= 3000) { appendRows_(sh, buf); st.rows += buf.length; buf = []; }
@@ -125,7 +128,7 @@ function collectHoldings() {
       console.log('[collectHoldings] 진행 ' + st.i + '/' + targets.length + ' (이어서 실행)'); return;
     }
     P.deleteProperty(PROP.KIS_STATE);
-    const info = { date: st.date, n: targets.length, ok: st.ok, empty: st.empty, err: st.err, rows: st.rows, at: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm'), errs: st.errs };
+    const info = { date: st.date, n: targets.length, ok: st.ok, empty: st.empty, err: st.err, part: st.part || 0, rows: st.rows, at: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm'), errs: st.errs };
     if (st.err > targets.length * KIS.MAX_ERR) {   // 절반 넘게 오류 → 이전 자료 유지(수집중 시트는 점검용으로 남김)
       log_('구성종목 수집 실패: 성공 ' + st.ok + '/' + targets.length + ' · 오류 예: ' + st.errs.join(' | '), 'ERROR'); P.setProperty(PROP.KIS_INFO, JSON.stringify(Object.assign(info, { failed: true }))); return;
     }

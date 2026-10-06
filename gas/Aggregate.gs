@@ -195,7 +195,7 @@ function aggTailStart_(sh, lr, minK) {
 // ─────────────────────────── v23: 전체 재계산 분할 실행 ───────────────────────────
 
 /** 범례 지문: 집계 분류에 쓰이는 범례_운용사·범례_유형·ETF마스터(브랜드·운용사명) + 상위 5개사·브랜드 표 */
-function legendHash_(ctx) {
+function legendHash_(ctx, legacy) {
   const m = ctx.mgrs, t = ctx.types, ms = ctx.master;
   const s = [
     CFG.TOP5.join(','), JSON.stringify(CFG.BRAND_MAP),
@@ -203,7 +203,7 @@ function legendHash_(ctx) {
     Object.keys(t).sort().map(k => [k, t[k].f1, t[k].f2, t[k].dom].join('|')).join('\n'),
     Object.keys(ms).sort().map(k => [k, ms[k].brand, ms[k].mgr].join('|')).join('\n')
   ].join('\n#\n');
-  return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s));
+  return md5_(s, legacy);
 }
 /** v24: 화면 계산(groupOf_·listDdOf_·신규상장 목록)이 읽는 범례·마스터 항목 전체의 지문 — legendHash_(전체 재계산 판단)에 없는 상장일·종목명·신규상장용 구분 포함.
  *  야간 점검에서 바뀐 것이 확인되면 화면 캐시 전체 무효화(집계 재계산은 하지 않음). 예열이 캐시 보존 기간을 계속 연장하므로 이 점검이 없으면 범례 수정이 지난 기준일 화면에 반영되지 않음 */
@@ -213,7 +213,7 @@ function ctxHash_(ctx) {
     Object.keys(t).sort().map(k => [k, t[k].name, t[k].listDd, t[k].neu].join('|')).join('\n'),
     Object.keys(ms).sort().map(k => [k, ms[k].name, ms[k].listDd].join('|')).join('\n')].join('\n#\n');
   // v29: 테마 맵 입력(범례_테마 규칙·기초지수명)은 별도 지문 → 바뀌면 테마 맵 캐시만 갱신(themeCtxCheck_)
-  return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s));
+  return md5_(s);
 }
 function fullAggState_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(PROP.FULL_AGG) || 'null'); } catch (e) { return null; } }
 function saveFullAgg_(st) { PropertiesService.getScriptProperties().setProperty(PROP.FULL_AGG, JSON.stringify(st)); }
@@ -315,7 +315,8 @@ function nightlyAgg() {
   try {
     try { const n = syncTypeF3_(); if (n) log_('범례_유형 유형최종3 갱신: ' + n + '행'); } catch (e) { log_('유형최종3 갱신 실패: ' + e.message, 'WARN'); }   // v26
     const props = PropertiesService.getScriptProperties(), ctx = ctx_(), hash = legendHash_(ctx), prev = props.getProperty(PROP.AGG_HASH);
-    if (prev !== hash) { requestFullAgg_(prev ? '범례(유형·운용사·ETF마스터) 변경 반영' : '범례 지문 최초 기록'); return; }
+    if (prev !== hash && prev && prev === legendHash_(ctx, true)) { props.setProperty(PROP.AGG_HASH, hash); log_('범례 지문 계산 방식 변경(v31 UTF-8) — 범례는 그대로라 재계산 없이 지문만 갱신'); }   // v31
+    else if (prev !== hash) { requestFullAgg_(prev ? '범례(유형·운용사·ETF마스터) 변경 반영' : '범례 지문 최초 기록'); return; }
     const r = healAgg_(Date.now(), () => ctx, null);
     console.log('[nightlyAgg] 집계 점검: ' + r.msg);
     // v24: 상장일·종목명·신규상장용 구분 등 화면 계산이 읽는 항목이 바뀌었으면 화면 캐시 전체 무효화(처음 실행은 지문만 기록)
