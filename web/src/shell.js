@@ -98,8 +98,8 @@
     holders(d) {   // v29: 종목→ETF 찾기
       if (!d.ready) return { lines: [] };
       const st = hdState(A), H = hdModel(A, d), info = d.info || {}, t = H.top[0];
-      const base = { k: '구성종목 기준일', d: '전체 ETF(기준일 순자산 있는 종목) 중 국내 상장 구성종목을 1개 이상 받은 ETF 수. 해외 주식만 담은 ETF·채권형 등은 원천 자료에 구성종목이 없음', v: esc(d.date), txt: 1, l1: info.ok ? `구성종목 확인 ${A.num(info.ok)} / ${A.num(info.n)}종목` : '', l2: '국내 상장 종목 기준 · 매주 월요일 갱신' };   // v33
-      if (!st.q || !d.sel || !H.items.length) return { lines: [st.q ? `'${esc(st.q)}'을(를) 담은 ETF 없음 — 종목코드로 다시 검색(해외 주식은 원천 자료 미제공)` : '국내 상장 주식 종목명·종목코드를 넣으면 그 종목을 많이 담은 ETF를 비중 순으로 표시']
+      const base = { k: '구성종목 기준일', d: '전체 ETF(기준일 순자산 있는 종목) 중 주식 구성종목을 1개 이상 확인한 ETF 수. 채권·선물·스왑·현금만 담은 ETF는 제외', v: esc(d.date), txt: 1, l1: info.ok ? `구성종목 확인 ${A.num(info.ok)} / ${A.num(info.n)}종목` : '', l2: info.src === 'F' ? '해외 주식 포함 전체 구성종목' : '국내 상장 종목 · 매주 월요일 갱신' };   // v34
+      if (!st.q || !d.sel || !H.items.length) return { lines: [st.q ? `'${esc(st.q)}'을(를) 담은 ETF 없음 — ${info.src === 'F' ? '영문명·티커·종목코드로 다시 검색' : '종목코드로 다시 검색(이번 자료는 해외 주식 미포함)'}` : (info.src === 'F' ? '국내·해외 주식 종목명·티커·종목코드' : '국내 상장 주식 종목명·종목코드') + '를 넣으면 그 종목을 많이 담은 ETF를 비중 순으로 표시']
           .concat(t && !st.q ? [`ETF가 가장 많이 담은 종목 <b>${esc(t.name)}</b> 보유 추정 ${jo(t.amt)} (ETF ${A.num(t.n)}종목)`] : []),
         cards: [base].concat(t && !st.q ? [{ k: '최다 보유 종목', v: esc(t.name), txt: 1, l1: `보유 추정 ${jo(t.amt)}`, l2: `ETF ${A.num(t.n)}종목` }] : []) };
       const b = H.best, f0 = H.fi[0];
@@ -168,7 +168,7 @@
   const init0 = A.init;
   A.init = function () {
     this.tabs.forEach(t => { const r0 = t.render; t.render = function (d, view, a) { r0.call(t, d, view, a);
-      const SRC = { holders: '자료: 한국투자증권 Open API(ETF 구성종목) · KRX 정보데이터시스템(순자산총액)', buzz: '자료: 네이버 데이터랩(검색어 트렌드) · 네이버 뉴스 검색 · KRX 정보데이터시스템(순자산총액)' };   // v29
+      const SRC = { holders: '자료: ETF 구성종목 PDF(FunETF 공개 자료 · 한국투자증권 Open API) · KRX 정보데이터시스템(순자산총액)', buzz: '자료: 네이버 데이터랩(검색어 트렌드) · 네이버 뉴스 검색 · KRX 정보데이터시스템(순자산총액)' };   // v29
       view.querySelectorAll(':scope > .section').forEach((s, k) => s.setAttribute('data-src', SRC[t.id] || (t.id === 'overview' && k === 1 ? '자료: KRX 정보데이터시스템 · Yahoo Finance(지수) · 순자산총액 기준' : '자료: KRX 정보데이터시스템 · 순자산총액 기준')));
       paint(t, d);
       // 캔버스 글자는 웹폰트 도착 전에 그려지면 대체 글꼴로 남음 → Pretendard 로드 후 한 번 다시 그림
