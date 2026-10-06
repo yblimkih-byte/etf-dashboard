@@ -55,7 +55,7 @@
   g.LockService = { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) };
   g.ScriptApp = { WeekDay: { MONDAY: 'MONDAY' }, getProjectTriggers: () => [], newTrigger: () => ({ onWeekDay() { return this; }, timeBased() { return this; }, after() { return this; }, everyDays() { return this; }, atHour() { return this; }, nearMinute() { return this; }, inTimezone() { return this; }, create() { console.log('[trigger created]'); } }), deleteTrigger() {}, EventType: { CLOCK: 'CLOCK' } };
   const pad = n => ('0' + n).slice(-2);
-  g.Utilities = { DigestAlgorithm: { MD5: 'md5' }, computeDigest: (a, str) => { let h = 5381; for (const c of String(str)) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return [h]; }, base64EncodeWebSafe: b => b.map(x => x.toString(36)).join(''), sleep: () => {}, formatDate: (d, tz, f) => { if (f === 'H') return String(d.getHours()); const y = d.getFullYear(), m = pad(d.getMonth() + 1), dd = pad(d.getDate()); return f === 'yyyyMMdd' ? `${y}${m}${dd}` : f === 'yyyy-MM' ? `${y}-${m}` : `${y}-${m}-${dd}`; } };
+  g.Utilities = { DigestAlgorithm: { MD5: 'md5' }, Charset: { UTF_8: 'UTF-8' }, computeDigest: (a, str, cs) => { let h = 5381; const v = cs ? String(str) : String(str).replace(/[^\x00-\x7f]/g, '?'); for (const c of v) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return [h]; } /* v31: 문자셋 없으면 Apps Script 처럼 한글이 뭉개짐 */, base64EncodeWebSafe: b => b.map(x => x.toString(36)).join(''), sleep: () => {}, formatDate: (d, tz, f) => { if (f === 'H') return String(d.getHours()); const y = d.getFullYear(), m = pad(d.getMonth() + 1), dd = pad(d.getDate()); return f === 'yyyyMMdd' ? `${y}${m}${dd}` : f === 'yyyy-MM' ? `${y}-${m}` : `${y}-${m}-${dd}`; } };
   // v24: Blob·gzip·base64 (node 테스트는 실행기가 g.__zlib 를 넣으면 실제 gzip, 브라우저는 표식만 붙인 비압축)
   const u8enc = str => Array.from(unescape(encodeURIComponent(str)), c => c.charCodeAt(0));
   const u8dec = bytes => { let out = ''; for (let i = 0; i < bytes.length; i += 8192) out += String.fromCharCode.apply(null, bytes.slice(i, i + 8192).map(b => b & 255)); return decodeURIComponent(escape(out)); };
@@ -130,7 +130,7 @@
     const ws = comps.map((c, i) => 100 / (i + 1.5)), sw = ws.reduce((a, b) => a + b, 0) * 1.02;
     const out = comps.map((c, i) => ({ stck_shrn_iscd: c[0], hts_kor_isnm: c[1], stck_prpr: '1000', etf_cnfg_issu_rlim: (ws[i] / sw * 100).toFixed(2), etf_vltn_amt: String(Math.round(ws[i] * 1e6)), etf_cnfg_issu_avls: '0' }));
     out.push({ stck_shrn_iscd: 'KRD010010001', hts_kor_isnm: '원화예금', etf_cnfg_issu_rlim: '1.96', etf_vltn_amt: '1000' });
-    return [200, JSON.stringify({ rt_cd: '0', msg_cd: 'MCA00000', msg1: '정상처리 되었습니다.', output1: { etf_cnfg_issu_cnt: String(out.length), nav: '10000' }, output2: out })];
+    return [200, JSON.stringify({ rt_cd: '0', msg_cd: 'MCA00000', msg1: '정상처리 되었습니다.', output1: { etf_cnfg_issu_cnt: String(out.length), nav: '10000', etf_cu_unit_scrt_cnt: String(sw * 100) }, output2: out })];   // v31: CU 금액 = 증권수 × NAV → 평가금액 ÷ CU 금액 = 비중
   }
   /* v29 모의 네이버 DataLab(주 단위): 기준어 'ETF' ≈ 100, 그룹별 결정적 추세 · 뉴스: 검색어별 하루 n건(ETF 50건, 테마 2~6건) */
   function datalabMock(b) {

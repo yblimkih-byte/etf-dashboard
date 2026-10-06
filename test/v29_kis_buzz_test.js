@@ -21,6 +21,13 @@ const ok1 = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output1: { etf_cnf
 check('정상 응답: 구성종목·비중·ETF 측 구성 수, 빈 행 제외', ok1.ok && ok1.rows.length === 1 && ok1.rows[0][2] === 25.5 && ok1.n === 3, JSON.stringify(ok1));
 const ok2 = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output2: [{ stck_shrn_iscd: 'A', hts_kor_isnm: 'a', etf_cnfg_issu_rlim: '', etf_vltn_amt: '300' }, { stck_shrn_iscd: 'B', hts_kor_isnm: 'b', etf_vltn_amt: '100' }] }))`);
 check('비중 없으면 평가금액 비율로 계산(75/25)', ok2.rows[0][2] === 75 && ok2.rows[1][2] === 25, JSON.stringify(ok2.rows));
+const pm = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output1: { etf_cnfg_issu_cnt: '21', etf_cu_unit_scrt_cnt: '50000', nav: '8771.45' }, output2: [{ stck_shrn_iscd: '005930', hts_kor_isnm: '삼성전자', etf_cnfg_issu_rlim: '100.00', etf_vltn_amt: '10212000' }] }))`);
+check('v31 비중 = 평가금액 ÷ (CU 증권수 × NAV): 해외 21종목 중 국내 1종목 ETF 의 삼성전자 2.33%(rlim 100% 아님)·일부 표시', Math.abs(pm.rows[0][2] - 2.33) < 0.01 && pm.part === true, JSON.stringify(pm));
+const pk = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output1: { etf_cnfg_issu_cnt: '202', etf_cu_unit_scrt_cnt: '50000', nav: '111776.19' }, output2: [{ stck_shrn_iscd: '005930', hts_kor_isnm: '삼성전자', etf_cnfg_issu_rlim: '34.43', etf_vltn_amt: '1923444000' }] }))`);
+check('v31 국내 전용 ETF(KODEX 200 실측값): 계산 비중 ≈ rlim (34.42 vs 34.43)', Math.abs(pk.rows[0][2] - 34.42) < 0.02, pk.rows[0][2]);
+const pz = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output1: { etf_cnfg_issu_cnt: '5' }, output2: [{ stck_shrn_iscd: 'A', hts_kor_isnm: 'a', etf_vltn_amt: '300' }] }))`);
+check('CU 금액·rlim 모두 없고 일부만 왔으면 평가금액 비율(100%)로 부풀리지 않음', pz.rows[0][2] === 0, JSON.stringify(pz.rows));
+check('v31 캐시 키: 길이가 같은 한글 검색어도 다른 키(삼성전자 ≠ 엔비디아), 이전 방식은 충돌', R(`cacheKey_('holders', { q: '삼성전자' }) !== cacheKey_('holders', { q: '엔비디아' }) && md5_('{"q":"삼성전자"}', true) === md5_('{"q":"엔비디아"}', true)`) === true);
 const e1 = J(`kisParsePdf_(500, JSON.stringify({ rt_cd: '1', msg_cd: 'EGW00201', msg1: '초당 거래건수를 초과하였습니다.' }))`);
 check('초당 한도 초과 → 재시도 대상', !e1.ok && e1.retry && !e1.expired, JSON.stringify(e1));
 const e2 = J(`kisParsePdf_(500, JSON.stringify({ rt_cd: '1', msg_cd: 'EGW00123', msg1: '기간이 만료된 token 입니다.' }))`);
@@ -131,6 +138,10 @@ const setup = fs.readFileSync(path.join(gasDir, 'Setup.gs'), 'utf8');
 check('메뉴: 연결 테스트·지금 수집(KIS·네이버)', ['menuTestKis', 'menuCollectHoldings', 'menuTestNaver', 'menuCollectBuzz'].every(f => setup.indexOf(`'${f}'`) >= 0 && R(`typeof ${f}`) === 'function'));
 check('키 저장 → 수집 트리거 설치·첫 수집 예약(코드 경로)', /installHoldingsTrigger_\(\); scheduleContinue_\('collectHoldings', 1\)/.test(setup) && /installBuzzTrigger_\(\); scheduleContinue_\('collectBuzz', 1\)/.test(setup));
 check('ACTIONS: holders·buzz 함수 래핑', /apiHolders_\(p\)/.test(R('String(ACTIONS.holders)')) && /apiBuzz_\(p\)/.test(R('String(ACTIONS.buzz)')));
+
+R(`PropertiesService.getScriptProperties().setProperty(PROP.AGG_HASH, legendHash_(ctx_(), true)); PropertiesService.getScriptProperties().deleteProperty(PROP.FULL_AGG)`);
+const legacyH = P().AGG_LEGEND_HASH; R(`nightlyAgg()`);
+check('v31 야간 점검: 범례 지문이 이전 방식 값이면 재계산 없이 새 방식으로만 갱신', P().AGG_LEGEND_HASH === R('legendHash_(ctx_())') && P().AGG_LEGEND_HASH !== legacyH && !R('fullAggState_()'), P().AGG_LEGEND_HASH);
 
 console.info(fails ? `\n${fails}건 실패` : '\n전부 통과');
 process.exit(fails ? 1 : 0);
