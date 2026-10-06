@@ -93,6 +93,16 @@ check('없는 종목 → 빈 결과(오류 아님)', h7.ready && h7.cands.length
 check('별칭 시트 자동 생성(대표 표기·검색어)', !!S['범례_종목별칭'] && S['범례_종목별칭'].rows.length > 20);
 check('빈 검색어 → 많이 담긴 종목·수집 정보만', (() => { const h = api('holders', {}); return h.ready && h.top.length > 0 && !h.items; })());
 
+// v32: 검색 색인 — 한 번 만들면 다른 검색어도 시트·범례를 다시 읽지 않음, 압축·분할 캐시 한도 안
+ctx.MOCK_CACHE = true;
+R(`var __hr = 0, __cx = 0; const __o1 = holdingsRows_, __o2 = ctx_; holdingsRows_ = function () { __hr++; return __o1.apply(this, arguments); }; ctx_ = function () { __cx++; return __o2.apply(this, arguments); };`);
+const x1 = J(`apiHolders_({ q: '삼성전자' })`), x2 = J(`apiHolders_({ q: 'NVIDIA' })`), x3 = J(`apiHolders_({ q: '000660' })`);
+check('v32 색인: 검색 3회에 구성종목 시트·범례 읽기 각 1회', R('__hr') === 1 && R('__cx') === 1 && x1.items.length > 0 && x2.items.length > 0 && x3.items.length > 0, R('__hr') + '/' + R('__cx'));
+const ixLen = R(`JSON.stringify(holdingsIndex_(PropertiesService.getScriptProperties().getProperty(PROP.KIS_DATE))).length`);
+check('v32 색인 캐시 저장(압축·분할)·다시 읽기 일치', R(`(function(){ const d = PropertiesService.getScriptProperties().getProperty(PROP.KIS_DATE); const c = CacheService.getScriptCache(); return !!getCached_(c, holdingsIndexKey_(d)); })()`) === true, Math.round(ixLen / 1024) + 'KB');
+R(`bumpCache_(['9999-12'])`); J(`apiHolders_({ q: '삼성전자우' })`);
+check('v32 캐시 버전이 바뀌면(적재·집계) 색인 다시 만듦', R('__hr') === 2, R('__hr'));
+R(`holdingsRows_ = __o1; ctx_ = __o2;`); ctx.MOCK_CACHE = false;
 console.info('[D] 관심도');
 const sc = J(`buzzScale_({ results: [{ title: 'ETF', data: [{ period: 'a', ratio: 50 }, { period: 'b', ratio: 100 }] }, { title: 'X', data: [{ period: 'a', ratio: 5 }, { period: 'b', ratio: 5 }] }] }, 'ETF')`);
 check('기준어 환산: ETF=100 기준(5/50 → 10, 5/100 → 5)', sc.X[0][1] === 10 && sc.X[1][1] === 5, JSON.stringify(sc));
