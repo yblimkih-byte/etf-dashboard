@@ -27,8 +27,8 @@ check('ETF ISIN(실제 값과 일치: 360750·069500·0234N0·133690)', J(`[isin
 check('우선주 등 끝자리 0 아님 → ISIN 계산 안 함', R(`isinKr_('005935')`) === '' && R(`isinKr_('KRD010010001')`) === '');
 const stock = J(`[funStock_('US67066G1040', '엔비디아/NVIDIA Corp'), funStock_('KR7005930003', '삼성전자'), funStock_('CNE100007960', 'SUZHOU INOVANCE AUTOMOTIVE-A'), funStock_('HK0000562659', 'GLOBAL X CHINA ELECTRIC -HKD')]`);
 check('주식 행: 해외 ISIN·국내 KR7·티커 없는 주식·해외 ETF', stock.every(x => x === true), stock.join(','));
-const notStock = J(`[funStock_('KRD010010001', '원화현금'), funStock_('CASH00000001', '설정현금액'), funStock_('KRYZTRSG1G04', '차이나전기차 TRS 260116-04'), funStock_('KRYZFXSG9B44', 'FX스왑 USD 260911-44'), funStock_('USDZZ0000001', '[USD] 예금'), funStock_('TYZ6', 'US 10YR NOTE FUT (CBOT) DEC 2026'), funStock_('KR103503GG60', '국고채권04250-3606(26-6)')]`);
-check('제외: 원화현금·설정현금·TRS·FX스왑·외화예금·선물·국내 채권', notStock.every(x => x === false), notStock.join(','));
+const notStock = J(`[funStock_('KRD010010001', '원화현금'), funStock_('CASH00000001', '설정현금액'), funStock_('KRYZTRSG1G04', '차이나전기차 TRS 260116-04'), funStock_('KRYZFXSG9B44', 'FX스왑 USD 260911-44'), funStock_('USDZZ0000001', '[USD] 예금'), funStock_('TYZ6', 'US 10YR NOTE FUT (CBOT) DEC 2026'), funStock_('KR103503GG60', '국고채권04250-3606(26-6)'), funStock_('US67066GAN47', 'NVDA 4.95 06/15/36'), funStock_('US912810TT51', 'T 4 5/8 05/15/54')]`);
+check('제외: 원화현금·설정현금·TRS·FX스왑·외화예금·선물·국내 채권·해외 채권(이름에 만기일)', notStock.every(x => x === false), notStock.join(','));
 const SAMPLE = [
   { grpItmNo: 'US0378331005', ticker: 'AAPL', citmNm: '애플/Apple Inc', evAmt: 95000000, evP: 7.37 },
   { grpItmNo: 'US67066G1040', ticker: 'NVDA', citmNm: '엔비디아/NVIDIA Corp', evAmt: 108081514, evP: 8.38105855933253 },
@@ -50,7 +50,7 @@ check('버튼 만들 때 비밀 토큰 생성(40자)', /^[0-9a-f]{40}$/.test(tok
 check('토큰 없음·틀림 → 거부(시트 변화 없음)', !post({ op: 'start' }).ok && /인증 실패/.test(post({ k: 'x', op: 'start' }).error) && !S['구성종목_수집중']);
 const s0 = post({ k: tok, op: 'start' });
 const date = J(`indexDates_()`).slice(-1)[0], targets = J(`holdingsTargets_(${JSON.stringify(date)})`);
-check('start: 기준일·대상(ETF ISIN)·묶음 크기, 수집중 시트 생성', s0.ok && s0.data.date === date && s0.data.ymd === date.replace(/-/g, '') && s0.data.targets.length === targets.length && s0.data.targets.every(t => t[1]) && s0.data.chunk === 20 && !!S['구성종목_수집중'], JSON.stringify(s0.data && { date: s0.data.date, n: s0.data.targets.length }));
+check('start: 기준일·대상(ETF ISIN)·묶음 크기, 수집중 시트 생성', s0.ok && s0.data.date === date && s0.data.ymd === date.replace(/-/g, '') && s0.data.targets.length === targets.length && s0.data.targets.every(t => t[1]) && s0.data.chunk === 40 && !!S['구성종목_수집중'], JSON.stringify(s0.data && { date: s0.data.date, n: s0.data.targets.length }));
 check('put 전 다른 기준일 → 거부', /반영 상태가 없습니다/.test(post({ k: tok, op: 'put', date: '2000-01-01', items: {} }).error));
 // 브라우저가 받은 FunETF 응답을 흉내 — 해외(미국·나스닥·S&P) / 국내 / 채권만 / 빈 응답(→ KIS 보완) / 받기 실패(null → KIS 보완) / 일부는 보내지 않음(창 닫힘)
 const US = [['US67066G1040', 'NVDA', '엔비디아/NVIDIA Corp'], ['US0378331005', 'AAPL', '애플/Apple Inc'], ['US5949181045', 'MSFT', '마이크로소프트/MICROSOFT CORP'], ['US5951121038', 'MU', '마이크론/Micron Technology Inc']];
