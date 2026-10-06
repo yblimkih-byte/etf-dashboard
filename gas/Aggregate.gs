@@ -426,6 +426,7 @@ function warmAll() {
       if (Date.now() - t0 > limit) { left++; return; }
       try { if (warmOne_(cache, x[0], x[1], P) === 'hit') hit++; else put++; } catch (e) {}
     });
+    try { const kd = P[PROP.KIS_DATE]; if (kd && Date.now() - t0 < limit) holdingsIndex_(kd, 'extend'); } catch (e) { console.log('검색 색인 예열 실패: ' + e.message); }   // v32: 종목→ETF 찾기 색인
   } catch (e) { console.log('warmAll 오류: ' + e.message); }
   console.log('[warmAll] 계산 ' + put + '건 · 보존 연장 ' + hit + '건 · 잔여 ' + left + '건, ' + ((Date.now() - t0) / 1000).toFixed(0) + 's');
   if (left) scheduleWarm_(2);   // 남았으면 곧바로 이어서(아니면 처음에 예약한 5시간 뒤 정기 예열 유지)
