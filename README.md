@@ -6,7 +6,7 @@ KRX Open API 기반 국내 ETF 시장 데이터를 Google 스프레드시트에 
 - 데이터 시트: `ETF_Dashboard` (spreadsheetId `1Wlz32KuXGS8fnh8z5U1ZhuwQK7vQkVKre5nOdeJBd4U`)
 - Apps Script 프로젝트: 시트에 바운드된 `ETF Dashboard` (scriptId 는 `.clasp.json`)
 - 웹 화면(Vercel): https://etf-dashboard-roan.vercel.app/ (`web/` + `api/data.js`, Apps Script 웹앱을 데이터 서버로 사용)
-- 현재 배포 버전: Apps Script v29 / Vercel v120 (2026-10-05) — 변경 내역은 `CHANGELOG.md`
+- 현재 배포 버전: Apps Script v30 / Vercel v120 (2026-10-06) — 변경 내역은 `CHANGELOG.md`
 
 ## 저장소 구성
 
@@ -18,7 +18,7 @@ KRX Open API 기반 국내 ETF 시장 데이터를 Google 스프레드시트에 
 | `gas/Api.gs` | 웹앱 진입점(`doGet`) 및 대시보드 데이터 API(`api(action, params)`) |
 | `gas/Theme.gs` | 테마 맵: 종목명·기초지수명 키워드 규칙(사용자 수정 시트)으로 테마·상품구조·지역 분류 |
 | `gas/Kis.gs` | 종목→ETF 찾기: 한국투자증권 Open API ETF 구성종목 주간 수집·검색 |
-| `gas/Buzz.gs` | 관심도: 네이버 데이터랩 검색어 트렌드·뉴스 검색 일간 수집 |
+| `gas/Buzz.gs` | 관심도: NAVER API HUB(네이버 클라우드) 검색어 트렌드·뉴스 검색 일간 수집 |
 | `gas/Setup.gs` | 스프레드시트 메뉴(API 키 설정, 백필, 보정 기능) |
 | `gas/Index.html` `Style.html` `App.html` `Tabs.html` | 대시보드 화면(레이아웃·스타일·공용 코어·탭 정의) |
 | `gas/appsscript.json` | 매니페스트(시간대 Asia/Seoul, 웹앱 익명 접근) |
@@ -46,5 +46,5 @@ clasp deploy -i <배포ID> -d "v11: 변경 요약"   # 새 버전을 기존 URL 
 ## 보안
 
 - KRX 인증키는 코드에 없음. 스크립트 속성 `KRX_AUTH_KEY` 에만 저장(시트 메뉴 "1. API 키 설정")
-- 한국투자증권 Open API·네이버 API 키도 시트 메뉴로 직접 입력, 스크립트 속성에만 저장(시트·화면·저장소에 없음)
+- 한국투자증권 Open API·NAVER API HUB 키도 시트 메뉴로 직접 입력, 스크립트 속성에만 저장(시트·화면·저장소에 없음)
 - `~/.clasprc.json`(Google OAuth 토큰)은 절대 커밋하지 않음(`.gitignore` 등록). GitHub Actions 사용 시 Secrets 에만 저장
