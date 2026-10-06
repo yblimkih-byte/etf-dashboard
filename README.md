@@ -6,7 +6,7 @@ KRX Open API 기반 국내 ETF 시장 데이터를 Google 스프레드시트에 
 - 데이터 시트: `ETF_Dashboard` (spreadsheetId `1Wlz32KuXGS8fnh8z5U1ZhuwQK7vQkVKre5nOdeJBd4U`)
 - Apps Script 프로젝트: 시트에 바운드된 `ETF Dashboard` (scriptId 는 `.clasp.json`)
 - 웹 화면(Vercel): https://etf-dashboard-roan.vercel.app/ (`web/` + `api/data.js`, Apps Script 웹앱을 데이터 서버로 사용)
-- 현재 배포 버전: Apps Script v36 / Vercel v122 (2026-10-06) — 변경 내역은 `CHANGELOG.md`
+- 현재 배포 버전: Apps Script v37 / Vercel v122 (2026-10-06) — 변경 내역은 `CHANGELOG.md`
 
 ## 저장소 구성
 
