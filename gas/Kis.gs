@@ -41,7 +41,10 @@ const FUN = {
   BASE: 'https://www.funetf.co.kr', PDF: '/api/public/product/view/etfpdf',
   MAX: 600,     // ETF 1개당 비중 상위 최대 행 수(전 세계·전체 시장형 ETF 의 수천 종목 중 극소 비중 생략)
   CHUNK: 20,    // 브라우저가 한 번에 보내는 ETF 수
-  STATE: 'FUN_IMPORT_STATE', TOKEN: 'FUN_IMPORT_TOKEN'
+  STATE: 'FUN_IMPORT_STATE', TOKEN: 'FUN_IMPORT_TOKEN',
+  // 운영 웹앱 주소(배포 ID 고정 — docs/GitHub_유지관리_가이드.md). ScriptApp.getService() 를 쓰지 않음
+  EXEC: 'https://script.google.com/macros/s/AKfycbwF4iZ_1BilAMgSFAySTPrS8gaEOVdTQdMPE3QaVhEd--A38x1l9sQXJWIk_RXuHbO0dA/exec',
+  SHEET: '구성종목_버튼'
 };
 
 // ─────────────────────────── FunETF 구성종목(v34) ───────────────────────────
@@ -137,8 +140,7 @@ function funBookmarklet_(renew) {
   const P = PropertiesService.getScriptProperties();
   let tok = P.getProperty(FUN.TOKEN);
   if (!tok || renew) { tok = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8); P.setProperty(FUN.TOKEN, tok); }
-  const ex = ScriptApp.getService().getUrl();
-  if (!ex) throw new Error('웹앱 배포 주소를 찾지 못했습니다(배포 후 다시 시도)');
+  const ex = FUN.EXEC;
   const js = "(async()=>{const EX='" + ex + "',K='" + tok + "';" +
     "if(!/(^|\\.)funetf\\.co\\.kr$/.test(location.hostname)){alert('FunETF(www.funetf.co.kr) 화면에서 눌러 주세요');return;}" +
     "const bx=document.createElement('div');bx.style.cssText='position:fixed;z-index:2147483647;right:16px;bottom:16px;background:#fff;border:1px solid #17171c;padding:12px 16px;font:14px/1.5 sans-serif;color:#17171c;max-width:340px';document.body.appendChild(bx);const say=s=>bx.textContent='ETF 구성종목 반영: '+s;" +

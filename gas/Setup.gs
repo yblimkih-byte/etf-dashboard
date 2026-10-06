@@ -67,17 +67,18 @@ function setNaverKey() {
   notify_('관심도 첫 수집을 1분 뒤 시작합니다(약 2~5분). 이후 매일 07시대 자동 수집 · 끝나면 화면에 \'관심도\' 탭이 나타납니다.');
 }
 function menuCollectHoldings() { PropertiesService.getScriptProperties().setProperty('KIS_PDF_FORCE', '1'); scheduleContinue_('collectHoldings', 1); notify_('KIS 구성종목 수집을 1분 뒤 시작합니다(진행·결과는 _log 시트). FunETF 로 반영한 자료(해외 주식 포함)는 KIS 자료(국내 상장 상위 30)로 바뀝니다.'); }   // v34: 메뉴는 강제 수집
-/** v34: FunETF 화면에서 누를 즐겨찾기 버튼(북마클릿) 안내 — 구글 서버는 FunETF 접속이 막혀 브라우저가 받아 웹앱으로 보냄 */
+/** v34: FunETF 화면에서 누를 즐겨찾기 버튼(북마클릿) — 구글 서버는 FunETF 접속이 막혀 브라우저가 받아 웹앱으로 보냄.
+ *  버튼 코드는 '구성종목_버튼' 시트 A3 에 씀(대화상자(HtmlService)는 권한 범위가 늘어 쓰지 않음) */
 function menuFunButton() {
-  const code = funBookmarklet_(false), esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const html = '<div style="font:14px/1.6 sans-serif;color:#17171c">' +
-    '<p><b>1.</b> 아래 버튼을 브라우저 북마크바로 끌어다 놓으세요. 끌기가 안 되면 아래 코드를 모두 복사해 새 북마크의 URL 칸에 붙여 넣으세요.</p>' +
-    '<p><a href="' + esc(code) + '" style="display:inline-block;padding:6px 14px;border:1px solid #17171c;border-radius:6px;color:#17171c;text-decoration:none">ETF 구성종목 반영</a></p>' +
-    '<textarea readonly style="width:100%;height:90px;font:11px monospace" onclick="this.select()">' + esc(code) + '</textarea>' +
-    '<p><b>2.</b> 매주 월요일 이후 <b>www.funetf.co.kr</b> 아무 화면에서 그 북마크를 누르세요. 오른쪽 아래에 진행 상황이 나오며 5~10분 걸립니다(창을 닫지 마세요).</p>' +
-    '<p><b>3.</b> 끝나면 \'종목→ETF 찾기\'에서 해외 주식(예: 엔비디아, NVDA)도 검색됩니다. 2주 안에 반영한 자료가 있으면 월요일 KIS 자동 수집은 건너뜁니다.</p>' +
-    '<p style="color:#75758a;font-size:12px">버튼에는 이 시트에만 쓰는 비밀 값이 들어 있습니다. 다른 사람과 공유하지 마세요.</p></div>';
-  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(560).setHeight(470), 'ETF 구성종목 수집 버튼 (FunETF)');
+  const code = funBookmarklet_(false), ss = ss_();
+  let sh = ss.getSheetByName(FUN.SHEET); if (!sh) sh = ss.insertSheet(FUN.SHEET);
+  sh.getRange(1, 1, Math.max(sh.getLastRow(), 3), 1).clearContent();
+  sh.getRange(1, 1, 3, 1).setValues([
+    ['ETF 구성종목 반영 버튼(FunETF — 해외 주식 포함): 아래 A3 셀 내용을 모두 복사해 브라우저에서 새 북마크를 만들고 URL(주소) 칸에 붙여 넣으세요. 이름은 예: ETF 구성종목 반영'],
+    ['사용: 매주 월요일 이후 www.funetf.co.kr 아무 화면에서 그 북마크를 누르면 오른쪽 아래에 진행 상황이 나오며 5~10분 걸립니다(창을 닫지 마세요). 끝나면 종목→ETF 찾기에서 해외 주식도 검색됩니다. 이 버튼에는 비밀 값이 들어 있으니 공유하지 마세요.'],
+    [code]]);
+  try { sh.setColumnWidth(1, 900); sh.getRange(1, 1, 3, 1).setWrap(true); ss.setActiveSheet(sh); sh.setActiveSelection('A3'); } catch (e) {}   // 화면 정리(실패해도 무관)
+  notify_('구성종목_버튼 시트 A3 셀의 내용을 복사해 브라우저 새 북마크의 URL 칸에 붙여 넣으세요.\n이후 매주 월요일 이후 www.funetf.co.kr 화면에서 그 북마크를 누르면 반영됩니다(5~10분).');
 }
 function menuCollectBuzz() { scheduleContinue_('collectBuzz', 1); notify_('관심도 수집을 1분 뒤 시작합니다(결과는 _log 시트).'); }
 function menuTestKis() { notify_(testKis().join('\n')); }
