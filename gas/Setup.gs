@@ -75,10 +75,10 @@ function menuFunButton() {
   sh.getRange(1, 1, Math.max(sh.getLastRow(), 3), 1).clearContent();
   sh.getRange(1, 1, 3, 1).setValues([
     ['ETF 구성종목 반영 버튼(FunETF — 해외 주식 포함): 아래 A3 셀 내용을 모두 복사해 브라우저에서 새 북마크를 만들고 URL(주소) 칸에 붙여 넣으세요. 이름은 예: ETF 구성종목 반영'],
-    ['사용: 매주 월요일 이후 www.funetf.co.kr 아무 화면에서 그 북마크를 누르면 오른쪽 아래에 진행 상황이 나오며 5~10분 걸립니다(창을 닫지 마세요). 끝나면 종목→ETF 찾기에서 해외 주식도 검색됩니다. 이 버튼에는 비밀 값이 들어 있으니 공유하지 마세요.'],
+    ['사용: 매주 월요일 이후 www.funetf.co.kr 아무 화면에서 그 북마크를 누르면 오른쪽 아래에 진행 상황이 나오며 10분 안팎 걸립니다. 그동안 그 탭을 닫거나 다른 탭으로 옮기지 마세요(뒤로 가면 브라우저가 속도를 크게 늦춥니다). 끝나면 종목→ETF 찾기에서 해외 주식도 검색됩니다. 이 버튼에는 비밀 값이 들어 있으니 공유하지 마세요.'],
     [code]]);
   try { sh.setColumnWidth(1, 900); sh.getRange(1, 1, 3, 1).setWrap(true); ss.setActiveSheet(sh); sh.setActiveSelection('A3'); } catch (e) {}   // 화면 정리(실패해도 무관)
-  notify_('구성종목_버튼 시트 A3 셀의 내용을 복사해 브라우저 새 북마크의 URL 칸에 붙여 넣으세요.\n이후 매주 월요일 이후 www.funetf.co.kr 화면에서 그 북마크를 누르면 반영됩니다(5~10분).');
+  notify_('구성종목_버튼 시트 A3 셀의 내용을 복사해 브라우저 새 북마크의 URL 칸에 붙여 넣으세요.\n이후 매주 월요일 이후 www.funetf.co.kr 화면에서 그 북마크를 누르면 반영됩니다(10분 안팎, 그 탭을 앞에 둔 채 기다리기).');
 }
 function menuCollectBuzz() { scheduleContinue_('collectBuzz', 1); notify_('관심도 수집을 1분 뒤 시작합니다(결과는 _log 시트).'); }
 function menuTestKis() { notify_(testKis().join('\n')); }

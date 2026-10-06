@@ -40,7 +40,7 @@ const KIS = {
 const FUN = {
   BASE: 'https://www.funetf.co.kr', PDF: '/api/public/product/view/etfpdf',
   MAX: 600,     // ETF 1개당 비중 상위 최대 행 수(전 세계·전체 시장형 ETF 의 수천 종목 중 극소 비중 생략)
-  CHUNK: 20,    // 브라우저가 한 번에 보내는 ETF 수
+  CHUNK: 40,    // 브라우저가 한 번에 보내는 ETF 수(v37: 20 → 40, 묶음마다 서버 처리 시간이 들어 줄임)
   STATE: 'FUN_IMPORT_STATE', TOKEN: 'FUN_IMPORT_TOKEN', LAST: 'FUN_IMPORT_LAST',
   NEED_MAX: 300,   // KIS 보완 대기 목록 최대(스크립트 속성 값 9KB 한도)
   // 운영 웹앱 주소(배포 ID 고정 — docs/GitHub_유지관리_가이드.md). ScriptApp.getService() 를 쓰지 않음
@@ -59,11 +59,12 @@ function isinKr_(code) {
   for (let i = d.length - 1; i >= 0; i--) { let x = +d[i]; if (dbl) { x *= 2; if (x > 9) x -= 9; } sum += x; dbl = !dbl; }
   return base + ((10 - sum % 10) % 10);
 }
-/** 주식(국내·해외) 행만: 형식이 ISIN 이고, 국내는 KR7(주식·ETF)만(채권 KR1·KR6, TRS·스왑 KRYZ, 현금 KRD 제외), 외화 예금(..ZZ..)·현금성 이름 제외. 선물(TYZ6 등)은 ISIN 형식이 아니라 제외 */
+/** 주식(국내·해외) 행만: 형식이 ISIN 이고, 국내는 KR7(주식·ETF)만(채권 KR1·KR6, TRS·스왑 KRYZ, 현금 KRD 제외), 외화 예금(..ZZ..)·현금성 이름·해외 채권(이름에 만기일) 제외. 선물(TYZ6 등)은 ISIN 형식이 아니라 제외 */
 function funStock_(isin, name) {
   isin = String(isin || '').trim().toUpperCase();
   if (!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin) || /ZZ[0-9]/.test(isin)) return false;
   if (/^KR/.test(isin) && !/^KR7/.test(isin)) return false;
+  if (/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(String(name || ''))) return false;   // v37: 해외 채권(예: 'NVDA 4.95 06/15/36' — 이름에 만기일)
   return !kisCash_(isin, name) && !/예금|현금|증거금|미수|미지급|스왑|TRS/i.test(String(name || ''));
 }
 /** [[ISIN, 티커, 이름, 비중(%), 평가금액]] → 주식 행 [[구성종목코드(티커, 없으면 ISIN), 구성종목명, 비중(%), 평가금액, ISIN]] (비중 내림차순, 최대 FUN.MAX) */
@@ -81,6 +82,14 @@ function funParsePdf_(code, text) {
   return { ok: true, raw: a.length, rows: funRows_(a.filter(x => x).map(x => [x.grpItmNo, x.ticker, x.citmNm, x.evP, x.evAmt])) };
 }
 
+/** v37: 기준일 ETF 코드 → 종목명(반영 중 묶음마다 일별 시트를 다시 읽지 않도록 1시간 캐시) */
+function funNames_(date) {
+  const cache = CacheService.getScriptCache(), key = CACHE_GEN_ + ':funnm:' + date, hit = getCached_(cache, key);
+  if (hit) return JSON.parse(hit);
+  const m = {}; readDailyBlock_(date).forEach(r => m[r.code] = String(r.name));
+  putCached_(cache, key, JSON.stringify(m));
+  return m;
+}
 /** 브라우저(FunETF 화면의 즐겨찾기 버튼) → 웹앱 doPost 로 받은 구성종목 반영. body = {k: 토큰, op, date, items: {ETF코드: [[ISIN, 티커, 이름, 비중, 평가금액]] | null(받기 실패)}}
  *  start: 대상(기준일 NAV>0 전 종목 + ETF ISIN)·기준일을 돌려주고 수집중 시트 새로 만듦 / put: 받은 묶음을 시트에 추가 / end: 빈 응답·실패 ETF 는 KIS 로 보완 후 '구성종목'과 교체
  *  v36: 응답이 중간에 끊겨 브라우저가 다시 보내도 안전 — put 은 묶음 번호(seq)로 중복 무시, end 는 방금 끝난 결과를 다시 돌려줌 */
@@ -109,7 +118,7 @@ function funImport_(b) {
     if (b.op === 'put') {
       if (b.seq && b.seq <= (st.seq || 0)) return { got: st.got, n: st.n, rows: st.rows, dup: true };   // 이미 반영한 묶음(다시 보냄)
       st.seq = b.seq || (st.seq || 0) + 1;
-      const names = {}; readDailyBlock_(st.date).forEach(r => names[r.code] = String(r.name));
+      const names = funNames_(st.date);
       const buf = [];
       Object.keys(b.items || {}).forEach(code => {
         const c = padCode_(code), items = b.items[code]; st.got++;
@@ -127,7 +136,7 @@ function funImport_(b) {
       return { got: st.got, n: st.n, rows: st.rows };
     }
     if (b.op === 'end') {
-      const names = {}; readDailyBlock_(st.date).forEach(r => names[r.code] = String(r.name));
+      const names = funNames_(st.date);
       const need = st.need.filter(c => names[c]).map(c => [c, names[c]]), buf = [];
       if (need.length) {
         const kr = kisCollectList_(need);
@@ -160,7 +169,7 @@ function funBookmarklet_(renew) {
     "const post=async o=>{let j=null,e0=null;for(let a=0;a<4&&!j;a++){if(a)await zz(3000*a);try{const r=await fetch(EX,{method:'POST',body:JSON.stringify(Object.assign({k:K},o)),headers:{'Content-Type':'text/plain;charset=utf-8'}});j=JSON.parse(await r.text());}catch(e){e0=e;}}if(!j)throw new Error('웹앱 응답 없음('+(e0&&e0.message)+')');if(!j.ok)throw new Error(j.error);return j.data;};" +
     "try{say('대상 목록 받는 중…');const s=await post({op:'start'});const T=s.targets,N=T.length;let B={},n=0,q=0;" +
     "const one=async t=>{if(!t[1]){B[t[0]]=null;return;}for(let a=0;a<2;a++){try{const r=await fetch('/api/public/product/view/etfpdf?itemId='+t[1]+'&etfPdfYmd='+s.ymd,{headers:{'X-Requested-With':'XMLHttpRequest'}});if(r.ok){const j=await r.json();B[t[0]]=Array.isArray(j)?j.map(x=>[x.grpItmNo,x.ticker,x.citmNm,x.evP,x.evAmt]):null;return;}}catch(e){}await zz(1500);}B[t[0]]=null;};" +
-    "for(let x=0;x<N;x+=2){await Promise.all(T.slice(x,x+2).map(one));n=Math.min(N,x+2);say(n+' / '+N+' 종목 받는 중 (창을 닫지 마세요)');await zz(500);if(Object.keys(B).length>=s.chunk||n>=N){await post({op:'put',date:s.date,seq:++q,items:B});B={};}}" +
+    "for(let x=0;x<N;x+=2){await Promise.all(T.slice(x,x+2).map(one));n=Math.min(N,x+2);say(n+' / '+N+' 종목 받는 중 — 이 탭을 닫거나 다른 탭으로 옮기지 마세요');await zz(500);if(Object.keys(B).length>=s.chunk||n>=N){await post({op:'put',date:s.date,seq:++q,items:B});B={};}}" +
     "say('시트에 반영 중…');const e=await post({op:'end',date:s.date});say('완료 — '+e.date+' 기준 '+e.ok+' / '+e.n+'종목 · '+e.rows+'행');}catch(err){say('오류 — '+err.message);}})();";
   return 'javascript:' + encodeURIComponent(js).replace(/%20/g, ' ');
 }
@@ -335,7 +344,7 @@ function installHoldingsTrigger_() {
 function holdingsRows_() {
   const sh = ss_().getSheetByName(KIS.SHEET); if (!sh) return [];
   const rows = readAll_(sh).map(r => ({ etf: padCode_(r[0]), comp: String(r[2] || '').trim(), name: String(r[3] || '').trim(), w: toNum_(r[4]), isin: String(r[6] || '').trim() }))
-    .filter(r => r.etf && (r.comp || r.name) && !kisCash_(r.comp, r.name));
+    .filter(r => r.etf && (r.comp || r.name) && !kisCash_(r.comp, r.name) && (!r.isin || funStock_(r.isin, r.name)));   // v37: 이미 저장된 해외 채권 행도 제외
   const rep = {}, han = s => /[가-힣]/.test(s);
   rows.forEach(r => { if (!r.isin) return; const p = rep[r.isin]; if (!p || (!han(p.name) && han(r.name))) rep[r.isin] = { comp: r.comp, name: r.name }; });
   rows.forEach(r => { const p = r.isin && rep[r.isin]; if (p) { r.comp = p.comp; r.name = p.name; } });
@@ -399,7 +408,7 @@ function apiHolders_(p) {
 /** v32: 검색 색인 = {date, etfs:[[코드, 종목명, 운용사, 상위구분, 유형, NAV]], comps:[[구성종목코드, 구성종목명, [ETF번호, 비중, …]]]}.
  *  구성종목 시트(약 1.1만 행)·일별 NAV·범례를 한 번 읽어 만들고 응답 캐시와 같은 방식(압축·분할)으로 6시간 보관.
  *  키에 캐시 버전(적재·집계마다 바뀜)과 수집 기준일 포함 → 적재 직후 예열(warmAll)·수집 완료 때 다시 만듦. ext = 'extend' 면 보관 기간 연장 */
-function holdingsIndexKey_(date) { return CACHE_GEN_ + ':hidx:' + (PropertiesService.getScriptProperties().getProperty(PROP.CACHE_VER) || '0') + ':' + date; }
+function holdingsIndexKey_(date) { return CACHE_GEN_ + ':hidx37:' + (PropertiesService.getScriptProperties().getProperty(PROP.CACHE_VER) || '0') + ':' + date; }
 function holdingsIndex_(date, ext) {
   const cache = CacheService.getScriptCache(), key = holdingsIndexKey_(date), hit = getCached_(cache, key);
   if (hit) { if (ext === 'extend') putCached_(cache, key, hit); return JSON.parse(hit); }
