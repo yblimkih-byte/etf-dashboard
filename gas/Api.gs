@@ -39,7 +39,7 @@ function api(action, params) {
 const CACHE_GEN_ = 'a26';   // v26: 개별 종목 유형 = 유형최종3 → 이전 캐시 전체 무효화
 /** 캐시 키 = 세대 + 버전 + action + 파라미터 해시. v24: 파라미터는 키 이름순으로 직렬화(보내는 쪽의 키 순서와 무관하게 같은 키) */
 function cacheKey_(action, params, P) {
-  const h = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, stableStr_(params)));
+  const h = md5_(stableStr_(params));   // v31: UTF-8(한글 파라미터 캐시 충돌 해소)
   P = P || PropertiesService.getScriptProperties().getProperties();
   const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : '';   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산
   return CACHE_GEN_ + ':' + verFor_(action, params, P) + tv + ':' + action + ':' + h;

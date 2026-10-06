@@ -21,6 +21,13 @@ const ok1 = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output1: { etf_cnf
 check('정상 응답: 구성종목·비중·ETF 측 구성 수, 빈 행 제외', ok1.ok && ok1.rows.length === 1 && ok1.rows[0][2] === 25.5 && ok1.n === 3, JSON.stringify(ok1));
 const ok2 = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output2: [{ stck_shrn_iscd: 'A', hts_kor_isnm: 'a', etf_cnfg_issu_rlim: '', etf_vltn_amt: '300' }, { stck_shrn_iscd: 'B', hts_kor_isnm: 'b', etf_vltn_amt: '100' }] }))`);
 check('비중 없으면 평가금액 비율로 계산(75/25)', ok2.rows[0][2] === 75 && ok2.rows[1][2] === 25, JSON.stringify(ok2.rows));
+const pm = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output1: { etf_cnfg_issu_cnt: '21', etf_cu_unit_scrt_cnt: '50000', nav: '8771.45' }, output2: [{ stck_shrn_iscd: '005930', hts_kor_isnm: '삼성전자', etf_cnfg_issu_rlim: '100.00', etf_vltn_amt: '10212000' }] }))`);
+check('v31 비중 = 평가금액 ÷ (CU 증권수 × NAV): 해외 21종목 중 국내 1종목 ETF 의 삼성전자 2.33%(rlim 100% 아님)·일부 표시', Math.abs(pm.rows[0][2] - 2.33) < 0.01 && pm.part === true, JSON.stringify(pm));
+const pk = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output1: { etf_cnfg_issu_cnt: '202', etf_cu_unit_scrt_cnt: '50000', nav: '111776.19' }, output2: [{ stck_shrn_iscd: '005930', hts_kor_isnm: '삼성전자', etf_cnfg_issu_rlim: '34.43', etf_vltn_amt: '1923444000' }] }))`);
+check('v31 국내 전용 ETF(KODEX 200 실측값): 계산 비중 ≈ rlim (34.42 vs 34.43)', Math.abs(pk.rows[0][2] - 34.42) < 0.02, pk.rows[0][2]);
+const pz = J(`kisParsePdf_(200, JSON.stringify({ rt_cd: '0', output1: { etf_cnfg_issu_cnt: '5' }, output2: [{ stck_shrn_iscd: 'A', hts_kor_isnm: 'a', etf_vltn_amt: '300' }] }))`);
+check('CU 금액·rlim 모두 없고 일부만 왔으면 평가금액 비율(100%)로 부풀리지 않음', pz.rows[0][2] === 0, JSON.stringify(pz.rows));
+check('v31 캐시 키: 길이가 같은 한글 검색어도 다른 키(삼성전자 ≠ 엔비디아), 이전 방식은 충돌', R(`cacheKey_('holders', { q: '삼성전자' }) !== cacheKey_('holders', { q: '엔비디아' }) && md5_('{"q":"삼성전자"}', true) === md5_('{"q":"엔비디아"}', true)`) === true);
 const e1 = J(`kisParsePdf_(500, JSON.stringify({ rt_cd: '1', msg_cd: 'EGW00201', msg1: '초당 거래건수를 초과하였습니다.' }))`);
 check('초당 한도 초과 → 재시도 대상', !e1.ok && e1.retry && !e1.expired, JSON.stringify(e1));
 const e2 = J(`kisParsePdf_(500, JSON.stringify({ rt_cd: '1', msg_cd: 'EGW00123', msg1: '기간이 만료된 token 입니다.' }))`);
@@ -86,6 +93,16 @@ check('없는 종목 → 빈 결과(오류 아님)', h7.ready && h7.cands.length
 check('별칭 시트 자동 생성(대표 표기·검색어)', !!S['범례_종목별칭'] && S['범례_종목별칭'].rows.length > 20);
 check('빈 검색어 → 많이 담긴 종목·수집 정보만', (() => { const h = api('holders', {}); return h.ready && h.top.length > 0 && !h.items; })());
 
+// v32: 검색 색인 — 한 번 만들면 다른 검색어도 시트·범례를 다시 읽지 않음, 압축·분할 캐시 한도 안
+ctx.MOCK_CACHE = true;
+R(`var __hr = 0, __cx = 0; const __o1 = holdingsRows_, __o2 = ctx_; holdingsRows_ = function () { __hr++; return __o1.apply(this, arguments); }; ctx_ = function () { __cx++; return __o2.apply(this, arguments); };`);
+const x1 = J(`apiHolders_({ q: '삼성전자' })`), x2 = J(`apiHolders_({ q: 'NVIDIA' })`), x3 = J(`apiHolders_({ q: '000660' })`);
+check('v32 색인: 검색 3회에 구성종목 시트·범례 읽기 각 1회', R('__hr') === 1 && R('__cx') === 1 && x1.items.length > 0 && x2.items.length > 0 && x3.items.length > 0, R('__hr') + '/' + R('__cx'));
+const ixLen = R(`JSON.stringify(holdingsIndex_(PropertiesService.getScriptProperties().getProperty(PROP.KIS_DATE))).length`);
+check('v32 색인 캐시 저장(압축·분할)·다시 읽기 일치', R(`(function(){ const d = PropertiesService.getScriptProperties().getProperty(PROP.KIS_DATE); const c = CacheService.getScriptCache(); return !!getCached_(c, holdingsIndexKey_(d)); })()`) === true, Math.round(ixLen / 1024) + 'KB');
+R(`bumpCache_(['9999-12'])`); J(`apiHolders_({ q: '삼성전자우' })`);
+check('v32 캐시 버전이 바뀌면(적재·집계) 색인 다시 만듦', R('__hr') === 2, R('__hr'));
+R(`holdingsRows_ = __o1; ctx_ = __o2;`); ctx.MOCK_CACHE = false;
 console.info('[D] 관심도');
 const sc = J(`buzzScale_({ results: [{ title: 'ETF', data: [{ period: 'a', ratio: 50 }, { period: 'b', ratio: 100 }] }, { title: 'X', data: [{ period: 'a', ratio: 5 }, { period: 'b', ratio: 5 }] }] }, 'ETF')`);
 check('기준어 환산: ETF=100 기준(5/50 → 10, 5/100 → 5)', sc.X[0][1] === 10 && sc.X[1][1] === 5, JSON.stringify(sc));
@@ -101,6 +118,7 @@ const tg = J(`buzzTargets_()`);
 check('대상: 범례_테마의 관심도 검색어(테마·상품구조, 빈 칸 제외)', tg.length >= 25 && tg.some(t => t[0] === '반도체' && t[1] === 'theme') && tg.some(t => t[1] === 'struct') && !tg.some(t => t[0] === '기타 주식'), tg.length);
 check('범례_테마 머리글 10열(관심도 검색어)', S['범례_테마'].rows[0][9] === '관심도 검색어' && S['범례_테마'].rows.find(r => r[2] === '반도체')[9] === '반도체 ETF');
 R(`collectBuzz()`);
+check('NAVER API HUB 주소·인증 헤더(401 없음)', !ctx.MOCK_NAVER_401 && /naverapihub\.apigw\.ntruss\.com\/search-trend\/v1\/search/.test(R('BUZZ.DATALAB')) && /naverapihub\.apigw\.ntruss\.com\/search\/v1\/news/.test(R('BUZZ.NEWS')), ctx.MOCK_NAVER_401 || 0);
 check('DataLab 요청 수 = ⌈대상/4⌉ (기준어 포함 5그룹)', ctx.MOCK_NAVER_DL === Math.ceil(tg.length / 4), ctx.MOCK_NAVER_DL + ' / ' + tg.length);
 const BS = S['관심도'];
 check('관심도 시트: 검색·뉴스·단어 행', BS && BS.rows[0].join('|') === '구분|대상|기간|값' && ['검색', '뉴스', '단어'].every(k => BS.rows.some(r => r[0] === k)), BS && BS.rows.length);
@@ -130,6 +148,10 @@ const setup = fs.readFileSync(path.join(gasDir, 'Setup.gs'), 'utf8');
 check('메뉴: 연결 테스트·지금 수집(KIS·네이버)', ['menuTestKis', 'menuCollectHoldings', 'menuTestNaver', 'menuCollectBuzz'].every(f => setup.indexOf(`'${f}'`) >= 0 && R(`typeof ${f}`) === 'function'));
 check('키 저장 → 수집 트리거 설치·첫 수집 예약(코드 경로)', /installHoldingsTrigger_\(\); scheduleContinue_\('collectHoldings', 1\)/.test(setup) && /installBuzzTrigger_\(\); scheduleContinue_\('collectBuzz', 1\)/.test(setup));
 check('ACTIONS: holders·buzz 함수 래핑', /apiHolders_\(p\)/.test(R('String(ACTIONS.holders)')) && /apiBuzz_\(p\)/.test(R('String(ACTIONS.buzz)')));
+
+R(`PropertiesService.getScriptProperties().setProperty(PROP.AGG_HASH, legendHash_(ctx_(), true)); PropertiesService.getScriptProperties().deleteProperty(PROP.FULL_AGG)`);
+const legacyH = P().AGG_LEGEND_HASH; R(`nightlyAgg()`);
+check('v31 야간 점검: 범례 지문이 이전 방식 값이면 재계산 없이 새 방식으로만 갱신', P().AGG_LEGEND_HASH === R('legendHash_(ctx_())') && P().AGG_LEGEND_HASH !== legacyH && !R('fullAggState_()'), P().AGG_LEGEND_HASH);
 
 console.info(fails ? `\n${fails}건 실패` : '\n전부 통과');
 process.exit(fails ? 1 : 0);

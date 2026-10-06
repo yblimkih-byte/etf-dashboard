@@ -27,6 +27,8 @@ function addDays_(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); ret
 function isWeekend_(d) { const w = d.getDay(); return w === 0 || w === 6; }
 function ym_(s) { return String(s).slice(0, 7); }            // 'YYYY-MM'
 function monthEnd_(y, m) { return new Date(y, m, 0); }        // m: 1~12
+/** v31: MD5(base64 웹안전). 문자열은 UTF-8 로 — 문자셋을 주지 않으면 한글이 같은 값으로 뭉개져 길이가 같은 한글 입력이 같은 지문이 됨(예: '삼성전자'·'엔비디아' 검색 캐시 충돌). legacy = 이전 방식(지문 이전 확인용) */
+function md5_(s, legacy) { return Utilities.base64EncodeWebSafe(legacy ? Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s) : Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s, Utilities.Charset.UTF_8)); }
 function toNum_(v) {
   if (v === null || v === undefined || v === '' || v === '-') return 0;
   const n = Number(String(v).replace(/,/g, ''));

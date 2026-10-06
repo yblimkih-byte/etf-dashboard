@@ -140,7 +140,7 @@ const PROP = { KRX_KEY: 'KRX_AUTH_KEY', LAST_DAILY: 'LAST_DAILY_DATE', BACKFILL_
   THEME_VER: 'THEME_VER',         // v29: 테마 맵 캐시 버전(테마 규칙 수정·검수표 실행·기초지수명 보충 시 갱신 → 테마 맵만 새로 계산)
   THEME_HASH: 'THEME_HASH',       // v29: 테마 규칙·기초지수명 지문(야간 점검)
   KIS_KEY: 'KIS_APP_KEY', KIS_SECRET: 'KIS_APP_SECRET',          // v29: 한국투자증권 Open API(ETF 구성종목 — 역인덱스 탭 준비)
-  NAVER_ID: 'NAVER_CLIENT_ID', NAVER_SECRET: 'NAVER_CLIENT_SECRET',   // v29: 네이버 개발자 API(DataLab·뉴스 — 관심도 탭)
+  NAVER_ID: 'NAVER_CLIENT_ID', NAVER_SECRET: 'NAVER_CLIENT_SECRET',   // v29: 네이버 API(검색어 트렌드·뉴스 — 관심도 탭) · v30: NAVER API HUB Application 키
   KIS_TOKEN: 'KIS_TOKEN', KIS_STATE: 'KIS_PDF_STATE', KIS_RUN: 'KIS_PDF_RUN', KIS_DATE: 'KIS_PDF_DATE', KIS_INFO: 'KIS_PDF_INFO', KIS_TOP: 'KIS_PDF_TOP',   // v29: 구성종목 수집(Kis.gs)
   BUZZ_DATE: 'BUZZ_DATE', BUZZ_INFO: 'BUZZ_INFO' };   // v29: 관심도 수집(Buzz.gs)
 

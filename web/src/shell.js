@@ -99,7 +99,7 @@
       if (!d.ready) return { lines: [] };
       const st = hdState(A), H = hdModel(A, d), info = d.info || {}, t = H.top[0];
       const base = { k: '구성종목 기준일', v: esc(d.date), txt: 1, l1: info.ok ? `ETF ${A.num(info.ok)}종목` : '', l2: '매주 월요일 갱신' };
-      if (!st.q || !d.sel || !H.items.length) return { lines: [st.q ? `'${esc(st.q)}'을(를) 담은 ETF 없음 — 영문 이름·티커·종목코드로 다시 검색` : '종목명·티커·종목코드를 넣으면 그 종목을 많이 담은 ETF를 비중 순으로 표시']
+      if (!st.q || !d.sel || !H.items.length) return { lines: [st.q ? `'${esc(st.q)}'을(를) 담은 ETF 없음 — 종목코드로 다시 검색(해외 주식은 원천 자료 미제공)` : '국내 상장 주식 종목명·종목코드를 넣으면 그 종목을 많이 담은 ETF를 비중 순으로 표시']
           .concat(t && !st.q ? [`ETF가 가장 많이 담은 종목 <b>${esc(t.name)}</b> 보유 추정 ${jo(t.amt)} (ETF ${A.num(t.n)}종목)`] : []),
         cards: [base].concat(t && !st.q ? [{ k: '최다 보유 종목', v: esc(t.name), txt: 1, l1: `보유 추정 ${jo(t.amt)}`, l2: `ETF ${A.num(t.n)}종목` }] : []) };
       const b = H.best, f0 = H.fi[0];

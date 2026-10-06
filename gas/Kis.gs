@@ -60,18 +60,21 @@ function kisPdfReq_(code, token, k) {
     headers: { authorization: 'Bearer ' + token, appkey: k.key, appsecret: k.sec, tr_id: KIS.PDF_TR, custtype: 'P' } };
 }
 /** 응답 → {ok, rows:[[구성종목코드, 구성종목명, 비중(%), 평가금액]], n(ETF 측 구성종목 수), err, retry, expired}.
- *  비중 = etf_cnfg_issu_rlim. 값이 모두 비어 있으면 평가금액(etf_vltn_amt) 비율로 계산 */
+ *  v31: 비중 = 평가금액(etf_vltn_amt, CU 1개 기준) ÷ CU 금액(output1 etf_cu_unit_scrt_cnt × nav) × 100 — ETF 전체 순자산 대비 실제 비중.
+ *       (etf_cnfg_issu_rlim 은 '응답에 나온 국내 상장 종목끼리'의 비중이라 해외 종목이 섞인 ETF 에서 과대 — 예: 해외 21종목 중 국내 1종목이면 100%)
+ *  CU 금액을 모르면 etf_cnfg_issu_rlim, 그것도 없으면 응답 종목이 전부일 때만 평가금액 비율 */
 function kisParsePdf_(code, text) {
   const b = kisJson_(text), msg = String((b.msg_cd || '') + ' ' + (b.msg1 || '')).trim();
   if (code !== 200 || (b.rt_cd !== undefined && String(b.rt_cd) !== '0')) {
     const expired = /EGW00123|EGW00121|token/i.test(msg) || code === 401;
     return { ok: false, err: (code !== 200 ? 'HTTP ' + code + ' ' : '') + (msg || String(text || '').slice(0, 80)), expired: expired, retry: expired || code >= 500 || code === 429 || /EGW00201|초당|건수/.test(msg) };
   }
-  const items = Array.isArray(b.output2) ? b.output2 : [];
+  const items = Array.isArray(b.output2) ? b.output2 : [], o1 = b.output1 || {}, n = toNum_(o1.etf_cnfg_issu_cnt);
+  const cuv = toNum_(o1.etf_cu_unit_scrt_cnt) * toNum_(o1.nav), r4 = v => Math.round(v * 1e4) / 1e4;
   let rows = items.map(x => [String(x.stck_shrn_iscd || '').trim(), String(x.hts_kor_isnm || '').trim(), toNum_(x.etf_cnfg_issu_rlim), toNum_(x.etf_vltn_amt)]).filter(r => r[0] || r[1]);
-  if (rows.length && rows.every(r => !r[2])) { const s = rows.reduce((a, r) => a + Math.max(r[3], 0), 0); if (s > 0) rows = rows.map(r => [r[0], r[1], Math.round(Math.max(r[3], 0) / s * 1e6) / 1e4, r[3]]); }
-  const o1 = b.output1 || {};
-  return { ok: true, rows: rows, n: toNum_(o1.etf_cnfg_issu_cnt) };
+  if (cuv > 0 && rows.some(r => r[3] > 0)) rows = rows.map(r => [r[0], r[1], r4(Math.max(r[3], 0) / cuv * 100), r[3]]);
+  else if (rows.length && rows.every(r => !r[2]) && !(n > rows.length)) { const s = rows.reduce((a, r) => a + Math.max(r[3], 0), 0); if (s > 0) rows = rows.map(r => [r[0], r[1], r4(Math.max(r[3], 0) / s * 100), r[3]]); }
+  return { ok: true, rows: rows, n: n, part: n > rows.length };
 }
 const kisCash_ = (code, name) => KIS.CASH.test(String(name || '').replace(/\s+/g, '')) || /^KRD0/.test(String(code || ''));
 
@@ -113,7 +116,7 @@ function collectHoldings() {
         const c = batch[j];
         if (!r.ok) { st.err++; if (st.errs.length < 5) st.errs.push(c[0] + ' ' + r.err); return; }
         if (!r.rows.length) { st.empty++; return; }
-        st.ok++; r.rows.forEach(x => buf.push([c[0], c[1], x[0], x[1], x[2], x[3]]));
+        st.ok++; if (r.part) st.part = (st.part || 0) + 1; r.rows.forEach(x => buf.push([c[0], c[1], x[0], x[1], x[2], x[3]]));
       });
       st.i += batch.length;
       if (buf.length >= 3000) { appendRows_(sh, buf); st.rows += buf.length; buf = []; }
@@ -125,7 +128,7 @@ function collectHoldings() {
       console.log('[collectHoldings] 진행 ' + st.i + '/' + targets.length + ' (이어서 실행)'); return;
     }
     P.deleteProperty(PROP.KIS_STATE);
-    const info = { date: st.date, n: targets.length, ok: st.ok, empty: st.empty, err: st.err, rows: st.rows, at: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm'), errs: st.errs };
+    const info = { date: st.date, n: targets.length, ok: st.ok, empty: st.empty, err: st.err, part: st.part || 0, rows: st.rows, at: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm'), errs: st.errs };
     if (st.err > targets.length * KIS.MAX_ERR) {   // 절반 넘게 오류 → 이전 자료 유지(수집중 시트는 점검용으로 남김)
       log_('구성종목 수집 실패: 성공 ' + st.ok + '/' + targets.length + ' · 오류 예: ' + st.errs.join(' | '), 'ERROR'); P.setProperty(PROP.KIS_INFO, JSON.stringify(Object.assign(info, { failed: true }))); return;
     }
@@ -134,6 +137,7 @@ function collectHoldings() {
     P.setProperty(PROP.KIS_DATE, st.date); P.setProperty(PROP.KIS_INFO, JSON.stringify(info));
     try { P.setProperty(PROP.KIS_TOP, JSON.stringify(holdingsTop_(st.date))); } catch (e) { log_('많이 담긴 종목 계산 실패: ' + e.message, 'WARN'); }
     bumpCache_(['9999-12']);   // meta(탭 표시·기준일)·검색 결과 캐시만 새로(기준일 조회 캐시는 유지)
+    try { holdingsIndex_(st.date); } catch (e) { log_('검색 색인 만들기 실패(첫 검색 때 다시 시도): ' + e.message, 'WARN'); }   // v32
     log_('구성종목 수집 완료: ' + st.date + ' · ' + st.ok + '/' + targets.length + '종목(구성종목 없음 ' + st.empty + ', 오류 ' + st.err + ') · ' + st.rows + '행' + (st.errs.length ? ' · 오류 예: ' + st.errs.join(' | ') : ''));
   } catch (e) {
     log_('구성종목 수집 오류: ' + e.message, 'ERROR'); throw e;
@@ -193,18 +197,42 @@ function apiHolders_(p) {
   const nq = holdNorm_(q), alias = holdingsAlias_();
   let terms = [q];
   alias.forEach(a => { if (a[1].some(t => holdNorm_(t) === nq) || holdNorm_(a[0]) === nq) terms = terms.concat(a[1]); });
-  const rows = holdingsRows_(), snap = {}; readDailyBlock_(date).forEach(r => snap[r.code] = r);
-  const ctx = ctx_(), cand = {};
-  rows.forEach(r => { if (!holdMatch_(terms, r.comp, r.name)) return; const k = r.comp + '|' + r.name, c = cand[k] = cand[k] || { key: k, comp: r.comp, name: r.name, amt: 0, n: 0 }; const e = snap[r.etf]; c.amt += (e ? e.nav : 0) * r.w / 100; c.n++; });
-  const cands = Object.keys(cand).map(k => cand[k]).sort((a, b) => b.amt - a.amt);
+  const ix = holdingsIndex_(date), E = ix.etfs, cands = [];   // v32: 미리 만든 색인(압축 캐시)에서 찾음 — 시트·범례를 매번 읽지 않음
+  ix.comps.forEach((c, j) => {
+    if (!holdMatch_(terms, c[0], c[1])) return;
+    let amt = 0; const l = c[2]; for (let x = 0; x < l.length; x += 2) amt += E[l[x]][5] * l[x + 1] / 100;
+    cands.push({ key: c[0] + '|' + c[1], comp: c[0], name: c[1], amt: amt, n: l.length / 2, j: j });
+  });
+  cands.sort((a, b) => b.amt - a.amt);
   if (!cands.length) return Object.assign(base, { q: q, terms: terms, cands: [], items: [] });
   const exact = cands.find(c => holdNorm_(c.name) === nq || holdNorm_(c.comp) === nq || terms.some(t => holdNorm_(t) === holdNorm_(c.name)));
-  const sel = (p.pick && cands.find(c => c.key === p.pick)) || exact || cands[0];
-  const items = rows.filter(r => r.comp + '|' + r.name === sel.key).map(r => {
-    const e = snap[r.etf] || { code: r.etf, name: r.etf, nav: 0 }, g = groupOf_(e, ctx);
-    return { code: r.etf, name: String(e.name), mgr: g.short, top: g.top, type: g.f3, w: r.w, nav: e.nav, amt: e.nav * r.w / 100 };
-  }).sort((a, b) => b.w - a.w);
+  const sel = (p.pick && cands.find(c => c.key === p.pick)) || exact || cands[0], l = ix.comps[sel.j][2], items = [];
+  for (let x = 0; x < l.length; x += 2) { const e = E[l[x]], w = l[x + 1]; items.push({ code: e[0], name: e[1], mgr: e[2], top: e[3], type: e[4], w: w, nav: e[5], amt: e[5] * w / 100 }); }
+  items.sort((a, b) => b.w - a.w);
   return Object.assign(base, { q: q, terms: terms, cands: cands.slice(0, 12).map(c => ({ key: c.key, comp: c.comp, name: c.name, amt: c.amt, n: c.n })), sel: { key: sel.key, comp: sel.comp, name: sel.name }, items: items });
+}
+/** v32: 검색 색인 = {date, etfs:[[코드, 종목명, 운용사, 상위구분, 유형, NAV]], comps:[[구성종목코드, 구성종목명, [ETF번호, 비중, …]]]}.
+ *  구성종목 시트(약 1.1만 행)·일별 NAV·범례를 한 번 읽어 만들고 응답 캐시와 같은 방식(압축·분할)으로 6시간 보관.
+ *  키에 캐시 버전(적재·집계마다 바뀜)과 수집 기준일 포함 → 적재 직후 예열(warmAll)·수집 완료 때 다시 만듦. ext = 'extend' 면 보관 기간 연장 */
+function holdingsIndexKey_(date) { return CACHE_GEN_ + ':hidx:' + (PropertiesService.getScriptProperties().getProperty(PROP.CACHE_VER) || '0') + ':' + date; }
+function holdingsIndex_(date, ext) {
+  const cache = CacheService.getScriptCache(), key = holdingsIndexKey_(date), hit = getCached_(cache, key);
+  if (hit) { if (ext === 'extend') putCached_(cache, key, hit); return JSON.parse(hit); }
+  const ix = buildHoldingsIndex_(date);
+  putCached_(cache, key, JSON.stringify(ix));
+  return ix;
+}
+function buildHoldingsIndex_(date) {
+  const rows = holdingsRows_(), snap = {}; readDailyBlock_(date).forEach(r => snap[r.code] = r);
+  const ctx = ctx_(), eIdx = {}, etfs = [], cIdx = {}, comps = [];
+  rows.forEach(r => {
+    let i = eIdx[r.etf];
+    if (i === undefined) { const e = snap[r.etf] || { code: r.etf, name: r.etf, nav: 0 }, g = groupOf_(e, ctx); i = eIdx[r.etf] = etfs.length; etfs.push([r.etf, String(e.name), g.short, g.top, g.f3, e.nav || 0]); }
+    const k = r.comp + '|' + r.name; let j = cIdx[k];
+    if (j === undefined) { j = cIdx[k] = comps.length; comps.push([r.comp, r.name, []]); }
+    comps[j][2].push(i, Math.round(r.w * 1e4) / 1e4);
+  });
+  return { date: date, etfs: etfs, comps: comps };
 }
 
 /** 메뉴: KIS 연결 테스트 — 토큰 발급과 국내·해외 ETF 각 1종목 구성종목 조회 결과를 _log 에 남김(필드 형식 확인용) */

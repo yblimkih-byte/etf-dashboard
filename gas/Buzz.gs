@@ -1,6 +1,7 @@
 /**
  * Buzz.gs — v29 관심도(버즈)
- *  · 원천: 네이버 개발자 API — DataLab 검색어 트렌드(주 단위, 일 1,000회) · 검색 API 뉴스(일 25,000회). 키는 메뉴 [ETF Dashboard] › 네이버 API 키 설정(사용자 직접 입력)
+ *  · 원천: NAVER API HUB(네이버 클라우드, 2026-07-31부터 개발자센터 신규 발급 종료로 이관) — 검색어 트렌드(주 단위, 월 5만 회) · 뉴스 검색(일 2.5만 회).
+ *          키(Application 의 Client ID·Secret)는 메뉴 [ETF Dashboard] › 네이버 API 키 설정(사용자 직접 입력)
  *  · 대상: 범례_테마의 '관심도 검색어' 열(테마·상품구조 행). 비어 있으면 그 테마는 건너뜀
  *  · 검색 관심도: 요청마다 기준어 'ETF'를 함께 넣어(그룹 5개 중 1개) 검색량을 'ETF 검색 = 100'으로 환산 → 요청이 달라도 테마끼리 비교 가능.
  *               최근 4주 평균 vs 직전 4주 평균 변화율
@@ -10,8 +11,8 @@
  *  · 매일 07시대 수집(키 저장 시 트리거 설치) → 시트 '관심도'(최근 수집분만). 탭은 첫 수집 뒤에만 보임(meta.buzzDate)
  */
 const BUZZ = {
-  DATALAB: 'https://openapi.naver.com/v1/datalab/search',
-  NEWS: 'https://openapi.naver.com/v1/search/news.json',
+  DATALAB: 'https://naverapihub.apigw.ntruss.com/search-trend/v1/search',   // v30: NAVER API HUB(이전 openapi.naver.com/v1/datalab/search)
+  NEWS: 'https://naverapihub.apigw.ntruss.com/search/v1/news',               // v30: NAVER API HUB(이전 openapi.naver.com/v1/search/news.json)
   SHEET: '관심도', HEADER: ['구분', '대상', '기간', '값'],
   ANCHOR: 'ETF', WEEKS: 26, NEWS_PAGES: 5, ANCHOR_PAGES: 10, NEWS_PAR: 10, NEWS_GAP_MS: 1000, KW_MAX: 3, RUN_MS: 4.5 * 60 * 1000,
   STOP: ['ETF', 'ETN', '상장', '출시', '운용', '자산운용', '투자', '투자자', '수익률', '순자산', '돌파', '종목', '시장', '지수', '증시', '상품', '국내', '해외', '최대', '최고', '최초', '올해', '연초',
@@ -71,7 +72,7 @@ function buzzTrend_(series) {
 function naverKeys_() {
   const P = PropertiesService.getScriptProperties(), id = P.getProperty(PROP.NAVER_ID), sec = P.getProperty(PROP.NAVER_SECRET);
   if (!id || !sec) throw new Error('네이버 API 키 미설정: 메뉴 [ETF Dashboard] › 네이버 API 키 설정');
-  return { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': sec };
+  return { 'X-NCP-APIGW-API-KEY-ID': id, 'X-NCP-APIGW-API-KEY': sec };   // v30: NAVER API HUB 인증 헤더
 }
 /** 범례_테마 → 관심도 대상 [[이름, 구분(theme|struct), 테마군, [검색어…]]] (검색어 빈 행 제외) */
 function buzzTargets_() {
