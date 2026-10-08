@@ -109,6 +109,7 @@
     else if (url.includes('getJsonData')) body = JSON.stringify({ output: basic() });
     else if (url.includes('oauth2/tokenP')) { g.MOCK_KIS_TOKENS = (g.MOCK_KIS_TOKENS || 0) + 1; const e = new Date(Date.now() + 86400000); body = JSON.stringify({ access_token: 'TOK' + g.MOCK_KIS_TOKENS, token_type: 'Bearer', expires_in: 86400, access_token_token_expired: e.toISOString().slice(0, 10) + ' 09:00:00' }); }
     else if (url.includes('inquire-component-stock-price')) { const r = kisMock(q.FID_INPUT_ISCD, opt); return { getResponseCode: () => r[0], getContentText: () => r[1] }; }
+    else if (url.includes('funetf.co.kr/api/public/product/view/etfpdf')) { g.MOCK_FUN_CALLS = (g.MOCK_FUN_CALLS || 0) + 1; const r = g.MOCK_FUN ? g.MOCK_FUN(q.itemId, q.etfPdfYmd, opt) : [200, '[]']; return { getResponseCode: () => r[0], getContentText: () => r[1] }; }   // v34: FunETF 구성종목(기본 = 빈 응답 → KIS 보완)
     else if (/naverapihub|openapi\.naver/.test(url) && !(opt && opt.headers && opt.headers['X-NCP-APIGW-API-KEY-ID'] && opt.headers['X-NCP-APIGW-API-KEY'])) { g.MOCK_NAVER_401 = (g.MOCK_NAVER_401 || 0) + 1; return { getResponseCode: () => 401, getContentText: () => '{"errorCode":"200","message":"Authentication Failed"}' }; }   // v30: NAVER API HUB 인증 헤더
     else if (url.includes('datalab/search') || url.includes('search-trend/v1/search')) body = JSON.stringify(datalabMock(JSON.parse(opt.payload)));
     else if (url.includes('search/news.json') || url.includes('search/v1/news')) body = JSON.stringify(newsMock(q.query, +q.start || 1, +q.display || 10));

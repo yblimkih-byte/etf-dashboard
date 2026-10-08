@@ -15,6 +15,13 @@ function doGet(e) {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
+/** v34: FunETF 구성종목 반영(브라우저 즐겨찾기 버튼 → POST text/plain JSON). 비밀 토큰으로만 쓰기 허용(Kis.gs funImport_) */
+function doPost(e) {
+  let out;
+  try { out = { ok: true, data: funImport_(JSON.parse((e && e.postData && e.postData.contents) || '{}')) }; }
+  catch (err) { out = { ok: false, error: String((err && err.message) || err) }; }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
 function include(name) { return HtmlService.createHtmlOutputFromFile(name).getContent(); }
 
 function api(action, params) {
