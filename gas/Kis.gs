@@ -1,8 +1,9 @@
 /**
  * Kis.gs — v29 종목→ETF 찾기(역인덱스)
  *  · 원천 ① (v34) FunETF(삼성자산운용 ETF 정보 사이트) 공개 구성종목 PDF — 전 ETF 의 전체 구성종목·비중(해외 주식 포함, 한글명/영문명·티커·ISIN).
- *          FunETF 는 구글 서버(Apps Script)의 접속을 막으므로(HTTP 403) 사용자가 주 1회 FunETF 화면에서 즐겨찾기 버튼을 눌러 브라우저가 받아 웹앱(doPost)으로 보냄
- *          → funImport_({op: start|put|end}). 버튼은 메뉴 [ETF Dashboard] › 구성종목 수집 버튼(FunETF) 만들기
+ *          FunETF 는 구글 서버(Apps Script)의 접속을 막으므로(HTTP 403) 밖에서 받아 웹앱(doPost)으로 보냄 → funImport_({op: start|put|end})
+ *          (v38) GitHub Actions 예약 작업(화·금 02시~06시 전, 1건씩·10초 간격, scripts/funetf_collect.mjs) — 사용자 PC 꺼져 있어도 됨
+ *          (v34) FunETF 화면의 즐겨찾기 버튼(수동) — 메뉴 [ETF Dashboard] › 구성종목 수집 버튼(FunETF) 만들기
  *  · 원천 ② 한국투자증권 Open API 'ETF 구성종목시세'(국내주식-073, tr_id FHKST121600C0) — 국내 상장 종목, ETF마다 상위 30. 매주 월요일 07시대 자동 수집(collectHoldings).
  *          FunETF 자료가 FRESH_DAYS 이내면 자동 수집은 건너뜀. FunETF 반영 때 빈 응답 ETF 는 KIS 로 보완
  *  · 키: KIS 는 메뉴 [ETF Dashboard] › KIS Open API 키 설정 (사용자가 직접 입력, 스크립트 속성에만 저장). 토큰(1일 유효)은 발급 후 재사용
@@ -43,6 +44,7 @@ const FUN = {
   CHUNK: 40,    // 브라우저가 한 번에 보내는 ETF 수(v37: 20 → 40, 묶음마다 서버 처리 시간이 들어 줄임)
   STATE: 'FUN_IMPORT_STATE', TOKEN: 'FUN_IMPORT_TOKEN', LAST: 'FUN_IMPORT_LAST',
   NEED_MAX: 300,   // KIS 보완 대기 목록 최대(스크립트 속성 값 9KB 한도)
+  BUSY_MS: 30 * 60 * 1000,   // v38: 반영 상태의 마지막 활동이 이 시간 안이면 '진행 중'(다른 쪽 시작·KIS 자동 수집 보류). 넘으면 버려진 상태로 봄
   // 운영 웹앱 주소(배포 ID 고정 — docs/GitHub_유지관리_가이드.md). ScriptApp.getService() 를 쓰지 않음
   EXEC: 'https://script.google.com/macros/s/AKfycbwF4iZ_1BilAMgSFAySTPrS8gaEOVdTQdMPE3QaVhEd--A38x1l9sQXJWIk_RXuHbO0dA/exec',
   SHEET: '구성종목_버튼'
@@ -90,9 +92,19 @@ function funNames_(date) {
   putCached_(cache, key, JSON.stringify(m));
   return m;
 }
-/** 브라우저(FunETF 화면의 즐겨찾기 버튼) → 웹앱 doPost 로 받은 구성종목 반영. body = {k: 토큰, op, date, items: {ETF코드: [[ISIN, 티커, 이름, 비중, 평가금액]] | null(받기 실패)}}
+/** v38: 반영 상태가 살아 있나(마지막 활동 BUSY_MS 안) */
+function funBusy_(st) { return !!(st && st.date) && Date.now() - (st.t || kisKst_(String(st.start || '') + ':00')) < FUN.BUSY_MS; }
+/** v38: 현재 '구성종목' 시트에 행이 있는 ETF 코드 {code: true} */
+function funHad_(ss) {
+  const sh = ss.getSheetByName(KIS.SHEET), m = {}; if (!sh || sh.getLastRow() < 2) return m;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(r => { const c = padCode_(r[0]); if (c) m[c] = true; });
+  return m;
+}
+/** 브라우저(FunETF 화면의 즐겨찾기 버튼)·GitHub 예약 작업 → 웹앱 doPost 로 받은 구성종목 반영. body = {k: 토큰, op, date, items: {ETF코드: [[ISIN, 티커, 이름, 비중, 평가금액]] | null(받기 실패)}}
  *  start: 대상(기준일 NAV>0 전 종목 + ETF ISIN)·기준일을 돌려주고 수집중 시트 새로 만듦 / put: 받은 묶음을 시트에 추가 / end: 빈 응답·실패 ETF 는 KIS 로 보완 후 '구성종목'과 교체
- *  v36: 응답이 중간에 끊겨 브라우저가 다시 보내도 안전 — put 은 묶음 번호(seq)로 중복 무시, end 는 방금 끝난 결과를 다시 돌려줌 */
+ *  v36: 응답이 중간에 끊겨 브라우저가 다시 보내도 안전 — put 은 묶음 번호(seq)로 중복 무시, end 는 방금 끝난 결과를 다시 돌려줌
+ *  v38: b.src('gh' = GitHub 예약 작업, 없으면 버튼) — 다른 쪽 반영이 진행 중이면 시작 거부 · b.skipSame = 같은 기준일 FunETF 자료가 이미 있으면 건너뜀({skip:true})
+ *       대상 순서 = 지금 구성종목이 있는 ETF 먼저(마감에 걸려도 중요한 것부터) · end 의 b.rest(받지 못한 ETF 코드) = 이전 구성종목을 그대로 옮겨 유지(info.carry) */
 function funImport_(b) {
   const P = PropertiesService.getScriptProperties(), tok = P.getProperty(FUN.TOKEN);
   if (!tok || !b || String(b.k || '') !== tok) throw new Error('수집 버튼 인증 실패: 메뉴 [ETF Dashboard] › 구성종목 수집 버튼(FunETF) 만들기로 버튼을 다시 만드세요');
@@ -102,11 +114,19 @@ function funImport_(b) {
     if (b.op === 'start') {
       const run = +(P.getProperty(PROP.KIS_RUN) || 0);
       if (run && Date.now() - run < 6 * 60 * 1000) throw new Error('KIS 구성종목 수집이 진행 중입니다. 몇 분 뒤 다시 누르세요');
+      const src = b.src === 'gh' ? 'gh' : 'bm', cur = kisJson_(P.getProperty(FUN.STATE));
+      if (funBusy_(cur) && (cur.src || 'bm') !== src) throw new Error('다른 구성종목 반영이 진행 중입니다(' + (cur.src === 'gh' ? '자동 수집' : '버튼') + ', ' + cur.start + ' 시작). 끝난 뒤 다시 하세요');
       const dates = indexDates_(); if (!dates.length) throw new Error('일별 자료가 없습니다');
-      const date = dates[dates.length - 1], targets = holdingsTargets_(date).map(t => [t[0], isinKr_(t[0])]);
+      const date = dates[dates.length - 1];
+      if (b.skipSame) {   // v38: 같은 기준일 FunETF 자료가 이미 온전히 있으면 다시 받지 않음
+        const inf = kisJson_(P.getProperty(PROP.KIS_INFO));
+        if (inf.src === 'F' && !inf.failed && inf.date === date && !inf.carry) return { skip: true, date: date };
+      }
+      const had = funHad_(ss), targets = holdingsTargets_(date).map(t => [t[0], isinKr_(t[0])])
+        .sort((p, q) => (had[q[0]] ? 1 : 0) - (had[p[0]] ? 1 : 0) || (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0));   // v38: 구성종목 있는 ETF 먼저
       P.deleteProperty(PROP.KIS_STATE); clearTriggers_('cont_collectHoldings');   // 진행 중이던 KIS 이어서 실행은 중단(같은 시트를 씀)
       holdingsTmpSheet_(ss);
-      P.setProperty(FUN.STATE, JSON.stringify({ date: date, n: targets.length, seq: 0, got: 0, ok: 0, empty: 0, err: 0, f: 0, k: 0, rows: 0, need: [], errs: [], start: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm') }));
+      P.setProperty(FUN.STATE, JSON.stringify({ date: date, src: src, n: targets.length, seq: 0, got: 0, ok: 0, empty: 0, err: 0, f: 0, k: 0, rows: 0, need: [], errs: [], start: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm'), t: Date.now() }));
       return { date: date, ymd: date.replace(/-/g, ''), targets: targets, chunk: FUN.CHUNK };
     }
     const st = kisJson_(P.getProperty(FUN.STATE)), sh = ss.getSheetByName(KIS.TMP);
@@ -132,8 +152,13 @@ function funImport_(b) {
         st.ok++; st.f++; rows.forEach(y => buf.push([c, names[c], y[0], y[1], y[2], y[3], y[4], 'F']));
       });
       if (buf.length) { appendRows_(sh, buf); st.rows += buf.length; }
-      P.setProperty(FUN.STATE, JSON.stringify(st));
+      st.t = Date.now(); P.setProperty(FUN.STATE, JSON.stringify(st));
       return { got: st.got, n: st.n, rows: st.rows };
+    }
+    if (b.op === 'end' && b.dry) {   // v38: 시험 실행(일부만) — 흐름만 확인, 시트·기준일은 그대로
+      const tmp = ss.getSheetByName(KIS.TMP); if (tmp) ss.deleteSheet(tmp);
+      P.deleteProperty(FUN.STATE);
+      return { dry: true, date: st.date, n: st.n, got: st.got, f: st.f, empty: st.empty, need: st.need.length, rows: st.rows };
     }
     if (b.op === 'end') {
       const names = funNames_(st.date);
@@ -148,13 +173,26 @@ function funImport_(b) {
         });
         if (buf.length) { appendRows_(sh, buf); st.rows += buf.length; }
       }
-      st.empty += Math.max(0, st.n - st.got);   // 브라우저가 보내지 못한 ETF(창을 닫는 등)는 구성종목 없음으로
+      const notGot = Math.max(0, st.n - st.got);
+      const cr = notGot && Array.isArray(b.rest) && b.rest.length ? funCarry_(ss, sh, b.rest.map(padCode_).filter(c => names[c])) : { etfs: 0, rows: 0 };   // v38: 받지 못한 ETF 는 이전 구성종목 유지
+      st.carry = Math.min(cr.etfs, notGot); st.ok += st.carry; st.rows += cr.rows;
+      st.empty += Math.max(0, notGot - st.carry);   // 보내지 못한 ETF(창을 닫는 등) 중 이전 자료도 없는 것은 구성종목 없음으로
       const info = holdingsFinish_(ss, sh, Object.assign(st, { src: 'F' }));
       P.deleteProperty(FUN.STATE); P.setProperty(FUN.LAST, JSON.stringify({ date: st.date, t: Date.now(), info: info }));
       return info;
     }
     throw new Error('알 수 없는 요청: ' + b.op);
   } finally { lock.releaseLock(); }
+}
+/** v38: 받지 못한 ETF(codes)의 이전 '구성종목' 행을 수집중 시트(sh)로 옮겨 유지 — 이번에 이미 행이 들어온 ETF 는 건너뜀 → {etfs: 옮긴 ETF 수, rows: 옮긴 행 수} */
+function funCarry_(ss, sh, codes) {
+  const old = ss.getSheetByName(KIS.SHEET); if (!old || !codes.length) return { etfs: 0, rows: 0 };
+  const want = {}; codes.forEach(c => want[c] = true);
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(r => { delete want[padCode_(r[0])]; });
+  const buf = [], got = {}, w = KIS.HEADER.length;
+  readAll_(old).forEach(r => { const c = padCode_(r[0]); if (!want[c]) return; got[c] = true; const x = r.slice(0, w); while (x.length < w) x.push(''); x[0] = c; buf.push(x); });
+  if (buf.length) appendRows_(sh, buf);
+  return { etfs: Object.keys(got).length, rows: buf.length };
 }
 /** 메뉴: FunETF 화면에서 누를 즐겨찾기 버튼(북마클릿) 코드 — 웹앱 주소와 비밀 토큰을 넣어 만듦(토큰은 처음 1회 생성, 다시 만들기 = 새 토큰) */
 function funBookmarklet_(renew) {
@@ -257,9 +295,12 @@ function kisCollectList_(list) {
 /** 수집 끝: 실패 판정 → '구성종목' 교체·기준일·정보·많이 담긴 종목·캐시·색인. st = {date, n, ok, empty, err, rows, errs, src('F'|'K'), f, k, part} → info */
 function holdingsFinish_(ss, sh, st) {
   const P = PropertiesService.getScriptProperties();
-  const info = { date: st.date, n: st.n, ok: st.ok, empty: st.empty, err: st.err, part: st.part || 0, f: st.f || 0, k: st.k || 0, src: st.src || 'K', rows: st.rows, at: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm'), errs: st.errs || [] };
-  if (st.err > st.n * KIS.MAX_ERR || !st.ok) {   // 절반 넘게 오류·확인 0건 → 이전 자료 유지(수집중 시트는 점검용으로 남김)
-    log_('구성종목 수집 실패: 성공 ' + st.ok + '/' + st.n + (info.errs.length ? ' · 오류 예: ' + info.errs.join(' | ') : ''), 'ERROR'); P.setProperty(PROP.KIS_INFO, JSON.stringify(Object.assign(info, { failed: true }))); return info;
+  const info = { date: st.date, n: st.n, ok: st.ok, empty: st.empty, err: st.err, part: st.part || 0, f: st.f || 0, k: st.k || 0, carry: st.carry || 0, src: st.src || 'K', rows: st.rows, at: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm'), errs: st.errs || [] };
+  const fresh = st.ok - (st.carry || 0);
+  if (st.err > st.n * KIS.MAX_ERR || !st.ok || (st.carry && fresh < st.carry)) {   // 절반 넘게 오류·확인 0건·(v38) 새로 받은 ETF 가 이전 자료 유지분보다 적음 → 이전 자료 유지(수집중 시트는 점검용으로 남김)
+    const old = kisJson_(P.getProperty(PROP.KIS_INFO));   // v38: 시트에 남은(마지막 성공) 자료의 원천·기준일 — 월요일 KIS 자동 수집 판단용
+    log_('구성종목 수집 실패: 성공 ' + st.ok + '/' + st.n + (st.carry ? '(새로 받음 ' + fresh + ', 이전 자료 ' + st.carry + ')' : '') + (info.errs.length ? ' · 오류 예: ' + info.errs.join(' | ') : ''), 'ERROR');
+    P.setProperty(PROP.KIS_INFO, JSON.stringify(Object.assign(info, { failed: true, okSrc: old.failed ? old.okSrc : old.src, okDate: old.failed ? old.okDate : old.date }))); return info;
   }
   const old = ss.getSheetByName(KIS.SHEET); if (old) ss.deleteSheet(old);
   sh.setName(KIS.SHEET);
@@ -267,7 +308,7 @@ function holdingsFinish_(ss, sh, st) {
   try { P.setProperty(PROP.KIS_TOP, JSON.stringify(holdingsTop_(st.date))); } catch (e) { log_('많이 담긴 종목 계산 실패: ' + e.message, 'WARN'); }
   bumpCache_(['9999-12']);   // meta(탭 표시·기준일)·검색 결과 캐시만 새로(기준일 조회 캐시는 유지)
   try { holdingsIndex_(st.date); } catch (e) { log_('검색 색인 만들기 실패(첫 검색 때 다시 시도): ' + e.message, 'WARN'); }   // v32
-  log_('구성종목 ' + (info.src === 'F' ? 'FunETF 반영' : 'KIS 수집') + ' 완료: ' + st.date + ' · ' + st.ok + '/' + st.n + '종목' + (info.src === 'F' ? '(FunETF ' + info.f + ', KIS 보완 ' + info.k + ')' : '') + ' · 구성종목 없음 ' + st.empty + ', 오류 ' + st.err + ' · ' + st.rows + '행' + (info.errs.length ? ' · 오류 예: ' + info.errs.join(' | ') : ''));
+  log_('구성종목 ' + (info.src === 'F' ? 'FunETF 반영' : 'KIS 수집') + ' 완료: ' + st.date + ' · ' + st.ok + '/' + st.n + '종목' + (info.src === 'F' ? '(FunETF ' + info.f + ', KIS 보완 ' + info.k + (info.carry ? ', 이전 자료 유지 ' + info.carry : '') + ')' : '') + ' · 구성종목 없음 ' + st.empty + ', 오류 ' + st.err + ' · ' + st.rows + '행' + (info.errs.length ? ' · 오류 예: ' + info.errs.join(' | ') : ''));
   return info;
 }
 /** 메뉴·트리거: KIS 전 종목 구성종목 수집(이어서 실행). 적재(loadDaily)와 겹치지 않게 적재 실행 중이면 10분 뒤.
@@ -278,14 +319,15 @@ function collectHoldings() {
   if (since && Date.now() - since < 7 * 60 * 1000) { scheduleContinue_('collectHoldings', 10); return; }
   const run = +(P.getProperty(PROP.KIS_RUN) || 0);
   if (run && Date.now() - run < 6 * 60 * 1000) return;   // 다른 수집 실행 중
-  if (P.getProperty(FUN.STATE)) { log_('KIS 구성종목 수집 건너뜀: FunETF 반영이 진행 중', 'INFO'); return; }
+  if (funBusy_(kisJson_(P.getProperty(FUN.STATE)))) { log_('KIS 구성종목 수집 건너뜀: FunETF 반영이 진행 중', 'INFO'); return; }   // v38: 버려진 반영 상태(30분 넘게 활동 없음)는 막지 않음
   let st = kisJson_(P.getProperty(PROP.KIS_STATE));
   if (!st.date) {
     const force = P.getProperty('KIS_PDF_FORCE') === '1', inf = kisJson_(P.getProperty(PROP.KIS_INFO));
     P.deleteProperty('KIS_PDF_FORCE');
     const ds = indexDates_(), last = ds[ds.length - 1];   // 최근 영업일 대비 FunETF 기준일 경과 일수
-    if (!force && inf.src === 'F' && !inf.failed && inf.date && last && (new Date(last + 'T00:00:00Z') - new Date(inf.date + 'T00:00:00Z')) / 86400000 <= KIS.FRESH_DAYS) {
-      log_('KIS 구성종목 자동 수집 건너뜀: FunETF 자료(' + inf.date + ' 기준, 해외 주식 포함) 유지', 'INFO'); return;
+    const okSrc = inf.failed ? inf.okSrc : inf.src, okDate = inf.failed ? inf.okDate : inf.date;   // v38: 직전 반영이 실패했어도 시트에 남은 FunETF 자료 기준
+    if (!force && okSrc === 'F' && okDate && last && (new Date(last + 'T00:00:00Z') - new Date(okDate + 'T00:00:00Z')) / 86400000 <= KIS.FRESH_DAYS) {
+      log_('KIS 구성종목 자동 수집 건너뜀: FunETF 자료(' + okDate + ' 기준, 해외 주식 포함) 유지', 'INFO'); return;
     }
   }
   P.setProperty(PROP.KIS_RUN, String(t0));

@@ -6,7 +6,7 @@ KRX Open API 기반 국내 ETF 시장 데이터를 Google 스프레드시트에 
 - 데이터 시트: `ETF_Dashboard` (spreadsheetId `1Wlz32KuXGS8fnh8z5U1ZhuwQK7vQkVKre5nOdeJBd4U`)
 - Apps Script 프로젝트: 시트에 바운드된 `ETF Dashboard` (scriptId 는 `.clasp.json`)
 - 웹 화면(Vercel): https://etf-dashboard-roan.vercel.app/ (`web/` + `api/data.js`, Apps Script 웹앱을 데이터 서버로 사용)
-- 현재 배포 버전: Apps Script v37 / Vercel v122 (2026-10-06) — 변경 내역은 `CHANGELOG.md`
+- 현재 배포 버전: Apps Script v38 / Vercel v122 (2026-10-08) — 변경 내역은 `CHANGELOG.md`
 
 ## 저장소 구성
 
@@ -17,7 +17,7 @@ KRX Open API 기반 국내 ETF 시장 데이터를 Google 스프레드시트에 
 | `gas/Util.gs` `Krx.gs` `Load.gs` `Backfill.gs` `Aggregate.gs` | 적재(ETL)·집계 서버 로직 |
 | `gas/Api.gs` | 웹앱 진입점(`doGet`, v34 `doPost` = FunETF 구성종목 반영) 및 대시보드 데이터 API(`api(action, params)`) |
 | `gas/Theme.gs` | 테마 맵: 종목명·기초지수명 키워드 규칙(사용자 수정 시트)으로 테마·상품구조·지역 분류 |
-| `gas/Kis.gs` | 종목→ETF 찾기: FunETF 공개 구성종목 반영(FunETF 화면의 즐겨찾기 버튼 → 웹앱 doPost, 해외 주식 포함)·한국투자증권 Open API 주간 수집(국내 상장 상위 30, 보완)·검색 |
+| `gas/Kis.gs` | 종목→ETF 찾기: FunETF 공개 구성종목 반영(v38 화·금 새벽 GitHub 예약 작업 · FunETF 화면의 즐겨찾기 버튼 → 웹앱 doPost, 해외 주식 포함)·한국투자증권 Open API 주간 수집(국내 상장 상위 30, 보완)·검색 |
 | `gas/Buzz.gs` | 관심도: NAVER API HUB(네이버 클라우드) 검색어 트렌드·뉴스 검색 일간 수집 |
 | `gas/Setup.gs` | 스프레드시트 메뉴(API 키 설정, 백필, 보정 기능) |
 | `gas/Index.html` `Style.html` `App.html` `Tabs.html` | 대시보드 화면(레이아웃·스타일·공용 코어·탭 정의) |
@@ -27,7 +27,8 @@ KRX Open API 기반 국내 ETF 시장 데이터를 Google 스프레드시트에 
 | `docs/GitHub_유지관리_가이드.md` | **GitHub 기반 유지관리·배포 절차(단계별)** |
 | `test/` | Apps Script 없이 로컬(Node + Playwright)에서 서버 코드 모의 실행·화면 렌더 검증 |
 | `.clasp.json` `.claspignore` | clasp 설정(scriptId, 동기화 대상 = `gas/`) |
-| `.github/workflows/` | main 브랜치 push 시 Apps Script 자동 반영(선택) |
+| `.github/workflows/` | `push-to-apps-script.yml`: main 브랜치 push 시 Apps Script 자동 반영(선택) · `funetf-collect.yml`(v38): 화·금 KST 02:00 FunETF 구성종목 자동 수집(시크릿 `FUN_IMPORT_TOKEN` 필요) |
+| `scripts/funetf_collect.mjs` | v38 FunETF 수집 스크립트(GitHub Actions 에서 실행): ETF 1건씩·응답 뒤 10초 간격, 05:50 KST 이후 새 요청 없음, 막히면 즉시 멈춤 → 웹앱 doPost 로 반영 |
 
 ## 빠른 시작 (유지관리자)
 

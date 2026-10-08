@@ -68,17 +68,19 @@ function setNaverKey() {
 }
 function menuCollectHoldings() { PropertiesService.getScriptProperties().setProperty('KIS_PDF_FORCE', '1'); scheduleContinue_('collectHoldings', 1); notify_('KIS 구성종목 수집을 1분 뒤 시작합니다(진행·결과는 _log 시트). FunETF 로 반영한 자료(해외 주식 포함)는 KIS 자료(국내 상장 상위 30)로 바뀝니다.'); }   // v34: 메뉴는 강제 수집
 /** v34: FunETF 화면에서 누를 즐겨찾기 버튼(북마클릿) — 구글 서버는 FunETF 접속이 막혀 브라우저가 받아 웹앱으로 보냄.
- *  버튼 코드는 '구성종목_버튼' 시트 A3 에 씀(대화상자(HtmlService)는 권한 범위가 늘어 쓰지 않음) */
+ *  버튼 코드는 '구성종목_버튼' 시트 A3 에 씀(대화상자(HtmlService)는 권한 범위가 늘어 쓰지 않음). v38: A5 = GitHub 예약 작업용 토큰(저장소 시크릿 FUN_IMPORT_TOKEN) */
 function menuFunButton() {
   const code = funBookmarklet_(false), ss = ss_();
   let sh = ss.getSheetByName(FUN.SHEET); if (!sh) sh = ss.insertSheet(FUN.SHEET);
-  sh.getRange(1, 1, Math.max(sh.getLastRow(), 3), 1).clearContent();
-  sh.getRange(1, 1, 3, 1).setValues([
-    ['ETF 구성종목 반영 버튼(FunETF — 해외 주식 포함): 아래 A3 셀 내용을 모두 복사해 브라우저에서 새 북마크를 만들고 URL(주소) 칸에 붙여 넣으세요. 이름은 예: ETF 구성종목 반영'],
-    ['사용: 매주 월요일 이후 www.funetf.co.kr 아무 화면에서 그 북마크를 누르면 오른쪽 아래에 진행 상황이 나오며 10분 안팎 걸립니다. 그동안 그 탭을 닫거나 다른 탭으로 옮기지 마세요(뒤로 가면 브라우저가 속도를 크게 늦춥니다). 끝나면 종목→ETF 찾기에서 해외 주식도 검색됩니다. 이 버튼에는 비밀 값이 들어 있으니 공유하지 마세요.'],
-    [code]]);
-  try { sh.setColumnWidth(1, 900); sh.getRange(1, 1, 3, 1).setWrap(true); ss.setActiveSheet(sh); sh.setActiveSelection('A3'); } catch (e) {}   // 화면 정리(실패해도 무관)
-  notify_('구성종목_버튼 시트 A3 셀의 내용을 복사해 브라우저 새 북마크의 URL 칸에 붙여 넣으세요.\n이후 매주 월요일 이후 www.funetf.co.kr 화면에서 그 북마크를 누르면 반영됩니다(10분 안팎, 그 탭을 앞에 둔 채 기다리기).');
+  sh.getRange(1, 1, Math.max(sh.getLastRow(), 5), 1).clearContent();
+  sh.getRange(1, 1, 5, 1).setValues([
+    ['ETF 구성종목 반영 버튼(FunETF — 해외 주식 포함, 수동): 아래 A3 셀 내용을 모두 복사해 브라우저에서 새 북마크를 만들고 URL(주소) 칸에 붙여 넣으세요. 이름은 예: ETF 구성종목 반영'],
+    ['사용: www.funetf.co.kr 아무 화면에서 그 북마크를 누르면 오른쪽 아래에 진행 상황이 나오며 10분 안팎 걸립니다. 그동안 그 탭을 닫거나 다른 탭으로 옮기지 마세요(뒤로 가면 브라우저가 속도를 크게 늦춥니다). 화·금 새벽 자동 수집(아래)을 쓰면 버튼은 급할 때만 누르면 됩니다. 이 버튼에는 비밀 값이 들어 있으니 공유하지 마세요.'],
+    [code],
+    ['(v38) 화·금 새벽 자동 수집(GitHub, PC 꺼져 있어도 됨) 설정 1회: GitHub 저장소 › Settings › Secrets and variables › Actions › New repository secret — Name 칸에 FUN_IMPORT_TOKEN, Secret 칸에 아래 A5 값을 붙여 넣고 저장. 버튼을 새 토큰으로 다시 만들면 이 값도 다시 등록해야 합니다. 공유 금지.'],
+    [PropertiesService.getScriptProperties().getProperty(FUN.TOKEN)]]);
+  try { sh.setColumnWidth(1, 900); sh.getRange(1, 1, 5, 1).setWrap(true); ss.setActiveSheet(sh); sh.setActiveSelection('A3'); } catch (e) {}   // 화면 정리(실패해도 무관)
+  notify_('구성종목_버튼 시트를 열었습니다.\n① 수동 버튼: A3 셀 내용을 복사해 브라우저 새 북마크의 URL 칸에 붙여 넣기 (www.funetf.co.kr 화면에서 누름)\n② 화·금 새벽 자동 수집: A5 값을 GitHub 저장소 시크릿 FUN_IMPORT_TOKEN 으로 등록(A4 안내)');
 }
 function menuCollectBuzz() { scheduleContinue_('collectBuzz', 1); notify_('관심도 수집을 1분 뒤 시작합니다(결과는 _log 시트).'); }
 function menuTestKis() { notify_(testKis().join('\n')); }
@@ -154,7 +156,7 @@ const README = {
     ['ETF마스터', '자동 적재', '종목코드 · 종목명 · 운용사명 · 브랜드 · 상장일 · 기초시장 · 기초자산 · 출처 · 기초지수(v29: KRX 기초지수명)', '일별 적재 시 신규 종목 추가·기초지수명 갱신. 메뉴 운용사 보정·상장일 보정·기초지수명 채우기로 보완', '전 탭(운용사 매칭) · 신규상장 ETF(상장일) · 유형별 NAV 히트맵(상장일 이후 증감) · 테마 맵(기초지수명으로 테마 분류)'],
     ['범례_테마', '사용자 수정 (v29, 없으면 기본 규칙으로 생성)', '순서 · 구분(상품구조/테마/지역) · 값 · 테마군 · 자산(전체/주식/채권) · 키워드 · 제외 키워드 · 찾는 곳(종목명/종목명·기초지수) · 메모 · 관심도 검색어. 구분별로 순서가 작은 행부터 검사해 처음 맞는 값 적용(키워드 문법은 키워드 머리글 메모)', '사용자 관리. 고친 뒤 메뉴 테마 분류 검수표 실행 → 화면 즉시 반영(야간 점검도 변경 감지)', '테마 맵(테마·상품구조·지역 분류) · 관심도(관심도 검색어)'],
     ['테마_분류검토', '자동 작성 (v29)', '테마군 · 테마 · 상품구조 · 지역 · 자산 · 종목코드 · 종목명 · 기초지수 · 운용사 · NAV(억원) — 최근 영업일 전 종목 분류 결과', '메뉴 테마 분류 검수표 실행 시 다시 작성(직접 수정해도 반영되지 않음 — 범례_테마를 고칠 것)', '-(검수용)'],
-    ['구성종목', '자동 수집 (v29) · 버튼 반영 (v34)', 'ETF코드 · ETF명 · 구성종목코드(티커·종목코드) · 구성종목명 · 비중(%) · 평가금액(원) · ISIN · 출처(F = FunETF, K = 한국투자증권) — 최근 수집분만(수집 중에는 구성종목_수집중 시트에 쓰고 끝나면 교체)', 'FunETF 화면의 즐겨찾기 버튼(주 1회, 해외 주식 포함 전체 구성종목) · 매주 월요일 07시대 collectHoldings(한국투자증권 Open API, 국내 상장 상위 30 — FunETF 자료가 2주 이내면 건너뜀)', '종목→ETF 찾기'],
+    ['구성종목', '자동 수집 (v29·v38) · 버튼 반영 (v34)', 'ETF코드 · ETF명 · 구성종목코드(티커·종목코드) · 구성종목명 · 비중(%) · 평가금액(원) · ISIN · 출처(F = FunETF, K = 한국투자증권) — 최근 수집분만(수집 중에는 구성종목_수집중 시트에 쓰고 끝나면 교체)', '화·금 02시~06시 전 GitHub 예약 작업(v38, FunETF 해외 주식 포함 전체 구성종목 — 1건씩 10초 간격) · FunETF 화면의 즐겨찾기 버튼(수동) · 매주 월요일 07시대 collectHoldings(한국투자증권 Open API, 국내 상장 상위 30 — FunETF 자료가 2주 이내면 건너뜀)', '종목→ETF 찾기'],
     ['범례_종목별칭', '사용자 수정 (v29, 없으면 기본값으로 생성)', '대표 표기 · 검색어(한글·영문·티커·종목코드, 쉼표 구분)', '사용자 관리 — 해외 종목 한/영 표기 등', '종목→ETF 찾기(검색어 확장)'],
     ['관심도', '자동 수집 (v29, 네이버 키 설정 시)', '구분(검색/뉴스/단어) · 대상 · 기간 · 값 — 검색 관심도(ETF 검색 = 100 환산 주간 지수) · 뉴스 기사 수(최근 7일·이전 7일) · ETF 뉴스 제목 단어 빈도', '매일 07시대 collectBuzz (NAVER API HUB 검색어 트렌드·뉴스 검색) · 메뉴 관심도 수집', '관심도'],
     ['raw_일별', '자동 적재', '2026-01-02 이후 매 영업일 전 종목: 기준일자 · 종목코드 · 종목명 · 자산운용사 · 순자산총액 · 거래대금 · 해당연도거래대금계 · 해당월거래대금계', '매일 08:30/19:00 loadDaily (KRX Open API ETF 일별매매정보, 전 영업일분)', '거래대금(누적 차분) · 일별 기준일 선택 시 상위 ETF · 유형별 NAV 히트맵 · 신규상장 ETF의 NAV / raw_월말·agg_* 의 원천'],
