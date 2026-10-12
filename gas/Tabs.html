@@ -167,7 +167,7 @@ function msDriverText(A, gr, mgr, RL) {
     + ` (시장 증가분 중 ${mgr} 몫 ${drv.map(cap).join(' · ')} vs ${RL} M/S ${A.share(gr.s0, 2)})`
     + (o ? ` · 상쇄 요인 ${o.type} <b>${pp2(o.c)}</b> (${mgr} 몫 ${cap(o)})` : '');
 }
-/* v26: 개별 종목 유형(상위 ETF·신규상장·거래대금) 분류 주석
+/* v26: 개별 종목 유형(ETF 상세·NAV 상위 20 변천·신규상장·거래대금) 분류 주석
    v28: 화면 문구에 내부 시트·열 이름(범례_유형·유형최종2/3·신규상장용)을 쓰지 않음 — 일반 용어로만 설명 */
 const F3_NOTE = '※ 채권·금리를 기초로 하는 합성(파생) 상품(KOFR·CD금리 액티브(합성) 등)은 파생형이 아닌 채권형으로 분류';
 /* 증감률 표기: 비교 기준 NAV 가 없으면 '신규'(기준일 NAV 가 있을 때) */
@@ -289,6 +289,7 @@ function twoRowStack(A, canvas, d, keys, getPy, getCur, colorFn, twoLine) {   //
 /* 2. 운용사별 NAV (v24: 폭 제한 · 표 내용 폭 · 기여도 분해 제거 → 증감률 비교) */
 App.registerTab({
   id: 'mgr', narrow: true, label: '운용사별 NAV', controls: ['date', 'ref'], action: 'byMgr', params: s => ({ date: s.date, ref: s.ref }),
+  prefetch: () => [['race', { n: 20 }]],   // v39: NAV 상위 20 변천(bar chart race)을 이 탭 맨 아래로 옮김
   render(d, root, A) {
     const keys = GROUPS(), RL = A.refLabel(d), G = RL + ' 대비', pp = v => A.pct(v).replace('%', '%p');
     const byK = {}; d.rows.forEach(r => byK[r.mgr] = r);
@@ -332,6 +333,8 @@ App.registerTab({
     A.line(A.canvas(s2, 'tall'), d.trend.map(t => t.ym), keys.map(k => ({ label: k, color: A.color(k), fill: A.fade(A.color(k), 0.85), data: d.trend.map(t => { const T = tot(t); return T ? +((t[k] || 0) / T * 100).toFixed(2) : 0; }) })),
       { area: true, max: 100, padRight: 56, fmt: v => v.toFixed(1) + '%', legendPos: 'bottom', xTickFmt: (i, l) => mark(i) ? ymTick(l) : '',
         labels: { mode: 'area', size: 11, only: mark, fmt: v => v.toFixed(1) + '%' } });
+
+    raceSection(A, root, d.date);   // v39: 'ETF 상세'(이전 '상위 ETF') 탭에서 옮김 — 맨 아래
   }
 });
 
@@ -414,45 +417,56 @@ function raceFrames(r) {
   return (r.frames || []).map(f => ({ ym: f.ym, rows: f.rows.map(x => Array.isArray(x) ? { rank: x[0], code: x[1], name: x[2], top: x[3], nav: x[4] * u, bond: !!x[5], type: x[6] } : x) }));
 }
 
-/* 5. 상위 ETF (v24: 폭 제한 · 변천에 '상위 20 내 유형별 M/S' 막대 추가) */
+/** v39: NAV 상위 20 변천(bar chart race) — 운용사별 NAV 탭 맨 아래(이전 '상위 ETF' 탭에서 옮김). date = 처음 보여 줄 월(기준일) */
+function raceSection(A, root, date) {
+  const s2 = A.section(root, 'NAV 상위 20 변천 (2021년 이후 월별)');
+  const holder = A.div(s2, 'empty', '변천 자료를 불러오는 중…');
+  A.call('race', { n: 20 }).then(r => {
+    if (!holder.isConnected) return;
+    holder.remove();
+    const frames = raceFrames(r); if (!frames.length) return;
+    let i = frames.findIndex(f => f.ym === String(date || '').slice(0, 7)); if (i < 0) i = frames.length - 1;
+    // 슬라이더 아래: 상위 20 내 운용사별 M/S 막대 + (v24) 유형별 M/S 막대(유형 순서·색은 다른 탭과 같음)
+    const seen = {}; frames.forEach(f => f.rows.forEach(x => { if (x.type) seen[x.type] = 1; }));
+    const tk = A.meta.typeOrder.concat(Object.keys(seen).filter(t => A.meta.typeOrder.indexOf(t) < 0));
+    A.race(s2, frames, { n: 20, rowH: 28, step: 900, start: i, ms: true, typeMs: Object.keys(seen).length ? { keys: tk, color: tc, note: F3_NOTE } : null });   // v26: 유형 = 유형최종3, 막대 바로 아래 주석(v28: 내부 용어 없이)
+  }).catch(e => { holder.className = 'error'; holder.textContent = e.message; });
+}
+
+/* 5. ETF 상세 (v39: 이전 '상위 ETF' — 상단 '범위' 버튼(전체·상위 50개·상위 100개)에 따라 카드 요약·NAV 막대·목록이 바뀜.
+ *    막대는 범위만큼(전체는 1,100여 개라 상위 100개까지만), NAV 상위 20 변천은 운용사별 NAV 탭 맨 아래로) */
+const SCOPE_BAR_MAX = 100;
+/** 범위 이름: 전체 / 상위 50 / 상위 100 (d = topEtf 응답) */
+function scopeLabel(d) { return d.scope === 'all' ? '전체' : '상위 ' + d.top.length; }
 App.registerTab({
-  id: 'top', narrow: true, label: '상위 ETF', controls: ['date'], action: 'topEtf', params: s => ({ date: s.date }),
-  prefetch: () => [['race', { n: 20 }]],
+  id: 'top', narrow: true, label: 'ETF 상세', controls: ['date', 'scope'], action: 'topEtf',
+  params: s => (s.scope && s.scope !== '50' ? { date: s.date, n: s.scope } : { date: s.date }),   // 상위 50 = 기본 조회(요약 탭·첫 화면 묶음과 같은 조회)
   render(d, root, A) {
-    const N = d.top.length;
-    // ① 상위 20 ETF 막대
-    const s1 = A.section(root, '상위 20 ETF', `기준일 ${dlabel(d.date)} · NAV(조원) · 색 = 운용사`);
+    const N = d.top.length, all = d.scope === 'all', L = scopeLabel(d), LN = all ? '전체' : `상위${N}`;
+    // ⓪ 카드 요약 — 범위 합계 + 운용사별(종목 수·NAV·범위 내 비중). 웹 화면은 같은 내용을 상단 카드로 보여 주고 이 줄은 숨김
+    A.tiles(root, [[`${L} 합계`, A.num(N) + '종목', `NAV ${A.eok(d.topTotal)}조원 · 시장 전체의 ${A.share(d.topTotal / d.total * 100)}`]]
+      .concat(d.byMgr.map(x => [x.top, A.num(x.n) + '종목', `NAV ${A.eok(x.nav)}조원 · ${L} 합계의 ${A.share(x.share)}`])));
+    // ① NAV 막대 — 범위만큼(전체는 상위 100개까지)
+    const nb = Math.min(N, SCOPE_BAR_MAX), tb = d.top.slice(0, nb);
+    const s1 = A.section(root, all ? `NAV 상위 ${nb} ETF (전체 ${A.num(N)}종목 중)` : `${L} ETF`, `기준일 ${dlabel(d.date)} · NAV(조원) · 색 = 운용사` + (all && N > nb ? ` · 전체는 종목이 많아 막대는 상위 ${nb}개까지(전 종목은 아래 목록)` : ''));
     const chipBox1 = A.div(s1);
-    const t20 = d.top.slice(0, 20);
-    const chart = A.bar(A.canvas(s1, 'tall'), t20.map(r => r.name), [{ label: 'NAV', data: t20.map(r => r.nav), colors: t20.map(r => A.color(r.top)) }], { horizontal: true, noLegend: true, noTooltip: true, padRight: 40, labels: { mode: 'end', fmt: v => A.eok(v) } });
-    mgrChips(A, chipBox1, { chart: chart, rowsTop: t20.map(r => r.top) });
+    const cv = A.canvas(s1, 'tall'); cv.parentNode.style.height = Math.max(460, nb * 19 + 50) + 'px';   // 막대 1개 약 19px(20개 = 기존 높이)
+    const chart = A.bar(cv, tb.map(r => r.name), [{ label: 'NAV', data: tb.map(r => r.nav), colors: tb.map(r => A.color(r.top)) }], { horizontal: true, noLegend: true, noTooltip: true, padRight: 40, labels: { mode: 'end', fmt: v => A.eok(v) } });
+    mgrChips(A, chipBox1, { chart: chart, rowsTop: tb.map(r => r.top) });
 
-    // ② bar chart race (상위 20)
-    const s2 = A.section(root, 'NAV 상위 20 변천 (2021년 이후 월별)');
-    const holder = A.div(s2, 'empty', '변천 자료를 불러오는 중…');
-    A.call('race', { n: 20 }).then(r => {
-      if (!holder.isConnected) return;
-      holder.remove();
-      const frames = raceFrames(r); if (!frames.length) return;
-      let i = frames.findIndex(f => f.ym === d.date.slice(0, 7)); if (i < 0) i = frames.length - 1;
-      // 슬라이더 아래: 상위 20 내 운용사별 M/S 막대 + (v24) 유형별 M/S 막대(유형 순서·색은 다른 탭과 같음)
-      const seen = {}; frames.forEach(f => f.rows.forEach(x => { if (x.type) seen[x.type] = 1; }));
-      const tk = A.meta.typeOrder.concat(Object.keys(seen).filter(t => A.meta.typeOrder.indexOf(t) < 0));
-      A.race(s2, frames, { n: 20, rowH: 28, step: 900, start: i, ms: true, typeMs: Object.keys(seen).length ? { keys: tk, color: tc, note: F3_NOTE } : null });   // v26: 유형 = 유형최종3, 막대 바로 아래 주석(v28: 내부 용어 없이)
-    }).catch(e => { holder.className = 'error'; holder.textContent = e.message; });
-
-    // ③ 상위 50 요약 + ④ 목록 (v18: 한 섹션으로 묶고 제목·운용사 칩을 스크롤 고정)
-    const s3 = A.section(root, `NAV 상위 ${N} ETF`);
+    // ② 운용사별 요약 + 종목 목록 (v18: 한 섹션으로 묶고 제목·운용사 칩을 스크롤 고정)
+    const s3 = A.section(root, all ? `전체 ETF (${A.num(N)}종목)` : `NAV ${L} ETF`);
     const chipBox2 = A.div(s3, 'sticky-chips');
     stickyHead(s3);
     A.div(s3, 'sub-h', '운용사별 요약');
     const host3 = A.div(s3, '', A.table(d.byMgr, [
-      { h: '운용사', f: r => A.sw(r.top) + r.top, l: 1 }, { h: `상위${N} 내 종목수`, k: 'n' }, { h: 'NAV 합계(조원)', f: r => A.eok(r.nav) }, { h: `상위${N} 내 비중`, f: r => A.share(r.share) }, { h: '시장 전체 대비', f: r => A.share(r.nav / d.total * 100) }
-    ], { attr: r => `data-top="${r.top}"`, total: { '운용사': '합계', [`상위${N} 내 종목수`]: N, 'NAV 합계(조원)': A.eok(d.topTotal), [`상위${N} 내 비중`]: '100.0%', '시장 전체 대비': A.share(d.topTotal / d.total * 100) } }));
-    A.div(s3, 'sub-h', `종목 목록 (${N}종목)`);
+      { h: '운용사', f: r => A.sw(r.top) + r.top, l: 1 }, { h: `${LN} 내 종목수`, f: r => A.num(r.n) }, { h: 'NAV 합계(조원)', f: r => A.eok(r.nav) }, { h: `${LN} 내 비중`, f: r => A.share(r.share) }
+    ].concat(all ? [] : [{ h: '시장 전체 대비', f: r => A.share(r.nav / d.total * 100) }]),   // 전체 범위는 '범위 내 비중' = '시장 전체 대비' 라 한 열만
+    { attr: r => `data-top="${r.top}"`, total: { '운용사': '합계', [`${LN} 내 종목수`]: A.num(N), 'NAV 합계(조원)': A.eok(d.topTotal), [`${LN} 내 비중`]: '100.0%', '시장 전체 대비': A.share(d.topTotal / d.total * 100) } }));
+    A.div(s3, 'sub-h', `종목 목록 (${A.num(N)}종목)`);
     const host4 = A.div(s3, '', A.table(d.top, [
       { h: '순위', k: 'rank' }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 }, { h: '유형', k: 'type', l: 1 },
-      { h: 'NAV(조원)', f: r => A.eok(r.nav) }, { h: '시장 비중', f: r => A.share(r.share) }
+      { h: 'NAV(조원)', f: r => navSmall(A, r.nav) }, { h: '시장 비중', f: r => A.share(r.share) }
     ], { attr: r => `data-top="${r.top}"` }));
     mgrChips(A, chipBox2, { hosts: [host3], filterHosts: [host4], reset: true, hint: '운용사 선택 시 요약 강조·목록은 해당 운용사만 표시' });
   }
