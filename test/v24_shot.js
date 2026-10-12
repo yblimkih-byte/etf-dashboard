@@ -1,6 +1,6 @@
 /* v24 화면 점검 (web.html = Vercel 빌드, index.html = Apps Script 화면) — CHROME_PATH=/opt/pw-browsers/chromium node v24_shot.js
  *  요약(핵심 요약 표·상단 문장 없음) · 첫 화면 묶음(boot)으로 서버 조회 생략 · 운용사별(폭·표 폭·기여도 제거·증감률 비교) ·
- *  유형별(폭·세로 배치·히트맵 띠) · 상위 ETF(폭·유형별 M/S 막대) · 상위 5개사 유형 비중(폭) · 신규상장(유형별) */
+ *  유형별(폭·세로 배치·히트맵 띠) · NAV 상위 20 변천(v39: 운용사별 NAV 탭 맨 아래 — 폭·유형별 M/S 막대) · 상위 5개사 유형 비중(폭) · 신규상장(유형별) */
 const { chromium } = require('playwright'), fs = require('fs');
 const OUT = __dirname + '/shots_v24';
 (async () => {
@@ -66,19 +66,19 @@ const OUT = __dirname + '/shots_v24';
     await p.evaluate(() => App.show('shares')); await wait();
     check('유형 비중 탭: 폭 제한', await p.evaluate(() => document.body.classList.contains('narrow-tab')));
 
-    // 상위 ETF
-    await p.evaluate(() => App.show('top')); await wait();
+    // NAV 상위 20 변천 — v39: 'ETF 상세'(이전 상위 ETF) 탭에서 운용사별 NAV 탭 맨 아래로 옮김
+    await p.evaluate(() => App.show('mgr')); await wait();
     await p.waitForSelector('.race-ms', { timeout: 60000 }); await p.waitForTimeout(400);
     const top = await p.evaluate(() => {
       const bars = [...document.querySelectorAll('.race-ms')].map(x => ({ l: x.querySelector('.race-ms-l').textContent, segs: [...x.querySelectorAll('.race-ms-seg')].filter(s => s.style.display !== 'none').map(s => s.title.split(' · ')[0] + ' ' + s.textContent) }));
       return { narrow: document.body.classList.contains('narrow-tab'), bars };
     });
-    check('상위 ETF: 폭 제한', top.narrow);
-    check('상위 ETF: 운용사별 M/S 아래 유형별 M/S 막대', top.bars.length === 2 && /운용사별/.test(top.bars[0].l) && /유형별/.test(top.bars[1].l) && top.bars[1].segs.length >= 2, top.bars.map(x => x.l + ': ' + x.segs.join(', ')).join(' / '));
+    check('변천(운용사별 NAV 탭): 폭 제한', top.narrow);
+    check('변천: 운용사별 M/S 아래 유형별 M/S 막대', top.bars.length === 2 && /운용사별/.test(top.bars[0].l) && /유형별/.test(top.bars[1].l) && top.bars[1].segs.length >= 2, top.bars.map(x => x.l + ': ' + x.segs.join(', ')).join(' / '));
     const ym0 = await p.evaluate(() => document.querySelector('.race-ym').textContent);
     await p.evaluate(() => { const r = document.querySelector('.race-range'); r.value = '0'; r.dispatchEvent(new Event('input')); });
     const after = await p.evaluate(() => ({ ym: document.querySelector('.race-ym').textContent, t: [...document.querySelectorAll('.race-ms')][1].querySelector('.race-ms-seg').title }));
-    check('상위 ETF: 슬라이더 이동 시 유형별 막대 갱신', after.ym !== ym0, ym0 + ' → ' + after.ym + ' (' + after.t + ')');
+    check('변천: 슬라이더 이동 시 유형별 막대 갱신', after.ym !== ym0, ym0 + ' → ' + after.ym + ' (' + after.t + ')');
     await p.evaluate(() => { const r = document.querySelector('.race-range'); r.value = r.max; r.dispatchEvent(new Event('input')); });
     await p.evaluate(() => { const r = document.querySelector('.race'); window.scrollTo(0, r.getBoundingClientRect().top + window.scrollY - 220); }); await p.waitForTimeout(300);
     await p.screenshot({ path: `${OUT}/${name}_top.png`, fullPage: false });

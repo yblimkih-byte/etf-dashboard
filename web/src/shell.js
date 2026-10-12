@@ -62,10 +62,10 @@
           { k: '시장 대비 과대', v: esc(gap[0].type), txt: 1, b: bd(gap[0].d, pp(gap[0].d)), l1: `${esc(who)} ${A.share(gap[0].s)}`, l2: '시장 전체 유형 비중과의 차이' },
           { k: '시장 대비 과소', v: esc(lo.type), txt: 1, b: bd(lo.d, pp(lo.d)), l1: `${esc(who)} ${A.share(lo.s)}`, l2: '시장 전체 유형 비중과의 차이' }] };
     },
-    top(d) {
-      const t = d.top[0], n = d.top.length, f = d.byMgr.find(x => x.top === FOCUS), c = d.topTotal / d.total * 100;
-      return { lines: [`상위 ${n}개 ETF = 시장 순자산의 <b>${A.share(c)}</b>, 1위 ${esc(t.name)} ${jo(t.nav)}`].concat(f ? [`상위 ${n}개 중 ${FOCUS} ${f.n}종목 (${A.share(f.share)})`] : []),
-        cards: d.byMgr.map(x => ({ k: esc(x.top), c: A.meta.colors[x.top], f: x.top === FOCUS, v: U(x.n, '종목'), l1: `NAV ${A.eok(x.nav)}조원`, l2: `상위 ${n}개 합계의 ${A.share(x.share)}` })) };
+    top(d) {   // v39: ETF 상세 — 상단 '범위'(전체·상위 50개·상위 100개)에 따라 문장·카드가 바뀜
+      const t = d.top[0], n = d.top.length, f = d.byMgr.find(x => x.top === FOCUS), c = d.topTotal / d.total * 100, all = d.scope === 'all', L = all ? `전체 ${A.num(n)}종목` : `상위 ${n}개`;
+      return { lines: [all ? `전체 ${A.num(n)}종목 · 시장 순자산 <b>${jo(d.total)}</b>, 1위 ${esc(t.name)} ${jo(t.nav)}` : `상위 ${n}개 ETF = 시장 순자산의 <b>${A.share(c)}</b>, 1위 ${esc(t.name)} ${jo(t.nav)}`].concat(f ? [`${L} 중 ${FOCUS} ${A.num(f.n)}종목 (NAV 기준 ${A.share(f.share)})`] : []),
+        cards: d.byMgr.map(x => ({ k: esc(x.top), c: A.meta.colors[x.top], f: x.top === FOCUS, v: U(A.num(x.n), '종목'), l1: `NAV ${A.eok(x.nav)}조원`, l2: `${all ? '전체' : `상위 ${n}개`} 합계의 ${A.share(x.share)}` })) };
     },
     new(d) {
       if (!d.items.length) return { lines: [`${esc(d.year)}년 상장 종목 중 조건에 해당하는 종목 없음`] };

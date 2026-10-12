@@ -1,7 +1,7 @@
 <script>
 /* ── 코어: 상태·API·컨트롤·탭 레지스트리·차트/표 헬퍼 ───────────────────────── */
 const App = {
-  meta: null, tabs: [], state: { tab: null, date: null, from: null, to: null, mgr: '', filter: 'exBond', year: null, ref: 'py', focus: false },
+  meta: null, tabs: [], state: { tab: null, date: null, from: null, to: null, mgr: '', filter: 'exBond', year: null, ref: 'py', scope: '50', focus: false },   // v39: scope = ETF 상세 범위(all|50|100)
   charts: [],
   FOCUS: '한투',   // v19: '우리 회사' 강조 대상(전역 토글) — 설명 문장·카드·차트·표·히트맵 공통
   REF_OPTS: [{ value: 'py', label: '전년말' }, { value: 'pq', label: '전분기말' }, { value: 'pm', label: '전월말' }, { value: 'ly', label: '전년동월' }],
@@ -138,6 +138,11 @@ const App = {
       if (c === 'filter') {
         const w = document.createElement('div'); w.className = 'ctl'; w.innerHTML = `<label>ETF 유형</label><div class="seg"><button data-v="exBond">채권/금리형 제외</button><button data-v="all">전체</button></div>`;
         w.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.v === s.filter); b.onclick = () => { s.filter = b.dataset.v; this.renderControls(); this.load(); }; });
+        el.appendChild(w);
+      }
+      if (c === 'scope') {   // v39: ETF 상세 범위 — 전체 / 상위 50개 / 상위 100개 (카드·막대·목록이 이 범위를 따름)
+        const w = document.createElement('div'); w.className = 'ctl'; w.innerHTML = `<label>범위</label><div class="seg"><button data-v="all">전체</button><button data-v="50">상위 50개</button><button data-v="100">상위 100개</button></div>`;
+        w.querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.v === (s.scope || '50')); b.onclick = () => { if (s.scope === b.dataset.v) return; s.scope = b.dataset.v; this.renderControls(); this.load(); }; });
         el.appendChild(w);
       }
       if (c === 'ref') {   // v19: 비교 기준(전년말·전분기말·전월말·전년동월)

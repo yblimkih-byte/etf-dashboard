@@ -173,7 +173,7 @@ function bootJson_(cachedOnly) {
   }
   return '{"ok":true,"data":{"meta":' + JSON.stringify(m) + ',"pre":[' + pre.join(',') + ']}}';
 }
-/** 기본 기준일 화면의 조회 목록 — '요약' 탭(Tabs.html)이 보내는 6건과 같은 파라미터. 운용사별·유형별·유형 비중·상위 ETF·신규상장 탭의 기본 조회도 겸함 */
+/** 기본 기준일 화면의 조회 목록 — '요약' 탭(Tabs.html)이 보내는 6건과 같은 파라미터. 운용사별·유형별·유형 비중·ETF 상세(상위 50)·신규상장 탭의 기본 조회도 겸함 */
 function bootList_(date) {
   return [['byMgr', { date: date, ref: 'py' }], ['overview', { date: date }], ['byType', { date: date, ref: 'py' }], ['topEtf', { date: date }],
     ['newListings', { date: date, year: date.slice(0, 4), filter: 'exBond' }], ['shares', { date: date, mgr: '' }]];
@@ -438,17 +438,19 @@ function apiShares_(p) {
   return { date: date, groups: out, mgrs: mgrs, selected: p.mgr || null };
 }
 
-/** 상위 ETF 50 */
+/** ETF 상세(v39, 이전 '상위 ETF') — 기준일 NAV 순 상위 n. p.n = 50(기본, 없으면 50) | 100 | 'all'(NAV>0 전 종목)
+ *  → {date, scope('50'|'100'|'all'), count(NAV>0 종목 수), total, topTotal, top[{rank, code, name, mgr, top, type, nav, share}], byMgr[{top, n, nav, share(범위 내 비중)}]} */
 function apiTopEtf_(p) {
   const months = aggMarket_();
   const date = p.date || defaultDate_(months);
   const ctx = ctx_();
-  const recs = snapshot_(date).slice().sort((a, b) => b.nav - a.nav);
+  const recs = snapshot_(date).filter(r => r.nav > 0).sort((a, b) => b.nav - a.nav);
   const total = recs.reduce((s, r) => s + r.nav, 0);
-  const top = recs.slice(0, CFG.TOP_N).map((r, i) => { const g = groupOf_(r, ctx); return { rank: i + 1, code: r.code, name: r.name, mgr: g.short, top: g.top, type: g.f3, nav: r.nav, share: total ? r.nav / total * 100 : 0 }; });
+  const scope = p.n === 'all' ? 'all' : (+p.n === 100 ? '100' : String(CFG.TOP_N));   // 허용 값만(캐시 키가 늘지 않게)
+  const top = recs.slice(0, scope === 'all' ? recs.length : +scope).map((r, i) => { const g = groupOf_(r, ctx); return { rank: i + 1, code: r.code, name: r.name, mgr: g.short, top: g.top, type: g.f3, nav: r.nav, share: total ? r.nav / total * 100 : 0 }; });
   const topTotal = top.reduce((s, t) => s + t.nav, 0);
   const byMgr = CFG.TOP5.concat(['기타']).map(k => { const xs = top.filter(t => t.top === k); const nav = xs.reduce((s, t) => s + t.nav, 0); return { top: k, n: xs.length, nav: nav, share: topTotal ? nav / topTotal * 100 : 0 }; });
-  return { date: date, total: total, topTotal: topTotal, top: top, byMgr: byMgr };
+  return { date: date, scope: scope, count: recs.length, total: total, topTotal: topTotal, top: top, byMgr: byMgr };
 }
 
 /** bar chart race 자료: 월별 상위 N (agg_상위ETF월별)

@@ -399,10 +399,11 @@ function warmParams_(date, dv, months) {
   if (to) { const py = months.filter(x => x.ym < to.slice(0, 4) + '-01').pop(); const f = py && dv.filter(d => d > py.date)[0]; if (f) from = f; }
   // 첫 화면 묶음(bootList_: 요약 탭 6건 = 각 탭 기본 조회) → 히트맵 → 거래대금
   const list = bootList_(date).concat([['treemap', { date: date, ref: 'py' }], ['theme', { date: date, ref: 'py' }]]);   // v29: 테마 맵
+  list.push(['topEtf', { date: date, n: '100' }], ['topEtf', { date: date, n: 'all' }]);   // v39: ETF 상세 범위(상위 100개·전체) — 상위 50은 첫 화면 묶음에 포함
   if (to) list.push(['turnover', { from: from, to: to }]);
   return list;
 }
-/** v24 예열: 기본 기준일(전월말, 첫 화면) → 최근 영업일 → 상위 ETF 변천 순으로, 캐시에 있으면 보존 기간만 연장(다시 넣기)·없으면 계산.
+/** v24 예열: 기본 기준일(전월말, 첫 화면) → 최근 영업일 → NAV 상위 20 변천 순으로, 캐시에 있으면 보존 기간만 연장(다시 넣기)·없으면 계산.
  *  5시간마다(밤낮 없이) 반복 → 캐시 만료(6시간)로 느려지는 시간대가 없음. 적재·집계로 바뀐 조회만 다시 계산하므로 보통 수 초~2분
  *  (v17~v23: 캐시에 있으면 아무것도 하지 않아 보존 기간이 늘지 않음 → 넣은 지 6시간 뒤 만료되어 오후·야간에 첫 조회가 느렸음, 22~09시 예열 없음) */
 function warmAll() {
