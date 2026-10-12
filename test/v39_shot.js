@@ -1,6 +1,6 @@
 /* v39 화면 점검 (web.html = Vercel 빌드, index.html = Apps Script 화면) — node build_page.js && node build_web.js && CHROME_PATH=/opt/pw-browsers/chromium node v39_shot.js
  *  'ETF 상세'(이전 '상위 ETF'): 탭 이름 · 상단 범위 버튼(전체·상위 50개·상위 100개, 기본 상위 50) · 범위에 따라 카드 요약·NAV 막대·목록 변화 ·
- *  NAV 상위 20 변천(bar chart race)은 운용사별 NAV 탭 맨 아래로 */
+ *  NAV 상위 20 변천(bar chart race)은 운용사별 NAV 탭 맨 아래로 · (v40) 운용사 선택 시 종목 수·행 간격 */
 const { chromium } = require('playwright'), fs = require('fs');
 const OUT = __dirname + '/shots_v39';
 (async () => {
@@ -72,6 +72,23 @@ const OUT = __dirname + '/shots_v39';
     const chip = await p.evaluate(() => { const c = [...document.querySelectorAll('.sticky-chips .chip-m')].find(b => b.dataset.k === '한투'); c.click(); const t = [...document.querySelectorAll('#view > .section')][1].querySelectorAll('table.tbl')[1]; return { shown: [...t.querySelectorAll('tbody tr')].filter(r => !r.classList.contains('fold')).length }; });
     const hanN = await p.evaluate(() => App.call('topEtf', { date: App.state.date, n: 'all' }).then(d => d.byMgr.find(x => x.top === '한투').n));
     check('전체: 운용사 칩(한투) → 목록이 한투 종목만', chip.shown === hanN, chip.shown + ' / ' + hanN);
+    // v40: 운용사를 고르면 제목·소제목에 그 운용사 종목 수, 보이는 행 사이 간격이 모두 같음(숨긴 행이 자리를 차지하지 않음)
+    const v40 = await p.evaluate(async () => {
+      await new Promise(r => setTimeout(r, 500));
+      const s3 = [...document.querySelectorAll('#view > .section')][1], t = s3.querySelectorAll('table.tbl')[1];
+      const vis = [...t.querySelectorAll('tbody tr')].filter(r => getComputedStyle(r).display !== 'none'), tops = vis.map(r => r.getBoundingClientRect().top), gaps = tops.slice(1).map((y, i) => Math.round((y - tops[i]) * 10) / 10);
+      const hid = [...t.querySelectorAll('tbody tr.fold')].map(r => r.getBoundingClientRect().height);
+      const out = { title: s3.querySelector('.h2').textContent, sub: [...s3.querySelectorAll('.sub-h')][1].textContent, gapMin: Math.min(...gaps), gapMax: Math.max(...gaps), hidMax: Math.max(0, ...hid) };
+      const q = s3.querySelector('.tbl-q'); q.value = 'ACE'; q.dispatchEvent(new Event('input')); out.cnt = s3.querySelector('.tbl-cnt').textContent; q.value = ''; q.dispatchEvent(new Event('input'));
+      [...document.querySelectorAll('.sticky-chips .chip-m')].find(b => b.dataset.k === '').click();
+      out.title0 = s3.querySelector('.h2').textContent; out.sub0 = [...s3.querySelectorAll('.sub-h')][1].textContent;
+      return out;
+    });
+    const NA = (await p.evaluate(() => App.call('topEtf', { date: App.state.date, n: 'all' }).then(d => d.count))).toLocaleString('ko-KR');
+    check('운용사 선택 → 제목·소제목 = 그 운용사 종목 수', v40.title === `전체 ETF (${NA}종목 중 한투 ${hanN}종목)` && v40.sub === `종목 목록 (한투 ${hanN}종목)`, v40.title + ' / ' + v40.sub);
+    check('운용사 선택 → 보이는 행 간격 동일·숨긴 행 높이 0', v40.gapMax - v40.gapMin < 1 && v40.hidMax === 0, `간격 ${v40.gapMin}~${v40.gapMax}px · 숨긴 행 최대 ${v40.hidMax}px`);
+    check('운용사 선택 + 검색 → 건수는 보이는 행만', /^\d+행$/.test(v40.cnt) && +v40.cnt.replace('행', '') <= hanN, v40.cnt);
+    check('초기화 → 제목·소제목 원래대로', v40.title0 === `전체 ETF (${NA}종목)` && v40.sub0 === `종목 목록 (${NA}종목)`, v40.title0 + ' / ' + v40.sub0);
 
     // 다른 탭에 갔다 와도 범위 유지 · 요약 탭은 영향 없음
     await p.evaluate(() => App.show('summary')); await wait();
