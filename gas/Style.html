@@ -102,10 +102,9 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeri
 /* 표 행 강조/흐림 */
 .tbl tr.hl td{background:#f3f2ee;font-weight:500}
 .tbl tr.dim td{opacity:.35}
-/* 접힘(필터) 애니메이션 */
-.tbl td{transition:padding .35s ease,line-height .35s ease,font-size .35s ease,opacity .25s ease}
-.tbl tr.fold td{padding-top:0;padding-bottom:0;line-height:0;font-size:0;opacity:0;border-bottom:0}
-.tbl tr.fold td .sw{height:0;margin:0}
+/* 접힘(필터): v40 — 숨긴 행은 자리를 차지하지 않음(이전 접힘 애니메이션은 숨긴 행마다 1px 안팎이 남아 보이는 행 사이 간격이 고르지 않았음) */
+.tbl td{transition:opacity .25s ease}
+.tbl tr.fold{display:none}
 .tbl tr.sep td{border-top:2px solid var(--rule);padding-top:20px}
 /* bar chart race (DOM) */
 .race-stage{position:relative;overflow:hidden;padding-left:28px}

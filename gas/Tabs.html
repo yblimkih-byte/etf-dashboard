@@ -402,12 +402,15 @@ function stickyHead(sec) {
 }
 /** v18: 신규상장 목록 NAV(조원) — 소수 둘째 자리(셋째 자리에서 반올림), 둘째 자리까지 0.00 이면 셋째 자리까지 */
 function navSmall(A, v) { const t = A.eok(v, 2); return /^-?0\.00$/.test(t) && v ? A.eok(v, 3) : t; }
+/** 운용사 칩: chart(막대 강조) · hosts(표 행 강조) · filterHosts(표 행 필터).
+ *  v40: counts = [{el, fmt(sel, n)}] — 필터 뒤 보이는 종목 수(n)로 제목·소제목 글자를 바꿈(운용사를 고르면 그 운용사 종목 수) */
 function mgrChips(A, parent, opts) {
   const keys = GROUPS();
   return A.chips(parent, keys, { hint: opts.hint || '운용사 선택 시 해당 운용사 상품 강조', reset: !!opts.reset, onSelect: sel => {
     if (opts.chart) { opts.chart.data.datasets[0].backgroundColor = opts.rowsTop.map(t => !sel || t === sel ? A.focusColor(A.color(t), t) : A.fade(A.color(t), 0.18)); opts.chart.update(); }
     (opts.hosts || []).forEach(h => A.highlightRows(h, sel));
-    (opts.filterHosts || []).forEach(h => A.filterRows(h, sel));
+    (opts.filterHosts || []).forEach(h => { A.filterRows(h, sel); const q = h.querySelector('.tbl-q'); if (q && q.value) q.dispatchEvent(new Event('input')); });   // 검색 중이면 검색 건수도 다시
+    if (opts.counts) { const n = (opts.filterHosts || []).reduce((t, h) => t + h.querySelectorAll('tbody tr[data-top]:not(.fold)').length, 0); opts.counts.forEach(c => { if (c.el) c.el.innerHTML = c.fmt(sel, n); }); }
   } });
 }
 
@@ -455,7 +458,8 @@ App.registerTab({
     mgrChips(A, chipBox1, { chart: chart, rowsTop: tb.map(r => r.top) });
 
     // ② 운용사별 요약 + 종목 목록 (v18: 한 섹션으로 묶고 제목·운용사 칩을 스크롤 고정)
-    const s3 = A.section(root, all ? `전체 ETF (${A.num(N)}종목)` : `NAV ${L} ETF`);
+    const t3 = sel => all ? `전체 ETF (${A.num(N)}종목${sel ? '' : ')'}` : `NAV ${L} ETF`;
+    const s3 = A.section(root, t3(null));
     const chipBox2 = A.div(s3, 'sticky-chips');
     stickyHead(s3);
     A.div(s3, 'sub-h', '운용사별 요약');
@@ -463,12 +467,14 @@ App.registerTab({
       { h: '운용사', f: r => A.sw(r.top) + r.top, l: 1 }, { h: `${LN} 내 종목수`, f: r => A.num(r.n) }, { h: 'NAV 합계(조원)', f: r => A.eok(r.nav) }, { h: `${LN} 내 비중`, f: r => A.share(r.share) }
     ].concat(all ? [] : [{ h: '시장 전체 대비', f: r => A.share(r.nav / d.total * 100) }]),   // 전체 범위는 '범위 내 비중' = '시장 전체 대비' 라 한 열만
     { attr: r => `data-top="${r.top}"`, total: { '운용사': '합계', [`${LN} 내 종목수`]: A.num(N), 'NAV 합계(조원)': A.eok(d.topTotal), [`${LN} 내 비중`]: '100.0%', '시장 전체 대비': A.share(d.topTotal / d.total * 100) } }));
-    A.div(s3, 'sub-h', `종목 목록 (${A.num(N)}종목)`);
+    const subL = A.div(s3, 'sub-h', `종목 목록 (${A.num(N)}종목)`);
     const host4 = A.div(s3, '', A.table(d.top, [
       { h: '순위', k: 'rank' }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 }, { h: '유형', k: 'type', l: 1 },
       { h: 'NAV(조원)', f: r => navSmall(A, r.nav) }, { h: '시장 비중', f: r => A.share(r.share) }
     ], { attr: r => `data-top="${r.top}"` }));
-    mgrChips(A, chipBox2, { hosts: [host3], filterHosts: [host4], reset: true, hint: '운용사 선택 시 요약 강조·목록은 해당 운용사만 표시' });
+    mgrChips(A, chipBox2, { hosts: [host3], filterHosts: [host4], reset: true, hint: '운용사 선택 시 요약 강조·목록은 해당 운용사만 표시',
+      counts: [{ el: s3.querySelector('.h2'), fmt: (sel, n) => sel ? (all ? `${t3(sel)} 중 ${sel} ${A.num(n)}종목)` : `${t3(sel)} 중 ${sel} ${A.num(n)}종목`) : t3(null) },   // v40: 운용사를 고르면 그 운용사 종목 수
+        { el: subL, fmt: (sel, n) => sel ? `종목 목록 (${sel} ${A.num(n)}종목)` : `종목 목록 (${A.num(N)}종목)` }] });
   }
 });
 
@@ -607,14 +613,15 @@ function thDetail(A, host, d, M, key) {
   A.div(s, 'sub-h', '운용사별 NAV·점유율 (상위 5개사 + 기타)');
   const dd = { date: d.date, ref: d.ref, refLabel: d.refLabel };
   host._charts.push(twoRowStack(A, A.canvas(s, 'short'), dd, GROUPS(), k => g.topsB[k] || 0, k => g.tops[k] || 0, k => A.color(k), true));
-  A.div(s, 'sub-h', `종목 목록 (${g.items.length}종목, NAV 순)`);
+  const subL = A.div(s, 'sub-h', `종목 목록 (${g.items.length}종목, NAV 순)`);
   const chipBox = A.div(s, 'sticky-chips');
   const tb = A.div(s, '', A.table(g.items, [{ h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 },
     { h: '상품구조', k: 'struct', l: 1 }, { h: '지역', k: 'region', l: 1 }, { h: 'NAV(조원)', f: r => r.nav > 0 ? navSmall(A, r.nav) : '상장폐지' },
     { h: '증감(조원)', g: RL + ' 대비', f: r => navSmall(A, r.nav - r.base).replace(/^(?=\d)/, r.nav - r.base > 0 ? '+' : ''), cls: r => r.nav - r.base < 0 ? 'neg' : '' },
     { h: '증감률', g: RL + ' 대비', f: r => r.base > 0 ? A.pct((r.nav / r.base - 1) * 100) : (r.nav > 0 ? '신규' : '-'), cls: r => r.base > 0 && r.nav < r.base ? 'neg' : '' },
     { h: '상장일', f: r => r.listDd ? (r.listDd > M.six ? `<b>${r.listDd}</b>` : r.listDd) : '' }], { attr: r => `data-top="${GROUPS().indexOf(r.top) >= 0 ? r.top : '기타'}"` }));
-  mgrChips(A, chipBox, { filterHosts: [tb], reset: true, hint: '운용사 선택 시 해당 운용사 종목만 표시' });
+  mgrChips(A, chipBox, { filterHosts: [tb], reset: true, hint: '운용사 선택 시 해당 운용사 종목만 표시',
+    counts: [{ el: subL, fmt: (sel, n) => sel ? `종목 목록 (${sel} ${n}종목 · 전체 ${g.items.length}종목, NAV 순)` : `종목 목록 (${g.items.length}종목, NAV 순)` }] });   // v40
   A.div(s, 'note', '상장일 굵은 글씨 = 최근 6개월 내 상장 · 상장일은 최근 1년 이내 상장 종목만 표시');
 }
 App.registerTab({
@@ -747,7 +754,8 @@ App.registerTab({
     const tb = A.div(s3, '', A.table(H.items.map((r, i) => Object.assign({ rank: i + 1 }, r)), [{ h: '순위', k: 'rank' }, { h: '종목코드', k: 'code', l: 1 }, { h: '종목명', f: r => hdEsc(r.name), l: 1 },
       { h: '운용사', f: r => A.sw(hdTop(r.top)) + hdEsc(r.mgr), l: 1 }, { h: '유형', f: r => hdEsc(r.type || ''), l: 1 }, { h: '구성 비중', f: r => A.num(r.w, 2) + '%' },
       { h: 'NAV(조원)', f: r => r.nav > 0 ? navSmall(A, r.nav) : '-' }, { h: '보유 추정(조원)', f: r => navSmall(A, r.amt) }], { attr: r => `data-top="${hdTop(r.top)}"` }));
-    mgrChips(A, cb3, { filterHosts: [tb], reset: true, hint: '운용사 선택 시 해당 운용사 종목만 표시' });
+    const t3 = `${hdEsc(sel.name)}을(를) 담은 ETF ${H.items.length}종목`;
+    mgrChips(A, cb3, { filterHosts: [tb], reset: true, hint: '운용사 선택 시 해당 운용사 종목만 표시', counts: [{ el: s3.querySelector('.h2'), fmt: (k, n) => k ? `${t3} 중 ${k} ${n}종목` : t3 }] });   // v40
     A.div(s3, 'note', `${hdF(info) ? `구성 비중 = ETF 구성종목 PDF(FunETF 공개 자료${info.k ? ', 일부 한국투자증권 Open API' : ''})의 비중(${d.date} 기준) · 국내·해외 주식, ETF마다 비중 상위 600종목까지` : `구성 비중 = 한국투자증권 Open API ETF 구성종목의 평가금액 ÷ ETF 순자산(${d.date} 기준, 매주 월요일 갱신) · 국내 상장 종목만, ETF마다 비중 상위 30종목까지`} · NAV = KRX 순자산총액 · 찾은 표기: ${hdEsc((d.terms || [st.q]).join(', '))}`);
   }
 });

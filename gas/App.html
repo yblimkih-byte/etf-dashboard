@@ -603,7 +603,7 @@ const App = {
       rows.sort((a, b) => { const ta = a.cells[i] ? a.cells[i].textContent.trim() : '', tbb = b.cells[i] ? b.cells[i].textContent.trim() : ''; const na = num(ta), nb = num(tbb); const r = na !== null && nb !== null ? na - nb : ta.localeCompare(tbb, 'ko'); return r * state.dir; });
       rows.forEach(r => body.appendChild(r)); if (total) body.appendChild(total);
     });
-    if (q) q.oninput = () => { const s = q.value.trim().toLowerCase(); let n = 0; dataRows().forEach(r => { const hit = !s || r.textContent.toLowerCase().indexOf(s) >= 0; r.classList.toggle('q-hide', !hit); if (hit) n++; }); cnt.textContent = s ? `${n}행` : ''; };
+    if (q) q.oninput = () => { const s = q.value.trim().toLowerCase(); let n = 0; dataRows().forEach(r => { const hit = !s || r.textContent.toLowerCase().indexOf(s) >= 0; r.classList.toggle('q-hide', !hit); if (hit && !r.classList.contains('fold')) n++; }); cnt.textContent = s ? `${n}행` : ''; };   // v40: 운용사 필터로 숨긴 행은 건수에서 제외
     if (csv) csv.onclick = () => {
       const head = [...tb.tHead.rows[tb.tHead.rows.length - 1].cells].map(c => c.textContent.trim());
       const lines = [head].concat([...body.rows].filter(r => !r.classList.contains('q-hide') && !r.classList.contains('fold') && !r.hidden).map(r => [...r.cells].map(c => c.textContent.trim())));
