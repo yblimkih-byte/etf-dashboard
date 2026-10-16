@@ -25,14 +25,14 @@ const OUT = __dirname + '/shots_v39';
       const view = document.getElementById('view'), secs = [...view.querySelectorAll(':scope > .section')], ch = App.charts[0];
       const seg = [...document.querySelectorAll('#controls .ctl')].find(c => /범위/.test(c.textContent));
       const tbls = secs[1] ? secs[1].querySelectorAll('table.tbl') : [];
-      const tiles = [...view.querySelectorAll(':scope > .grid:first-child .tile')];
+      const tiles = [...view.querySelectorAll(':scope > .head .tile')];   // v41: Apps Script 카드 = 웹과 같은 내용(화면 맨 위 탭 머리)
       const cards = [...document.querySelectorAll('#stats .cards .cd')];
       return {
         seg: seg ? [...seg.querySelectorAll('button')].map(x => x.textContent + (x.classList.contains('on') ? '*' : '')) : [],
         segFirst: (() => { const c = [...document.querySelectorAll('#controls .ctl')]; return c.map(x => x.querySelector('label') ? x.querySelector('label').textContent : x.textContent.trim()); })(),
         titles: secs.map(s => s.querySelector('.h2').textContent), bars: ch ? ch.data.labels.length : 0, cvH: ch ? Math.round(ch.canvas.parentNode.getBoundingClientRect().height) : 0,
         sumRows: tbls[0] ? tbls[0].querySelectorAll('tbody tr:not(.total)').length : 0, sumHead: tbls[0] ? [...tbls[0].querySelectorAll('thead th')].map(t => t.textContent) : [], sumTotal: tbls[0] ? tbls[0].querySelector('tr.total').textContent : '',
-        list: tbls[1] ? tbls[1].querySelectorAll('tbody tr').length : 0, tiles: tiles.map(t => t.querySelector('.k').textContent + '|' + t.querySelector('.v').textContent), tilesShown: tiles.length ? getComputedStyle(tiles[0].parentNode).display !== 'none' : false,
+        list: tbls[1] ? tbls[1].querySelectorAll('tbody tr').length : 0, tiles: tiles.map(t => t.querySelector('.k').textContent + '|' + t.querySelector('.v').textContent + '|' + t.querySelector('.d2').textContent), tilesShown: tiles.length ? getComputedStyle(tiles[0].parentNode).display !== 'none' : false, hlede: [...view.querySelectorAll(':scope > .head .ld')].map(x => x.textContent).join(' '),
         cards: cards.map(c => c.querySelector('.cd-k').textContent + '|' + c.querySelector('.cd-v').textContent + '|' + c.querySelector('.l2').textContent), lede: (document.getElementById('lede') || {}).textContent || '',
         race: !!view.querySelector('.race-bar, .race'), title: (document.getElementById('topTitle') || {}).textContent || '' };
     }, name);
@@ -45,9 +45,9 @@ const OUT = __dirname + '/shots_v39';
     check('막대 높이: 50개 → 1,000px 안팎', s50.cvH >= 950 && s50.cvH <= 1100, s50.cvH + 'px');
     if (name === 'web') {
       check('웹: 상단 카드 6개(운용사별 · 상위 50개 합계의 %) · 문장 상위 50개', s50.cards.length === 6 && s50.cards.every(c => /상위 50개 합계의/.test(c)) && /상위 50개 ETF/.test(s50.lede), s50.cards[0] + ' / ' + s50.lede.slice(0, 60));
-      check('웹: 화면 안 카드(타일) 줄은 숨김(상단 카드와 중복 방지)', !s50.tilesShown);
+      check('웹: 화면 안 타일 없음(상단 카드만)', !s50.tiles.length);
       check('웹: 상단 제목 = ETF 상세', s50.title === 'ETF 상세', s50.title);
-    } else check('Apps Script: 카드 요약 7개(상위 50 합계 + 운용사 6)', s50.tiles.length === 7 && /^상위 50 합계\|50종목$/.test(s50.tiles[0]) && s50.tilesShown, s50.tiles.slice(0, 3).join(' · '));
+    } else check('Apps Script: (v41) 결론 줄(상위 50개 합계) + 운용사 카드 6개(웹과 같음)', s50.tiles.length === 6 && s50.tiles.every(t => /상위 50개 합계의/.test(t)) && /상위 50개 ETF/.test(s50.hlede) && s50.tilesShown, s50.tiles.slice(0, 2).join(' · '));
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_top50.png`, fullPage: true });
 
     // 상위 100
@@ -57,7 +57,7 @@ const OUT = __dirname + '/shots_v39';
     check('상위 100: 제목·요약 머리글·합계', s100.titles[0] === '상위 100 ETF' && s100.titles[1] === 'NAV 상위 100 ETF' && /상위100 내 종목수/.test(s100.sumHead.join('|')) && /100/.test(s100.sumTotal), s100.titles.join(' / '));
     check('막대 높이: 100개 → 1,900px 안팎', s100.cvH >= 1850 && s100.cvH <= 2050, s100.cvH + 'px');
     if (name === 'web') check('웹: 카드·문장이 상위 100개 기준으로', s100.cards.every(c => /상위 100개 합계의/.test(c)) && /상위 100개 ETF/.test(s100.lede) && s100.cards.join() !== s50.cards.join(), s100.cards[0]);
-    else check('Apps Script: 카드 요약 상위 100 기준', /^상위 100 합계\|100종목$/.test(s100.tiles[0]) && s100.tiles.join() !== s50.tiles.join(), s100.tiles.slice(0, 2).join(' · '));
+    else check('Apps Script: 카드·결론 줄 상위 100 기준', s100.tiles.every(t => /상위 100개 합계의/.test(t)) && /상위 100개 ETF/.test(s100.hlede) && s100.tiles.join() !== s50.tiles.join(), s100.tiles.slice(0, 2).join(' · '));
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_top100.png`, fullPage: true });
 
     // 전체
@@ -66,7 +66,7 @@ const OUT = __dirname + '/shots_v39';
     check('전체: 목록 = NAV>0 전 종목, 막대는 상위 100개까지(안내 문구)', sAll.list === nAll && sAll.bars === Math.min(100, nAll) && /전체 [\d,]+종목 중/.test(sAll.titles[0]), `${sAll.bars}/${sAll.list}/${nAll} · ${sAll.titles[0]}`);
     check('전체: 목록 제목·요약 머리글(전체 내 종목수)', /^전체 ETF \([\d,]+종목\)$/.test(sAll.titles[1]) && /전체 내 종목수/.test(sAll.sumHead.join('|')), sAll.titles[1]);
     if (name === 'web') check('웹: 카드·문장이 전체 기준으로(전체 합계의 %, 시장 순자산)', sAll.cards.every(c => /전체 합계의/.test(c)) && /전체 [\d,]+종목 · 시장 순자산/.test(sAll.lede), sAll.lede.slice(0, 70));
-    else check('Apps Script: 카드 요약 전체 기준(시장 전체의 100.0%)', /^전체 합계\|/.test(sAll.tiles[0]) && sAll.tiles.length === 7, sAll.tiles[0]);
+    else check('Apps Script: 카드·결론 줄 전체 기준(전체 합계의 %, 시장 순자산)', sAll.tiles.length === 6 && sAll.tiles.every(t => /전체 합계의/.test(t)) && /전체 [\d,]+종목 · 시장 순자산/.test(sAll.hlede), sAll.tiles[0]);
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_all.png`, fullPage: true });
     // 운용사 칩: 목록 필터 동작
     const chip = await p.evaluate(() => { const c = [...document.querySelectorAll('.sticky-chips .chip-m')].find(b => b.dataset.k === '한투'); c.click(); const t = [...document.querySelectorAll('#view > .section')][1].querySelectorAll('table.tbl')[1]; return { shown: [...t.querySelectorAll('tbody tr')].filter(r => !r.classList.contains('fold')).length }; });
