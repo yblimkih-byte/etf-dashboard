@@ -379,6 +379,58 @@ function installHoldingsTrigger_() {
   ScriptApp.newTrigger('collectHoldings').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).nearMinute(10).inTimezone(TZ).create();
 }
 
+// ─────────────────── v41: FunETF 자동 수집 시작 신호(GitHub 실행 호출) ───────────────────
+/* GitHub 예약 작업(cron)은 실제 시작이 크게 늦음(예약 KST 01:41 → 10/13 08:12 시작·건너뜀, 10/16 05:01 시작·49분 수집 후 반영 안 함) → 02~06시 수집 창을 놓침.
+ * Apps Script 시간 트리거(화·금 01:40 전후 ±15분)가 GitHub 'Run workflow'(workflow_dispatch) API 를 호출 → 러너가 곧 시작해 02:00 까지 기다린 뒤 수집.
+ * 예약(cron)은 예비로 둠: 늦게 시작해도 같은 기준일 자료가 이미 있으면 건너뜀(skipSame), 05:50 이후 시작이면 건너뜀.
+ * 토큰: 사용자가 GitHub 에서 만든 Fine-grained token(이 저장소만, Actions 읽기·쓰기)을 메뉴로 직접 입력 → 스크립트 속성에만 저장(화면·시트 표시 없음) */
+const GH = { API: 'https://api.github.com', REPO: 'yblimkih-byte/etf-dashboard', WF: 'funetf-collect.yml', REF: 'main', TOKEN: 'GH_DISPATCH_TOKEN', INFO: 'GH_DISPATCH_INFO' };
+function ghReq_(method, path, body) {
+  const tok = PropertiesService.getScriptProperties().getProperty(GH.TOKEN);
+  if (!tok) throw new Error('GitHub 토큰 미설정: 메뉴 [ETF Dashboard] › FunETF 자동 수집 시작 신호(GitHub 토큰) 설정');
+  const o = { method: method, muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + tok, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } };
+  if (body) { o.contentType = 'application/json'; o.payload = JSON.stringify(body); }
+  const res = UrlFetchApp.fetch(GH.API + path, o);
+  return { code: res.getResponseCode(), text: String(res.getContentText() || '') };
+}
+/** 실행 호출 1회. 작업이 꺼져 있으면(60일 활동 없음 등 'disabled') 다시 켜고 재시도. 결과는 스크립트 속성(GH_DISPATCH_INFO)·_log */
+function funDispatch_(inputs, why) {
+  const path = '/repos/' + GH.REPO + '/actions/workflows/' + GH.WF, body = { ref: GH.REF, inputs: inputs || {} };
+  let r = ghReq_('post', path + '/dispatches', body), enabled = false;
+  if (r.code === 422 && /disabled/i.test(r.text)) { const e = ghReq_('put', path + '/enable'); if (e.code === 204) { enabled = true; r = ghReq_('post', path + '/dispatches', body); } }
+  const ok = r.code === 204;
+  const hint = r.code === 401 ? ' — 토큰 만료·오입력: GitHub 에서 새로 만들어 메뉴로 다시 입력' : r.code === 403 || r.code === 404 ? ' — 토큰 권한 확인(저장소 etf-dashboard, Actions 읽기·쓰기)' : '';
+  const info = { at: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm'), why: why, ok: ok, code: r.code, enabled: enabled, msg: ok ? '' : r.text.replace(/\s+/g, ' ').slice(0, 200) + hint };
+  PropertiesService.getScriptProperties().setProperty(GH.INFO, JSON.stringify(info));
+  log_('FunETF 자동 수집 시작 신호(' + why + '): ' + (ok ? 'GitHub 실행 호출 완료' + (enabled ? '(꺼져 있던 작업을 다시 켬)' : '') : 'HTTP ' + r.code + ' ' + info.msg), ok ? 'INFO' : 'ERROR');
+  return info;
+}
+/** 트리거(화·금 01:40 전후): 정상 수집 실행 호출(02:00 까지 기다렸다 시작). 일시 오류(5xx·연결 실패)는 5분 뒤 1회 재시도 */
+function funDispatch() {
+  let info = null;
+  try { info = funDispatch_({ limit: '0' }, '예약'); } catch (e) { log_('FunETF 시작 신호 오류: ' + e.message, 'ERROR'); }
+  const retry = !info || info.code >= 500 || info.code === 0;
+  const P = PropertiesService.getScriptProperties(), n = +(P.getProperty('GH_DISPATCH_RETRY') || 0);
+  if (retry && n < 1 && !/미설정/.test(String(info && info.msg || ''))) { P.setProperty('GH_DISPATCH_RETRY', String(n + 1)); scheduleContinue_('funDispatch', 5); }
+  else P.deleteProperty('GH_DISPATCH_RETRY');
+}
+function cont_funDispatch() { clearTriggers_('cont_funDispatch'); funDispatch(); }
+function installFunDispatchTrigger_() {
+  clearTriggers_('funDispatch');
+  [ScriptApp.WeekDay.TUESDAY, ScriptApp.WeekDay.FRIDAY].forEach(d => ScriptApp.newTrigger('funDispatch').timeBased().onWeekDay(d).atHour(1).nearMinute(40).inTimezone(TZ).create());
+}
+/** 메뉴: GitHub 토큰 입력(사용자가 직접) → 화·금 01:40 트리거 설치 */
+function setGhToken() {
+  if (!askSecrets_('GitHub 토큰 (FunETF 자동 수집 시작 신호)', [[GH.TOKEN, 'GitHub › Settings › Developer settings › Fine-grained tokens 에서 만든 토큰(저장소 etf-dashboard 만, Repository permissions › Actions = Read and write)을 붙여 넣으세요']])) return;
+  installFunDispatchTrigger_();
+  notify_('저장했습니다. 매주 화·금 01:40 전후에 GitHub 자동 수집을 시작시킵니다(02:00 수집 시작, 05:50 이후 새 요청 없음).\n바로 확인: 메뉴 \'FunETF 자동 수집 시작 신호 시험(3종목)\' → GitHub › Actions 에 실행이 생기는지 확인(시트는 바뀌지 않음).');
+}
+/** 메뉴: 시험 호출 — 3종목만 바로 받고 시트·기준일은 그대로(dry) */
+function menuFunDispatchTest() {
+  let i; try { i = funDispatch_({ limit: '3', now: 'true' }, '시험'); } catch (e) { notify_(e.message); return; }
+  notify_(i.ok ? 'GitHub 실행 호출 성공. 1~2분 안에 저장소 › Actions › \'FunETF 구성종목 자동 수집\'에 새 실행이 생기고 약 1분 뒤 끝납니다(3종목만 받고 시트는 그대로).' : '실행 호출 실패: HTTP ' + i.code + ' ' + i.msg);
+}
+
 // ─────────────────────────── 검색 ───────────────────────────
 
 /** 구성종목 시트 → [{etf, comp, name, w, isin}] (현금성 제외).

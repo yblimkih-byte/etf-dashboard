@@ -90,15 +90,15 @@ const App = {
   dateOptions() {
     const m = this.meta, cur = m.curMonth;
     const out = [];
-    m.months.filter(x => x.ym < cur).forEach(x => out.push({ value: x.date, label: x.ym }));
+    m.months.filter(x => x.ym < cur).forEach(x => out.push({ value: x.date, label: x.ym + ' 말' }));   // v41: 지난 달 = 월말 확정치임을 표기
     m.dates.filter(d => d.slice(0, 7) === cur).forEach(d => out.push({ value: d, label: d }));
     return out;
   },
 
-  /** 거래대금 기본 구간: To = 기준일(일별 자료가 있으면, 없으면 최근 영업일), From = 그해 첫 영업일 (v24: 미리 받기에서도 같은 구간을 쓰도록 분리) */
+  /** 거래대금 기본 구간: To = 최근 영업일(v41: 이전엔 기준일 = 전월말이라 최신 적재분이 빠져 보였음), From = 그해 첫 영업일 (v24: 미리 받기에서도 같은 구간) */
   defaultRange(s) {
     const m = this.meta, dv = m.dates.filter(d => d >= m.dailyFrom);
-    const to = s.to || (dv.includes(s.date) ? s.date : dv[dv.length - 1]);
+    const to = s.to || dv[dv.length - 1];
     if (!to) return { from: null, to: null };
     const py = m.months.filter(x => x.ym < to.slice(0, 4) + '-01').pop();
     return { from: s.from || (py && dv.some(d => d > py.date) ? dv.find(d => d > py.date) : dv[0]), to: to };
@@ -108,6 +108,8 @@ const App = {
   renderControls() {
     const t = this.tab(), el = document.getElementById('controls'), s = this.state, m = this.meta;
     el.innerHTML = '';
+    // v41: 기준 표시(모든 탭 같은 자리) — 화면을 그린 뒤 setAsOf 가 채움(월말 확정치 '9월 말 기준', 기간, 구성종목 기준일·지연)
+    const aw = document.createElement('div'); aw.className = 'ctl ctl-asof'; aw.innerHTML = '<span class="asof" id="asof"></span>'; el.appendChild(aw);
     const sel = (label, key, options, onChange) => {
       const w = document.createElement('div'); w.className = 'ctl';
       w.innerHTML = `<label>${label}</label><select></select>`;
@@ -179,7 +181,44 @@ const App = {
       const data = t.load ? await t.load(this.state, this) : await this.call(t.action, t.params ? t.params(this.state) : {});
       if (token !== this._req) return;                 // 더 최근 요청이 있으면 무시
       view.innerHTML = ''; t.render(data, view, this);
+      this.afterRender(t, data, view);
     } catch (e) { if (token === this._req) view.innerHTML = `<div class="error">${e.message}</div>`; }
+  },
+
+  /** v41: 화면을 그린 뒤 — 탭 머리(결론 줄·지표 카드, 두 화면 공통 tabHead) · 기준 표시 · 섹션 바로가기 */
+  afterRender(t, d, view) {
+    const h = typeof tabHead === 'function' ? tabHead(this, t, d) : { lines: [] };
+    try { this.paintHead(t, d, h, view); } catch (e) { console.warn('paintHead: ' + e.message); }
+    try { this.setAsOf(typeof tabAsOf === 'function' ? tabAsOf(this, t, d) : null); } catch (e) {}
+    try { this.toc(view); } catch (e) {}
+  },
+  /** v41: Apps Script 화면의 탭 머리 — 화면 맨 위에 결론 줄 + 지표 타일(웹 화면은 shell.js 가 이 함수를 바꿔 상단 문장·카드로 그림) */
+  paintHead(t, d, h, view) {
+    const C = h.cards || [], L = h.lines || []; if (!C.length && !L.length) return;
+    const q = s => String(s === null || s === undefined ? '' : s).replace(/<[^>]+>/g, '').replace(/"/g, '&quot;');
+    const box = document.createElement('div'); box.className = 'head';
+    box.innerHTML = (L.length ? `<div class="head-lede">${L.map(l => `<span class="ld">· ${l}</span>`).join('')}</div>` : '')
+      + (C.length ? `<div class="head-tiles" style="--n:${Math.min(C.length, 6)}">` + C.map(x => `<div class="tile${x.f ? ' focus' : ''}${x.warn ? ' warn' : ''}"><div class="k"${x.d ? ` title="${q(x.d)}"` : ''}>${x.c ? `<i style="background:${x.c}"></i>` : ''}<span class="kt">${x.k}</span>${x.b ? `<b class="bdg${x.b.s < 0 ? ' neg' : x.b.s === 0 ? ' zero' : ''}">${x.b.t}</b>` : ''}</div>`
+        + `<div class="v${x.txt ? ' txt' : ''}${x.neg ? ' neg' : ''}"${x.txt ? ` title="${q(x.v)}"` : ''}>${x.v}</div><div class="d">${x.l1 || '&nbsp;'}</div><div class="d d2">${x.l2 || '&nbsp;'}</div></div>`).join('') + '</div>' : '');
+    view.insertBefore(box, view.firstChild);
+  },
+  /** v41: 상단 기준 표시 채우기 — a = {text, title, warn} | null */
+  setAsOf(a) {
+    const el = document.getElementById('asof'); if (!el) return;
+    el.textContent = a ? a.text : ''; el.title = a && a.title ? a.title : ''; el.classList.toggle('warn', !!(a && a.warn));
+  },
+  /** v41: 섹션 바로가기 — 섹션 3개 이상인 화면 맨 위(탭 머리 아래)에 섹션 제목 단추. 상세 섹션처럼 다시 그려지는 섹션은 누를 때 제목으로 다시 찾음 */
+  toc(view) {
+    const list = () => [...view.querySelectorAll(':scope > .section, :scope > div:not(.head):not(.toc) > .section')].filter(x => x.querySelector('.h2'));
+    const short = x => { const f = x.querySelector('.h2').textContent.trim(); let k = f.split(' — ')[0]; if (k.length > 22) k = k.split(' (')[0]; return k.length > 22 ? k.slice(0, 21) + '…' : k; };
+    const secs = list(); if (secs.length < 3) return;
+    const nav = document.createElement('nav'); nav.className = 'toc'; nav.innerHTML = '<span class="toc-l">바로가기</span>';
+    secs.forEach(sec => {
+      const k = short(sec), b = document.createElement('button'); b.type = 'button'; b.className = 'toc-a'; b.textContent = k; b.title = sec.querySelector('.h2').textContent.trim();
+      b.onclick = () => { const x = sec.isConnected ? sec : list().find(y => short(y) === k); if (!x) return; const hdr = document.querySelector('.hdr-wrap, .top'); window.scrollTo({ top: Math.max(0, x.getBoundingClientRect().top + window.scrollY - (hdr ? hdr.offsetHeight : 0) - 8), behavior: 'smooth' }); };
+      nav.appendChild(b);
+    });
+    const head = view.querySelector(':scope > .head'); view.insertBefore(nav, head ? head.nextSibling : view.firstChild);
   },
 
   /* ── 포맷 ── 금액 단위는 조원(소수 둘째자리에서 반올림, 첫째자리 표기)으로 통일 */
@@ -202,8 +241,10 @@ const App = {
     const hasG = cols.some(c => c.g);
     // v19: 8행 이상 표에는 도구 줄(검색·CSV) + 머리글 클릭 정렬. 표 HTML 을 삽입한 뒤 A.tableTools(host) 를 호출하면 활성화(div() 가 자동 호출)
     const tools = opts.tools !== false && rows.length >= 8;
+    // v41: 긴 표(LIM_MIN 행 초과)는 처음 LIM 행만 보이고 '전체 n행 보기' — 검색·운용사 필터·정렬 뒤에도 보이는 행 기준으로 다시 적용, CSV 는 전체
+    const lim = tools && opts.limit !== false && rows.length > this.LIM_MIN ? (opts.limit || this.LIM) : 0;
     let h = (tools ? `<div class="tbl-tools"><input type="search" class="tbl-q" placeholder="검색 (종목·운용사·유형)" aria-label="표 검색"><span class="tbl-cnt"></span><button type="button" class="tbl-csv" title="현재 표를 CSV 파일로 내려받기">CSV</button></div>` : '')
-      + `<div class="tbl-scroll${opts.compact ? ' compact' : ''}"><table class="tbl${opts.compact ? ' compact' : ''}${tools ? ' sortable' : ''}"><thead>`;   // v24: compact = 내용 폭(옆으로 퍼지지 않음)
+      + `<div class="tbl-scroll${opts.compact ? ' compact' : ''}"><table class="tbl${opts.compact ? ' compact' : ''}${tools ? ' sortable' : ''}"${lim ? ` data-lim="${lim}"` : ''}><thead>`;   // v24: compact = 내용 폭(옆으로 퍼지지 않음)
     if (hasG) {   // 1단: 그룹 헤더(연초 대비 / 전월 대비 …), 2단: 항목
       h += '<tr class="grp-row">';
       for (let i = 0; i < cols.length;) { const g = cols[i].g || ''; let j = i; while (j < cols.length && (cols[j].g || '') === g) j++; h += `<th colspan="${j - i}" class="${g ? 'grp' : 'nog'}">${g}</th>`; i = j; }
@@ -213,8 +254,9 @@ const App = {
     h += '<tr>' + cols.map((c, i) => `<th class="${c.l ? 'l' : ''}${gcls(i)}"${tools ? ' data-sort="' + i + '" title="클릭하여 정렬"' : ''}>${c.h}</th>`).join('') + '</tr></thead><tbody>';
     rows.forEach(r => { h += `<tr ${opts.attr ? opts.attr(r) : ''}>` + cols.map((c, i) => { const v = c.f ? c.f(r) : r[c.k]; return `<td class="${c.l ? 'l' : ''} ${c.cls ? c.cls(r) : ''}${gcls(i)}">${v === undefined || v === null ? '-' : v}</td>`; }).join('') + '</tr>'; });
     if (opts.total) h += '<tr class="total">' + cols.map((c, i) => { const key = c.g && opts.total[c.g + '|' + c.h] !== undefined ? c.g + '|' + c.h : c.h; return `<td class="${c.l ? 'l' : ''}${gcls(i)}">${opts.total[key] !== undefined ? opts.total[key] : ''}</td>`; }).join('') + '</tr>';
-    return h + '</tbody></table></div>';
+    return h + '</tbody></table></div>' + (lim ? '<button type="button" class="tbl-more"></button>' : '');
   },
+  LIM: 20, LIM_MIN: 25,
 
   /* ── 운용사 선택 칩: 클릭 시 onSelect(top|null). 표시 = 고유색 견본 + 운용사명 (범례 겸용) ── */
   chips(parent, keys, opts) {
@@ -240,6 +282,7 @@ const App = {
   /* 표 행 필터: 선택 운용사 행만 표시, 나머지는 접음 (null 이면 전체) */
   filterRows(container, sel) {
     container.querySelectorAll('tr[data-top]').forEach(tr => { tr.classList.toggle('fold', !!sel && tr.dataset.top !== sel); });
+    container.querySelectorAll('table.tbl').forEach(tb => { if (tb._lim) tb._lim(); });   // v41: 긴 표 '전체 보기' 다시 적용
   },
 
   /* ── 차트 헬퍼 (Chart.js) ── */
@@ -602,8 +645,20 @@ const App = {
       const rows = dataRows(), total = body.querySelector('tr.total');
       rows.sort((a, b) => { const ta = a.cells[i] ? a.cells[i].textContent.trim() : '', tbb = b.cells[i] ? b.cells[i].textContent.trim() : ''; const na = num(ta), nb = num(tbb); const r = na !== null && nb !== null ? na - nb : ta.localeCompare(tbb, 'ko'); return r * state.dir; });
       rows.forEach(r => body.appendChild(r)); if (total) body.appendChild(total);
+      lim();
     });
-    if (q) q.oninput = () => { const s = q.value.trim().toLowerCase(); let n = 0; dataRows().forEach(r => { const hit = !s || r.textContent.toLowerCase().indexOf(s) >= 0; r.classList.toggle('q-hide', !hit); if (hit && !r.classList.contains('fold')) n++; }); cnt.textContent = s ? `${n}행` : ''; };   // v40: 운용사 필터로 숨긴 행은 건수에서 제외
+    // v41: 긴 표 — 보이는 행(검색·운용사 필터 통과) 중 앞 n행만, 나머지는 '전체 n행 보기'
+    const L = +tb.dataset.lim || 0, more = L ? host.querySelector('.tbl-more') : null;
+    const lim = tb._lim = () => {
+      if (!L || !more) return;
+      const vis = dataRows().filter(r => !r.classList.contains('q-hide') && !r.classList.contains('fold') && !r.hidden), open = tb.dataset.open === '1';
+      vis.forEach((r, i) => r.classList.toggle('lim-hide', !open && i >= L));
+      dataRows().filter(r => vis.indexOf(r) < 0).forEach(r => r.classList.remove('lim-hide'));
+      more.hidden = vis.length <= L; more.textContent = open ? `앞 ${L}행만 보기 ▴` : `전체 ${vis.length.toLocaleString('ko-KR')}행 보기 ▾`;
+    };
+    if (more) more.onclick = () => { tb.dataset.open = tb.dataset.open === '1' ? '' : '1'; lim(); if (tb.dataset.open !== '1') { const hdr = document.querySelector('.hdr-wrap, .top'), y = tb.getBoundingClientRect().top + window.scrollY - (hdr ? hdr.offsetHeight : 0) - 60; if (tb.getBoundingClientRect().top < 0) window.scrollTo({ top: Math.max(0, y) }); } };
+    lim();
+    if (q) q.oninput = () => { const s = q.value.trim().toLowerCase(); let n = 0; dataRows().forEach(r => { const hit = !s || r.textContent.toLowerCase().indexOf(s) >= 0; r.classList.toggle('q-hide', !hit); if (hit && !r.classList.contains('fold')) n++; }); cnt.textContent = s ? `${n}행` : ''; lim(); };   // v40: 운용사 필터로 숨긴 행은 건수에서 제외
     if (csv) csv.onclick = () => {
       const head = [...tb.tHead.rows[tb.tHead.rows.length - 1].cells].map(c => c.textContent.trim());
       const lines = [head].concat([...body.rows].filter(r => !r.classList.contains('q-hide') && !r.classList.contains('fold') && !r.hidden).map(r => [...r.cells].map(c => c.textContent.trim())));
