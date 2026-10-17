@@ -107,7 +107,7 @@ console.log('\n[A] 추석: 09-23분 09-28 08:00 게시');
   check('휴장 기간 낮 재시도 예약 없음', !w.trig.some(t => t.fn === 'cont_loadDaily'), JSON.stringify(w.trig.map(t => t.fn)));
   w.advance('2026-09-26T12:00:00');
   p = w.props();
-  check('빈 열 정리 1회 수행', !!p.trimmed && w.ctx.MOCK_STORE['raw_일별']._maxc === 8, 'raw_일별 열 ' + w.ctx.MOCK_STORE['raw_일별']._maxc + ', raw_월말 ' + w.ctx.MOCK_STORE['raw_월말']._maxc + ', agg_일별요약 ' + w.ctx.MOCK_STORE['agg_일별요약']._maxc);
+  check('빈 열 정리 1회 수행', !!p.trimmed && w.ctx.MOCK_STORE['raw_일별']._maxc === 10, 'raw_일별 열 ' + w.ctx.MOCK_STORE['raw_일별']._maxc + ', raw_월말 ' + w.ctx.MOCK_STORE['raw_월말']._maxc + ', agg_일별요약 ' + w.ctx.MOCK_STORE['agg_일별요약']._maxc);
   w.advance('2026-09-28T09:00:00');
   p = w.props();
   check('09-28 08:31 에 09-23 적재', p.last === '2026-09-23', p.last);

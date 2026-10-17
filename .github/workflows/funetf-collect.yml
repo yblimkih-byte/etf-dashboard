@@ -2,9 +2,12 @@
 #  · FunETF 공개 구성종목 PDF 를 ETF 1건씩, 응답 뒤 10초 쉬고 받아 Apps Script 웹앱(doPost)으로 반영 — scripts/funetf_collect.mjs
 #  · 사전 준비(1회): 저장소 Settings › Secrets and variables › Actions › New repository secret
 #      Name = FUN_IMPORT_TOKEN, Secret = 스프레드시트 '구성종목_버튼' 시트 A5 값(메뉴 '구성종목 수집 버튼(FunETF) 만들기'로 생성)
+#  · v41 시작 방식: Apps Script 시간 트리거(화·금 01:40 전후)가 이 작업을 workflow_dispatch 로 호출 → 곧 시작해 02:00 까지 기다림.
+#      GitHub 자체 예약(cron)은 실제 시작이 3~7시간 늦었음(10/13 08:12 시작 → 건너뜀, 10/16 05:01 시작 → 49분만 수집·반영 안 함) → 아래 cron 은 예비로만 둠
+#      (늦게 시작해도 같은 기준일 자료가 이미 있으면 건너뜀, 05:50 이후 시작이면 건너뜀). 호출용 GitHub 토큰은 사용자가 스프레드시트 메뉴로 직접 입력
 #  · 예약 시각은 UTC: 월·목 16:41 = KST 화·금 01:41(정각 혼잡을 피해 일찍 깨고, 스크립트가 02:00 까지 기다림)
 #  · 수동 실행: Actions › 이 작업 › Run workflow (시험: limit 에 5 처럼 적으면 앞 5종목만 새로 받고 나머지는 이전 자료 유지)
-#  · 공개 저장소의 예약 작업은 저장소 활동이 60일 없으면 GitHub 가 자동으로 끔 → Actions 화면에서 다시 켜기(Enable workflow)
+#  · 공개 저장소의 예약 작업은 저장소 활동이 60일 없으면 GitHub 가 자동으로 끔 → Apps Script 호출이 꺼진 작업을 다시 켜고 실행(v41), 또는 Actions 화면에서 Enable workflow
 name: FunETF 구성종목 자동 수집
 on:
   schedule:

@@ -12,14 +12,25 @@ jobs:
   push:
     runs-on: ubuntu-latest
     steps:
+      # v41: CLASPRC_JSON 시크릿이 없으면(현재처럼 Apps Script 를 편집기에서 직접 반영하는 경우) 실패로 끝내지 않고 건너뜀 — main 에 반영할 때마다 '실패' 알림이 오던 문제
+      - name: Check credentials
+        id: chk
+        run: if [ -n "$CLASPRC_JSON" ]; then echo "has=1" >> "$GITHUB_OUTPUT"; else echo "has=0" >> "$GITHUB_OUTPUT"; echo "::notice::CLASPRC_JSON 시크릿 없음 — Apps Script 자동 반영을 건너뜀(편집기에서 직접 반영)"; fi
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
       - uses: actions/checkout@v4
+        if: steps.chk.outputs.has == '1'
       - uses: actions/setup-node@v4
+        if: steps.chk.outputs.has == '1'
         with: { node-version: '20' }
       - run: npm install -g @google/clasp
+        if: steps.chk.outputs.has == '1'
       - name: Restore clasp credentials
+        if: steps.chk.outputs.has == '1'
         run: echo "$CLASPRC_JSON" > ~/.clasprc.json
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
       - run: clasp push -f
+        if: steps.chk.outputs.has == '1'
       # 새 버전을 만들어 기존 웹앱 배포 ID 에 연결(URL 유지). DEPLOYMENT_ID 시크릿 등록 후 주석 해제
       # - run: clasp deploy -i "${{ secrets.DEPLOYMENT_ID }}" -d "auto ${{ github.sha }}"

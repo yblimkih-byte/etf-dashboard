@@ -159,7 +159,7 @@ R(`menuFunButton()`);
 check('메뉴: 구성종목_버튼 시트 A3 = 버튼 코드(대화상자 없음 → 권한 범위 그대로)', S['구성종목_버튼'] && S['구성종목_버튼'].rows[2][0] === code && !/HtmlService|getService/.test(fs.readFileSync(path.join(gasDir, 'Setup.gs'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '') + fs.readFileSync(path.join(gasDir, 'Kis.gs'), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')));
 check('버튼 다시 만들기(기존 토큰 유지) · 새 토큰은 renew 일 때만', R(`funBookmarklet_(false)`) === code && R(`funBookmarklet_(true)`) !== code && P().FUN_IMPORT_TOKEN !== tok);
 const tabs = fs.readFileSync(path.join(gasDir, 'Tabs.html'), 'utf8'), shell = fs.readFileSync(path.join(__dirname, '..', 'web', 'src', 'shell.js'), 'utf8');
-check('화면 문구: 원천별(FunETF = 해외 포함 · KIS = 국내 상장 상위 30)', /hdF\(info\) \? '해외 주식 포함' : '국내 상장 종목'/.test(tabs) && /엔비디아, NVDA/.test(tabs) && /상위 30종목까지/.test(tabs) && /info\.src === 'F'/.test(shell));
+check('화면 문구: 원천별(FunETF = 해외 포함 · KIS = 국내 상장 상위 30)', /hdF\(info\) \? '전체 구성종목\(해외 주식 포함\)' : '국내 상장 종목/.test(tabs) && /엔비디아, NVDA/.test(tabs) && /상위 30종목까지/.test(tabs) && /info\.src === 'F' \? '해외 주식 포함[^']*' : '국내 상장 종목/.test(tabs));   // v41: 카드 문구는 두 화면 공용 tabHead(Tabs.html)
 check('출처 표기: FunETF·한국투자증권', /FunETF 공개 자료/.test(tabs) && /FunETF 공개 자료 · 한국투자증권 Open API/.test(shell));
 check('화면에 내부 시트명 노출 없음', !/범례_|유형최종|구성종목_수집중/.test(tabs.split('/* 9. 종목→ETF 찾기')[1].split('/* 10.')[0].replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')));
 

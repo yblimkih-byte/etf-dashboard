@@ -50,7 +50,7 @@ const OUT = __dirname + '/shots_v26';
     // 운용사별
     await p.evaluate(() => App.show('mgr')); await wait();
     const mg = await p.evaluate(() => {
-      const view = document.getElementById('view'), secs = [...view.querySelectorAll(':scope > .section')], s = secs[1];
+      const view = document.getElementById('view'), secs = [...view.querySelectorAll(':scope > .section')], s = secs.find(x => /^M\/S 변동 요인/.test(x.querySelector('.h2').textContent));   // v42: 앞에 'NAV 증감 요인' 섹션
       const cols = [...s.querySelectorAll('table.tbl thead tr:last-child th')].map(th => th.textContent);
       const body = [...s.querySelectorAll('table.tbl tbody tr')].map(tr => [...tr.cells].map(c => c.textContent.trim()));
       const tot = [...s.querySelectorAll('table.tbl tfoot tr, table.tbl tr.total')].map(tr => [...tr.cells].map(c => c.textContent.trim())).pop() || body[body.length - 1];
@@ -64,9 +64,11 @@ const OUT = __dirname + '/shots_v26';
     const sumC = mg.body.filter(r => r[0] !== '합계').reduce((s, r) => s + parseFloat(r[ci].replace('%p', '').replace('−', '-')), 0);
     check('운용사별: 합계 행 M/S 기여 = 소제목 M/S 변동, 유형 합(반올림 오차 이내)', last[0] === '합계' && mg.sub.indexOf('(' + last[ci] + ')') > 0 && Math.abs(sumC - parseFloat(last[ci])) < 0.03, last[ci] + ' / 유형 합 ' + sumC.toFixed(2));
     check('운용사별: 주요 유형 문구', /(하락|상승) 요인/.test(mg.drv), mg.drv);
-    if (name === 'web') check('웹 상단 설명: 하락/상승 요인 유형', /(하락|상승) 요인 \S+ [+−-]\d/.test(mg.lede), mg.lede.slice(0, 200));
-    await p.evaluate(() => { const c = [...document.querySelectorAll('.chip-m')].find(b => b.dataset.k === '삼성'); c.click(); });
-    const sub2 = await p.evaluate(() => { const s = [...document.querySelectorAll('#view > .section')][1]; return s.querySelector('.h3').textContent + ' / ' + [...s.querySelectorAll('table.tbl thead tr:last-child th')].map(th => th.textContent)[3]; });
+    // v41: 상단 결론은 한 줄(한투 M/S·변동·순위·격차) — 하락/상승 요인 유형은 아래 'M/S 변동 요인' 섹션에서 확인(위 점검)
+    if (name === 'web') check('웹 상단 결론 한 줄(M/S·순위), 변동 요인은 섹션에', /M\/S [\d.]+%/.test(mg.lede) && /위/.test(mg.lede) && !/요인/.test(mg.lede), mg.lede.slice(0, 200));
+    const msSec = "[...document.querySelectorAll('#view > .section')].find(x => /^M\\/S 변동 요인/.test(x.querySelector('.h2').textContent))";   // v42: 앞에 'NAV 증감 요인' 섹션(칩 있음)
+    await p.evaluate(q => { const c = [...eval(q).querySelectorAll('.chip-m')].find(b => b.dataset.k === '삼성'); c.click(); }, msSec);
+    const sub2 = await p.evaluate(q => { const s = eval(q); return s.querySelector('.h3').textContent + ' / ' + [...s.querySelectorAll('table.tbl thead tr:last-child th')].map(th => th.textContent)[3]; }, msSec);
     check('운용사별: 칩 선택 → 삼성 기준 표', /^삼성:/.test(sub2) && /삼성 몫/.test(sub2), sub2);
     await p.evaluate(() => { const c = [...document.querySelectorAll('.chip-m')].find(b => b.dataset.k === '한투'); c.click(); });
     await freeze();

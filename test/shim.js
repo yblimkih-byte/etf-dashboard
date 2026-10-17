@@ -4,6 +4,7 @@
   const props = {};
   class Range {
     constructor(sh, r, c, nr, nc) { this.sh = sh; this.r = r; this.c = c; this.nr = nr; this.nc = nc; }
+    getValue() { return this.getValues()[0][0]; }
     getValues() { const out = []; for (let i = 0; i < this.nr; i++) { const row = this.sh.rows[this.r - 1 + i] || []; const o = []; for (let j = 0; j < this.nc; j++) o.push(row[this.c - 1 + j] === undefined ? '' : row[this.c - 1 + j]); out.push(o); } return out; }
     setValues(v) { for (let i = 0; i < v.length; i++) { const ri = this.r - 1 + i; this.sh.rows[ri] = this.sh.rows[ri] || []; for (let j = 0; j < v[i].length; j++) this.sh.rows[ri][this.c - 1 + j] = v[i][j]; } return this; }
     setValue(v) { return this.setValues([[v]]); }
@@ -22,6 +23,7 @@
     getLastColumn() { return Math.max(0, ...this.rows.map(r => r.length)); }
     getRange(a, b, c, d) {
       if (typeof a === 'string') { const m = a.match(/^([A-Z]+):([A-Z]+)$/); if (m) return new Range(this, 1, m[1].charCodeAt(0) - 64, Math.max(this.rows.length, 1), 1); throw new Error('A1 unsupported: ' + a); }
+      if (this._strict && b + (d === undefined ? 1 : d) - 1 > this.getMaxColumns()) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');   // v42: 열 범위 점검(시험용)
       return new Range(this, a, b, c === undefined ? 1 : c, d === undefined ? 1 : d);
     }
     appendRow(r) { this.trim(); this.rows.push(r.slice()); return this; }
@@ -31,6 +33,7 @@
     setFrozenRows() { return this; }
     getMaxColumns() { return this._maxc || 26; }
     deleteColumns(c, n) { this._maxc = (this._maxc || 26) - n; return this; }
+    insertColumnsAfter(c, n) { this._maxc = (this._maxc || 26) + n; return this; }   // v42
   }
   const ss = {
     getSheetByName: n => store[n] || null,
@@ -53,7 +56,8 @@
     putAll: (o, ttl) => Object.keys(o).forEach(k => cput(k, o[k], ttl)),
     remove: k => { delete mem[k]; }, removeAll: ks => ks.forEach(k => { delete mem[k]; }) }) };
   g.LockService = { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) };
-  g.ScriptApp = { WeekDay: { MONDAY: 'MONDAY' }, getProjectTriggers: () => [], newTrigger: () => ({ onWeekDay() { return this; }, timeBased() { return this; }, after() { return this; }, everyDays() { return this; }, atHour() { return this; }, nearMinute() { return this; }, inTimezone() { return this; }, create() { console.log('[trigger created]'); } }), deleteTrigger() {}, EventType: { CLOCK: 'CLOCK' } };
+  g.MOCK_TRIGGERS = [];   // v41: 만든 트리거 기록 [{fn, day, hour, minute, after}]
+  g.ScriptApp = { WeekDay: { MONDAY: 'MONDAY', TUESDAY: 'TUESDAY', FRIDAY: 'FRIDAY' }, getProjectTriggers: () => [], newTrigger: fn => { const t = { fn: fn }; return { onWeekDay(d) { t.day = d; return this; }, timeBased() { return this; }, after(ms) { t.after = ms; return this; }, everyDays() { return this; }, atHour(h) { t.hour = h; return this; }, nearMinute(m) { t.minute = m; return this; }, inTimezone() { return this; }, create() { g.MOCK_TRIGGERS.push(t); console.log('[trigger created]'); } }; }, deleteTrigger() {}, EventType: { CLOCK: 'CLOCK' } };
   const pad = n => ('0' + n).slice(-2);
   g.Utilities = { DigestAlgorithm: { MD5: 'md5' }, Charset: { UTF_8: 'UTF-8' }, computeDigest: (a, str, cs) => { let h = 5381; const v = cs ? String(str) : String(str).replace(/[^\x00-\x7f]/g, '?'); for (const c of v) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return [h]; } /* v31: 문자셋 없으면 Apps Script 처럼 한글이 뭉개짐 */, base64EncodeWebSafe: b => b.map(x => x.toString(36)).join(''), sleep: () => {}, formatDate: (d, tz, f) => { if (f === 'H') return String(d.getHours()); const y = d.getFullYear(), m = pad(d.getMonth() + 1), dd = pad(d.getDate()); return f === 'yyyyMMdd' ? `${y}${m}${dd}` : f === 'yyyy-MM' ? `${y}-${m}` : `${y}-${m}-${dd}`; } };
   // v24: Blob·gzip·base64 (node 테스트는 실행기가 g.__zlib 를 넣으면 실제 gzip, 브라우저는 표식만 붙인 비압축)
@@ -91,7 +95,8 @@
     return ETFS.filter(e => e.listDd <= ds).map(e => {
       const growth = Math.pow(1 + 0.00045, t) * (1 + 0.15 * Math.sin(t / 60 + e.base % 7) * e.vol);
       const nav = Math.round(e.base * growth);
-      return { BAS_DD: ds.replace(/-/g, ''), ISU_CD: e.code, ISU_NM: e.name, IDX_IND_NM: IDXN[e.th] || '', INVSTASST_NETASST_TOTAMT: closed?'0':String(nav), ACC_TRDVAL: closed?'0': String(Math.round(nav * (0.002 + 0.03 * rnd(t + e.base % 97)))) };
+      const ps = Math.round(10000 * Math.pow(1 + 0.0003, t) * (1 + 0.1 * Math.sin(t / 45 + e.base % 5) * e.vol) * 100) / 100, shr = Math.max(1, Math.round(nav / ps));   // v41: 1좌당 NAV·상장좌수(모의) — 순자산총액 = NAV × 좌수
+      return { BAS_DD: ds.replace(/-/g, ''), ISU_CD: e.code, ISU_NM: e.name, IDX_IND_NM: IDXN[e.th] || '', INVSTASST_NETASST_TOTAMT: closed?'0':String(nav), ACC_TRDVAL: closed?'0': String(Math.round(nav * (0.002 + 0.03 * rnd(t + e.base % 97)))), NAV: closed ? '0' : String(ps), LIST_SHRS: String(shr) };
     });
   }
   function kospi(ds) { const t = (new Date(ds) - new Date('2021-01-01')) / 86400000; return [{ IDX_NM: '코스피', CLSPRC_IDX: (2800 + 400 * Math.sin(t / 200) + t * 0.3).toFixed(2) }]; }
@@ -109,6 +114,7 @@
     else if (url.includes('getJsonData')) body = JSON.stringify({ output: basic() });
     else if (url.includes('oauth2/tokenP')) { g.MOCK_KIS_TOKENS = (g.MOCK_KIS_TOKENS || 0) + 1; const e = new Date(Date.now() + 86400000); body = JSON.stringify({ access_token: 'TOK' + g.MOCK_KIS_TOKENS, token_type: 'Bearer', expires_in: 86400, access_token_token_expired: e.toISOString().slice(0, 10) + ' 09:00:00' }); }
     else if (url.includes('inquire-component-stock-price')) { const r = kisMock(q.FID_INPUT_ISCD, opt); return { getResponseCode: () => r[0], getContentText: () => r[1] }; }
+    else if (url.includes('api.github.com')) { g.MOCK_GH_CALLS = (g.MOCK_GH_CALLS || []); g.MOCK_GH_CALLS.push({ url: url, opt: opt }); const r = g.MOCK_GH ? g.MOCK_GH(url, opt) : [204, '']; return { getResponseCode: () => r[0], getContentText: () => r[1] }; }   // v41: GitHub 실행 호출
     else if (url.includes('funetf.co.kr/api/public/product/view/etfpdf')) { g.MOCK_FUN_CALLS = (g.MOCK_FUN_CALLS || 0) + 1; const r = g.MOCK_FUN ? g.MOCK_FUN(q.itemId, q.etfPdfYmd, opt) : [200, '[]']; return { getResponseCode: () => r[0], getContentText: () => r[1] }; }   // v34: FunETF 구성종목(기본 = 빈 응답 → KIS 보완)
     else if (/naverapihub|openapi\.naver/.test(url) && !(opt && opt.headers && opt.headers['X-NCP-APIGW-API-KEY-ID'] && opt.headers['X-NCP-APIGW-API-KEY'])) { g.MOCK_NAVER_401 = (g.MOCK_NAVER_401 || 0) + 1; return { getResponseCode: () => 401, getContentText: () => '{"errorCode":"200","message":"Authentication Failed"}' }; }   // v30: NAVER API HUB 인증 헤더
     else if (url.includes('datalab/search') || url.includes('search-trend/v1/search')) body = JSON.stringify(datalabMock(JSON.parse(opt.payload)));

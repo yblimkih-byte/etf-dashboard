@@ -334,7 +334,7 @@ function readDailyBlock_(dateStr) {
 }
 function rowToRec_(v) {
   return { date: v[0] instanceof Date ? fmt_(v[0]) : String(v[0]), code: padCode_(v[1]), name: v[2], mgr: v[3],
-           nav: toNum_(v[4]), trdval: toNum_(v[5]), ytd: toNum_(v[6]), mtd: toNum_(v[7]) };
+           nav: toNum_(v[4]), trdval: toNum_(v[5]), ytd: toNum_(v[6]), mtd: toNum_(v[7]), ps: toNum_(v[8]), sh: toNum_(v[9]) };   // v42: 1좌당 NAV·상장좌수(없으면 0)
 }
 
 // ─────────────────────────── 일별 적재 ───────────────────────────
@@ -433,6 +433,9 @@ function loadDaily() {
       log_('집계 갱신은 이어서 실행(1분 뒤): ' + agg.msg);
       scheduleContinue_('loadDaily', 1); return;
     }
+    // v42: 설정액(자금 유출입) — 마지막 반영일 이후 월만 다시 계산(보통 10초 안팎). 시한이 빠듯하면 이어서 실행으로
+    if (Date.now() - t0 < CFG.HARD_MS) { try { const fl = flowUpdate_(); if (fl.state === 'inc' || fl.state === 'full') step_(t0, '설정액 갱신: ' + fl.msg); } catch (e) { log_('설정액 갱신 실패: ' + e.message, 'WARN'); } }
+    else scheduleContinue_('flowUpdateRun', 1);
     ensureNightly_();
     if (!loaded && agg.state === 'none') {
       maintainSheets_(t0);
@@ -503,7 +506,7 @@ function trimRawColumns() {
 }
 
 /** 표준 레코드 → raw 행 */
-function recToRow_(r) { return [r.date, r.code, r.name, r.mgr, r.nav, r.trdval, r.ytd, r.mtd]; }
+function recToRow_(r) { return [r.date, r.code, r.name, r.mgr, r.nav, r.trdval, r.ytd, r.mtd, r.ps || '', r.sh || '']; }   // v42: 1좌당 NAV·상장좌수
 
 /** raw_일별에서 _index 마지막 블록 이후에 남은 행(중단된 실행의 잔여) 삭제 */
 function trimOrphanRows_(ix) {
@@ -525,7 +528,7 @@ function buildDailyRows_(recs, prev, ds, ctx) {
     const p = pm[r.code];
     const ytd = (p && sameYear ? p.ytd : 0) + r.trdval;
     const mtd = (p && sameMonth ? p.mtd : 0) + r.trdval;
-    return [ds, r.code, r.name, mgrShortOf_(r.code, ctx), r.nav, r.trdval, ytd, mtd];
+    return [ds, r.code, r.name, mgrShortOf_(r.code, ctx), r.nav, r.trdval, ytd, mtd, r.ps || '', r.sh || ''];   // v42: 1좌당 NAV·상장좌수
   });
 }
 

@@ -23,7 +23,7 @@ const INTERNAL = /범례_|유형최종|신규상장용|ETF마스터|agg_|raw_|�
         return { tabs: [...document.querySelectorAll('#tabs .tab')].map(t => t.textContent.trim()), active: (document.querySelector('#tabs .tab.active') || {}).textContent, titles: secs.map(s => s.querySelector('.h2').textContent),
           t0: tbl(0), t1: tbl(1), t2: tbl(2), t3: tbl(3), chips: [...v.querySelectorAll('.chips button')].map(x => x.textContent + (x.classList.contains('on') ? '*' : '')), charts: App.charts.map(c => c.config.type + ':' + c.data.labels.length),
           text: v.innerText + ' ' + ((document.getElementById('lede') || {}).innerText || '') + ' ' + ((document.getElementById('stats') || {}).innerText || ''), lede: (document.getElementById('lede') || {}).innerText || '',
-          cards: [...document.querySelectorAll('#stats .cd')].map(c => c.innerText.replace(/\s+/g, ' ')), tiles: [...v.querySelectorAll('.grid .tile')].map(t => t.innerText.replace(/\s+/g, ' ')), ovf: document.documentElement.scrollWidth - window.innerWidth,
+          cards: [...document.querySelectorAll('#stats .cd')].map(c => c.innerText.replace(/\s+/g, ' ')), tiles: [...v.querySelectorAll(':scope > .head .tile')].map(t => t.innerText.replace(/\s+/g, ' ')), ovf: document.documentElement.scrollWidth - window.innerWidth,
           src: secs.map(s => s.getAttribute('data-src') || '') };
       });
       await wait();
@@ -33,7 +33,9 @@ const INTERNAL = /범례_|유형최종|신규상장용|ETF마스터|agg_|raw_|�
         check('탭: 테마 맵 다음에 종목→ETF 찾기·관심도(수집 뒤 표시)', s.tabs.slice(-3).join('|') === '테마 맵|종목→ETF 찾기|관심도' && /종목→ETF 찾기/.test(s.active), s.tabs.slice(-3).join('|'));
         check('첫 화면: 많이 담은 종목 막대 + 표(순위·종목명·코드·보유 추정·담은 ETF 수)', /많이 담은 종목 상위/.test(s.titles[0]) && s.charts.some(c => /^bar:/.test(c)) && s.t0.head.join('|') === '순위|종목명|종목코드|보유 추정(조원)|담은 ETF 수' && s.t0.rows[0][1] === '삼성전자', s.t0.rows.slice(0, 3).map(r => r[1] + ' ' + r[3]).join(', '));
         check('바로가기 칩(많이 담은 종목)', s.chips.length >= 5 && s.chips[0] === '삼성전자', s.chips.slice(0, 5).join(','));
-        if (name === 'web') check('웹 카드·문장', s.cards.length === 2 && /많이 담은 종목/.test(s.lede), s.cards.join(' ‖ '));
+        // v41: 카드 3개(구성종목 기준일·구성종목 확인 비율·최다 보유 종목) — 두 화면 같음('찾는 방법' 카드 없음)
+        const c3 = name === 'web' ? s.cards : s.tiles;
+        check('카드 3개: 기준일·확인 비율·최다 보유(두 화면 같음)', c3.length === 3 && /구성종목 기준일/.test(c3[0]) && /구성종목 확인/.test(c3[1]) && /%/.test(c3[1]) && /최다 보유 종목/.test(c3[2]) && !/찾는 방법/.test(c3.join(' ')) && (name === 'web' ? /많이 담은 종목/.test(s.lede) : true), c3.join(' ‖ '));
         if (name === 'web') check('웹 자료 출처: 한국투자증권 Open API', /한국투자증권 Open API/.test(s.src[0]), s.src[0]);
         await freeze(); await p.screenshot({ path: `${OUT}/${name}_holders_top.png`, fullPage: true });
         // 검색: 엔비디아(별칭) → NVIDIA
@@ -46,7 +48,7 @@ const INTERNAL = /범례_|유형최종|신규상장용|ETF마스터|agg_|raw_|�
         const chk = await p.evaluate(async () => { const d = await App.call('holders', { q: '엔비디아', pick: '' }); const H = hdModel(App, d); const sumM = H.mgrs.reduce((a, m) => a + m.amt, 0);
           return { amtOk: d.items.every(r => Math.abs(r.amt - r.nav * r.w / 100) < 1), mgrOk: Math.abs(sumM - H.amt) < 1, f: H.fShare, fRaw: H.amt ? d.items.filter(r => r.top === App.FOCUS).reduce((a, r) => a + r.amt, 0) / H.amt * 100 : null, n: d.items.length }; });
         check('검산: 보유 추정 = NAV × 비중, 운용사별 합 = 전체, 한투 보유 비중', chk.amtOk && chk.mgrOk && Math.abs(chk.f - chk.fRaw) < 1e-9, JSON.stringify(chk));
-        check('타일/카드: 종목·담은 ETF·보유 추정·한투 보유 비중', name === 'web' ? s.cards.length === 4 && /한투 보유 비중/.test(s.cards.join(' ')) : s.tiles.length === 4 && /한투 보유 비중/.test(s.tiles[3]), (name === 'web' ? s.cards : s.tiles).join(' ‖ '));
+        check('타일/카드: 담은 ETF·보유 추정·한투 보유 비중·기준일(두 화면 같음)', (name === 'web' ? s.cards : s.tiles).length === 4 && /한투 보유 비중/.test((name === 'web' ? s.cards : s.tiles).join(' ')), (name === 'web' ? s.cards : s.tiles).join(' ‖ '));
         await freeze(); await p.screenshot({ path: `${OUT}/${name}_holders_nvda.png`, fullPage: true });
         // 운용사 칩 → 전체 목록 필터
         const flt = await p.evaluate(() => { const sec = [...document.querySelectorAll('#view .section')][2]; const btn = [...sec.querySelectorAll('.chip-m')].find(x => x.dataset.k === App.FOCUS); if (!btn) return null; btn.click(); const vis = [...sec.querySelectorAll('tbody tr')].filter(tr => !tr.classList.contains('fold')); return { n: vis.length, ok: vis.every(tr => tr.dataset.top === App.FOCUS) }; });

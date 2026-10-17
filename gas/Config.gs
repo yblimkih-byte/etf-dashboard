@@ -19,11 +19,13 @@ const CFG = {
     AGG_TOP: 'agg_상위ETF월별',
     AGG_SNAP_M: 'agg_월말요약',      // 월말 스냅샷별 운용사×유형×국내해외 요약 (집계 재계산 시 전체 재작성)
     AGG_SNAP_D: 'agg_일별요약',      // 일별 적재일별 동일 요약 (적재 시 추가)
+    FLOW_ETF: 'agg_설정액월별',      // v42: ETF × 월 설정액(자금 유출입)·평가 증감·기말 NAV
+    FLOW_SUM: 'agg_설정액요약',      // v42: 월 × 운용사 × 유형최종2 × 국내해외 합계(화면 조회용, 설정액 갱신 때 다시 씀)
     LOG: '_log'
   },
 
   // raw 시트 공통 컬럼 (요청 사양)
-  RAW_HEADER: ['기준일자', '종목코드', '종목명', '자산운용사', '순자산총액', '거래대금', '해당연도거래대금계', '해당월거래대금계'],
+  RAW_HEADER: ['기준일자', '종목코드', '종목명', '자산운용사', '순자산총액', '거래대금', '해당연도거래대금계', '해당월거래대금계', '1좌당NAV', '상장좌수'],   // v42: 설정액(자금 유출입) 계산용 2열(KRX 같은 응답)
 
   // 범례_유형 컬럼 인덱스(0-base) — 사용자 시트 구조 그대로
   TYPE_COL: { CODE: 0, NAME: 1, LIST_DD: 2, T1: 3, T2: 4, T3: 5, T4: 6, F1: 7, F2: 8, DOM: 9, NEW: 10, CHECK: 11 },
@@ -52,7 +54,9 @@ const CFG = {
       TRDVAL: ['ACC_TRDVAL', 'TRDVAL'],
       IDX_NM: ['IDX_NM'],
       IDX_IND: ['IDX_IND_NM'],           // v29: ETF 기초지수명
-      IDX_CLS: ['CLSPRC_IDX', 'CLSPRC']
+      IDX_CLS: ['CLSPRC_IDX', 'CLSPRC'],
+      NAV_PS: ['NAV'],                   // v42: 1좌당 순자산가치(원) — 설정액 = 내재 좌수(순자산총액 ÷ NAV) 증감 × NAV
+      SHARES: ['LIST_SHRS']              // v42: 상장좌수(설정·해지가 다음 영업일에 반영됨 — 점검·분할 판정용)
     }
   },
 
@@ -142,7 +146,8 @@ const PROP = { KRX_KEY: 'KRX_AUTH_KEY', LAST_DAILY: 'LAST_DAILY_DATE', BACKFILL_
   KIS_KEY: 'KIS_APP_KEY', KIS_SECRET: 'KIS_APP_SECRET',          // v29: 한국투자증권 Open API(ETF 구성종목 — 역인덱스 탭 준비)
   NAVER_ID: 'NAVER_CLIENT_ID', NAVER_SECRET: 'NAVER_CLIENT_SECRET',   // v29: 네이버 API(검색어 트렌드·뉴스 — 관심도 탭) · v30: NAVER API HUB Application 키
   KIS_TOKEN: 'KIS_TOKEN', KIS_STATE: 'KIS_PDF_STATE', KIS_RUN: 'KIS_PDF_RUN', KIS_DATE: 'KIS_PDF_DATE', KIS_INFO: 'KIS_PDF_INFO', KIS_TOP: 'KIS_PDF_TOP',   // v29: 구성종목 수집(Kis.gs)
-  BUZZ_DATE: 'BUZZ_DATE', BUZZ_INFO: 'BUZZ_INFO' };   // v29: 관심도 수집(Buzz.gs)
+  BUZZ_DATE: 'BUZZ_DATE', BUZZ_INFO: 'BUZZ_INFO',   // v29: 관심도 수집(Buzz.gs)
+  FLOW_STATE: 'FLOW_STATE', FLOW_FILL: 'FLOW_FILL', FLOW_VER: 'FLOW_VER', FLOW_JOB: 'FLOW_JOB' };   // v42: 설정액 계산 상태(마지막 반영일)·과거 보충 진행·화면 캐시 버전(Flow.gs)
 
 function krxKey_() {
   const k = PropertiesService.getScriptProperties().getProperty(PROP.KRX_KEY);

@@ -38,7 +38,8 @@ main{max-width:1280px;margin:0 auto;padding:0 32px 64px}
 .error{color:#b30000}
 .section{padding:28px 0;border-bottom:1px solid var(--rule-2)}
 .section:last-child{border-bottom:0}
-.section-h{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:16px}
+.section-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 16px;margin-bottom:16px}
+body:not(.web) .section-h .h2{flex:none;max-width:100%}body:not(.web) .section-h .note{flex:1 1 300px;min-width:0}   /* v41: 설명이 길어도 제목은 줄바꿈하지 않음(설명이 아래 줄로). 웹은 제목·설명이 위아래(세로 배치)라 제외 */
 .h2{font-size:24px;line-height:1.3;font-weight:400;margin:0;letter-spacing:-.2px}
 .h3{font-size:16px;font-weight:500;margin:0 0 10px}
 .note{font-size:13px;color:var(--ink-2)}
@@ -102,10 +103,9 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeri
 /* 표 행 강조/흐림 */
 .tbl tr.hl td{background:#f3f2ee;font-weight:500}
 .tbl tr.dim td{opacity:.35}
-/* 접힘(필터) 애니메이션 */
-.tbl td{transition:padding .35s ease,line-height .35s ease,font-size .35s ease,opacity .25s ease}
-.tbl tr.fold td{padding-top:0;padding-bottom:0;line-height:0;font-size:0;opacity:0;border-bottom:0}
-.tbl tr.fold td .sw{height:0;margin:0}
+/* 접힘(필터): v40 — 숨긴 행은 자리를 차지하지 않음(이전 접힘 애니메이션은 숨긴 행마다 1px 안팎이 남아 보이는 행 사이 간격이 고르지 않았음) */
+.tbl td{transition:opacity .25s ease}
+.tbl tr.fold{display:none}
 .tbl tr.sep td{border-top:2px solid var(--rule);padding-top:20px}
 /* bar chart race (DOM) */
 .race-stage{position:relative;overflow:hidden;padding-left:28px}
@@ -139,7 +139,7 @@ table.tbl.compact{width:auto}
 .tm-legend i{display:inline-block;width:28px;height:12px;border:1px solid var(--rule-2)}
 .tm-legend span{margin:0 6px}
 /* v16: 개관 탭 폭 제한, 신규상장 운용사 표 접기, 목록 상단 고정 */
-body.narrow-tab .view{max-width:1040px}
+body.narrow-tab .view{max-width:none}   /* v41: Apps Script 는 본문 폭 제한 해제(넓은 창에서 오른쪽 빈 공간 → 머리글과 같은 폭) */
 .fold-head td{cursor:pointer;color:var(--ink-2)}
 .fold-head:hover td{background:#fafaf8}
 .fold-btn{display:inline-block;width:14px;margin-right:4px;font-size:11px;color:var(--ink-2)}
@@ -178,6 +178,8 @@ table.kv{width:100%;border-collapse:collapse;font-size:15px}
 .kv b{font-weight:600}
 /* v29 테마 맵 */
 .th-bar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 22px;margin:14px 0 18px}
+/* v42: NAV 증감 요인(설정액·평가 증감) — 선택 줄(유형·운용사 칩 + 기간) */
+.flow-bar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 22px;margin:4px 0 8px}.flow-bar .chips{margin:0}.flow-rng{flex-direction:row;align-items:center;gap:8px}.flow-rng .seg button{padding:6px 12px;font-size:13px}
 .th-bar .seg button{padding:6px 12px;font-size:13px}
 .th-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 0;font-size:12px;color:var(--ink-2)}
 .th-lg{display:inline-flex;align-items:center}
@@ -193,4 +195,64 @@ table.kv{width:100%;border-collapse:collapse;font-size:15px}
 .hd-sugg .chip-m,.chip-m.hd-c{padding-left:14px}
 .hd-cn{margin-left:6px;font-size:11px;opacity:.7}
 @media print{.hdr-wrap .tabs,.controls,.tbl-tools,.race-bar,.chips{display:none!important}.hdr-wrap{position:static;box-shadow:none}.section{break-inside:avoid;page-break-inside:avoid}main{padding:0 8px}.tbl td,.tbl th{padding:4px 6px;font-size:11px}.chart-wrap{height:300px!important}}
+/* ── v41: 머리 영역 압축(Apps Script) — 제목 한 줄·탭 한 줄·컨트롤 한 줄, 본문이 화면 위쪽 약 1/4 안에서 시작 ── */
+.hdr{padding:10px 32px 0}
+.hdr-row{align-items:center;padding-bottom:8px}
+.brand{display:flex;align-items:baseline;gap:12px;min-width:0}
+.brand .display{font-size:24px;letter-spacing:-.6px;margin:0;white-space:nowrap}
+.brand .mono{font-size:11px;white-space:nowrap}
+.hdr-meta{font-size:11px;line-height:1.5}
+.hdr .tabs{gap:6px;padding:8px 0 2px}
+.hdr .tab{padding:5px 14px;font-size:13.5px}
+.hdr .controls{gap:8px 18px;align-items:center;padding:8px 0 10px;min-height:0}
+.hdr .ctl{flex-direction:row;align-items:center;gap:8px}
+.hdr .ctl select,.hdr .ctl input{padding:5px 8px;min-width:0;font-size:13.5px}
+.hdr .seg button{padding:5px 12px;font-size:13.5px}
+.hdr .seg-one{padding:5px 12px}
+.view{padding-top:18px}
+/* v41: 기준 표시(모든 탭 같은 자리) */
+.ctl-asof{justify-content:center}
+.asof{display:inline-flex;align-items:center;height:28px;padding:0 12px;border:1px solid var(--rule);border-radius:30px;font-size:12.5px;color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums;cursor:default}
+.asof:empty{display:none}
+.asof.warn{border-color:#f59e0b;color:#b45309;background:#fffbeb}
+.warn{color:#b45309}
+/* v41: 탭 머리(Apps Script) — 결론 줄 + 지표 타일(두 화면 같은 카드) */
+.head{margin:0 0 6px}
+.head-lede{font-size:15px;line-height:1.65;color:var(--ink);margin:0 0 10px;word-break:keep-all}
+.head-lede .ld{display:block}.head-lede b{font-weight:600}
+.head-tiles{display:grid;gap:4px 20px;grid-template-columns:repeat(var(--n,4),minmax(0,1fr))}
+@media (max-width:1024px){.head-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:640px){.head-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.head-tiles .tile{padding:10px 0 4px;min-width:0}
+.head-tiles .tile .k{display:flex;align-items:center;gap:6px;white-space:nowrap;min-width:0}
+.head-tiles .tile .k i{width:8px;height:8px;border-radius:50%;flex:none}
+.head-tiles .tile .k .kt{overflow:hidden;text-overflow:ellipsis}
+.head-tiles .tile .k[title]{cursor:help}
+.head-tiles .bdg{margin-left:auto;flex:none;font:500 11.5px var(--font);letter-spacing:0;text-transform:none;padding:0 7px;line-height:18px;border:1px solid var(--rule);border-radius:9px;color:#15803d}
+.head-tiles .bdg.neg{color:#b30000}
+.head-tiles .bdg.zero{color:var(--ink-2)}
+.head-tiles .tile .v{font-size:26px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.head-tiles .tile .v small{font-size:14px;color:var(--ink-2);margin-left:2px;letter-spacing:0}
+.head-tiles .tile .v.txt{font-size:19px;line-height:1.55}
+.head-tiles .tile .v.neg{color:#b30000}
+.head-tiles .tile .d{margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.head-tiles .tile .d2{margin-top:0}
+.head-tiles .tile.focus{border-top:2px solid #7A4A1D}
+.head-tiles .tile.warn{border-top:2px solid #f59e0b}
+/* v41: 섹션 바로가기 */
+.toc{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:12px 0 0}
+.toc-l{font-size:12px;color:var(--ink-2);margin-right:2px}
+.toc-a{border:1px solid var(--rule);background:#fff;color:var(--ink);border-radius:30px;padding:3px 12px;font:12.5px/1.5 var(--font);cursor:pointer}
+.toc-a:hover{border-color:var(--black)}
+/* v41: 긴 표 — 앞 20행 + 전체 보기 */
+.tbl tr.lim-hide{display:none}
+.tbl-more{display:block;margin:10px auto 2px;border:1px solid var(--rule);background:#fff;color:var(--ink);border-radius:30px;padding:6px 18px;font:500 13px var(--font);cursor:pointer}
+.tbl-more:hover{border-color:var(--black)}
+.tbl-more[hidden]{display:none}
+/* v41: 테마 맵 조건(기본 접힘) */
+.th-sum{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:14px 0 4px;font-size:14px}
+.th-sum-l{font-size:12px;color:var(--ink-2)}
+.th-sum-v{font-weight:500}
+.th-bar[hidden]{display:none}
+@media print{.toc,.tbl-more,.th-sum .th-tg{display:none!important}.tbl tr.lim-hide{display:table-row}}
 </style>

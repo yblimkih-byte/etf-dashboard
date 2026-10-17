@@ -109,8 +109,21 @@ main 에 `gas/` 변경이 push 되면 자동으로 `clasp push` 실행. 회사 P
 1. 로컬(핫스팟)에서 `clasp login` 후 `~/.clasprc.json` 내용 전체 복사
 2. GitHub 저장소 › Settings › Secrets and variables › Actions › New repository secret
    - Name `CLASPRC_JSON`, Value = 위 파일 내용
-3. `.github/workflows/push-to-apps-script.yml` 이 자동 동작. Actions 탭에서 성공 여부 확인
+3. `.github/workflows/push-to-apps-script.yml` 이 자동 동작. Actions 탭에서 성공 여부 확인(v41: 이 시크릿이 없으면 실패 대신 '건너뜀'으로 끝남)
 4. 웹앱 URL 까지 자동 갱신하려면 Secret `DEPLOYMENT_ID`(0-6 의 배포 ID) 추가 후 워크플로 마지막 줄 주석 해제. 단, 자동 배포는 검증 없이 운영에 반영되므로 PR 머지 = 배포라는 규율이 필요함. 초기에는 push 만 자동, deploy 는 수동 권장
+
+### 4-1. FunETF 구성종목 자동 수집 시작 신호(v41)
+
+GitHub 자체 예약(cron)은 실제 시작이 몇 시간씩 늦어(2026-10-13 08:12, 10-16 05:01 시작) 02:00~06:00 수집 창을 놓침. v41 부터 Apps Script 시간 트리거(화·금 01:40 전후)가 GitHub 'Run workflow' API 를 호출해 02:00 에 시작함. 1회 설정:
+
+1. GitHub › 오른쪽 위 프로필 › Settings › Developer settings › Personal access tokens › **Fine-grained tokens** › Generate new token
+2. Token name 예: `etf-dashboard-dispatch` · Expiration: 원하는 기간(만료되면 새로 만들어 3번 다시)
+3. Repository access: **Only select repositories** → `yblimkih-byte/etf-dashboard`
+4. Permissions › Repository permissions › **Actions: Read and write** (그 밖은 기본값)
+5. Generate token → 값 복사 → 스프레드시트 메뉴 [ETF Dashboard] › **FunETF 자동 수집 시작 신호(GitHub 토큰) 설정** 에 붙여 넣기(스크립트 속성 `GH_DISPATCH_TOKEN` 에만 저장, 화·금 01:40 트리거 자동 설치)
+6. 확인: 메뉴 **FunETF 자동 수집 시작 신호 시험(3종목)** → 1~2분 안에 Actions 탭에 실행이 생기고 약 1분 뒤 끝남(3종목만 받고 시트는 그대로)
+
+결과는 `_log` 시트('FunETF 자동 수집 시작 신호')에 남음. 401 = 토큰 만료·오입력, 403/404 = 권한(저장소·Actions 읽기·쓰기) 확인. 작업이 60일 활동 없음으로 꺼져 있으면 호출 때 다시 켬.
 
 ## 5. 롤백
 

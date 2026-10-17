@@ -223,6 +223,7 @@ function fullAggFinished_(hash) {
   props.setProperty(PROP.AGG_HASH, hash);
   props.deleteProperty(PROP.FULL_AGG);
   clearTriggers_('cont_fullAgg');
+  try { if (flowReady_() && !flowBusy_() && ss_().getSheetByName(CFG.SHEET.FLOW_ETF)) { flowSummary_(); props.setProperty(PROP.FLOW_VER, String(Date.now())); } } catch (e) { log_('설정액 요약 다시 쓰기 실패: ' + e.message, 'WARN'); }   // v42: 범례(운용사·유형) 변경 반영
 }
 
 /** 전체 재계산 예약(분할 실행). 이미 진행 중이면 예약만 확인. 오늘 중단된 적이 있으면 예약하지 않음(내일 야간 점검·메뉴로) → 반환 true/false */
@@ -319,6 +320,7 @@ function nightlyAgg() {
     else if (prev !== hash) { requestFullAgg_(prev ? '범례(유형·운용사·ETF마스터) 변경 반영' : '범례 지문 최초 기록'); return; }
     const r = healAgg_(Date.now(), () => ctx, null);
     console.log('[nightlyAgg] 집계 점검: ' + r.msg);
+    try { const fl = flowUpdate_(); if (fl.state === 'inc' || fl.state === 'full') log_('설정액 갱신(야간 점검): ' + fl.msg); } catch (e) { log_('설정액 갱신 실패: ' + e.message, 'WARN'); }   // v42
     // v24: 상장일·종목명·신규상장용 구분 등 화면 계산이 읽는 항목이 바뀌었으면 화면 캐시 전체 무효화(처음 실행은 지문만 기록)
     const ch = ctxHash_(ctx), pc = props.getProperty(PROP.CTX_HASH), changed = !!pc && pc !== ch;
     if (pc !== ch) props.setProperty(PROP.CTX_HASH, ch);
@@ -393,14 +395,14 @@ function rebuildDailySummary() {
 
 /** API 캐시 예열(v13). 캐시 키는 파라미터로 정해지므로 **화면이 실제로 보내는 파라미터**로 호출해야 적중함
  *  (v12 까지는 {} 로 예열해 화면 요청({date:…})과 키가 달라 효과가 없었음). v24: 키는 파라미터 키 순서와 무관(stableStr_) */
-function warmParams_(date, dv, months) {
+function warmParams_(date, dv, months, noTurn) {   // v41: noTurn = 거래대금 제외(화면 기본 구간 끝 = 최근 영업일이라 전월말 구간은 예열하지 않음)
   const to = dv.indexOf(date) >= 0 ? date : dv[dv.length - 1];
   let from = dv[0];
   if (to) { const py = months.filter(x => x.ym < to.slice(0, 4) + '-01').pop(); const f = py && dv.filter(d => d > py.date)[0]; if (f) from = f; }
   // 첫 화면 묶음(bootList_: 요약 탭 6건 = 각 탭 기본 조회) → 히트맵 → 거래대금
   const list = bootList_(date).concat([['treemap', { date: date, ref: 'py' }], ['theme', { date: date, ref: 'py' }]]);   // v29: 테마 맵
   list.push(['topEtf', { date: date, n: '100' }], ['topEtf', { date: date, n: 'all' }]);   // v39: ETF 상세 범위(상위 100개·전체) — 상위 50은 첫 화면 묶음에 포함
-  if (to) list.push(['turnover', { from: from, to: to }]);
+  if (to && !noTurn) list.push(['turnover', { from: from, to: to }]);
   return list;
 }
 /** v24 예열: 기본 기준일(전월말, 첫 화면) → 최근 영업일 → NAV 상위 20 변천 순으로, 캐시에 있으면 보존 기간만 연장(다시 넣기)·없으면 계산.
@@ -421,8 +423,11 @@ function warmAll() {
     // 기본 기준일(전월말)·최근 영업일만 예열. 당월의 다른 일자는 처음 조회할 때 계산해 6시간 캐시
     //  (v13~v16 은 당월 전 일자를 5.5시간마다 다시 예열 → 하루 40~57분 사용, 무료 계정 트리거 한도 90분/일에 근접)
     const list = [];
-    [m.defaultDate, latest].filter((d, i, a) => d && a.indexOf(d) === i).forEach(d => warmParams_(d, dv, m.months).forEach(x => list.push(x)));
+    [m.defaultDate, latest].filter((d, i, a) => d && a.indexOf(d) === i).forEach(d => warmParams_(d, dv, m.months, d !== latest).forEach(x => list.push(x)));
     list.push(['race', { n: 20 }]);
+    if (m.buzzDate) list.push(['buzz', {}]);                        // v41: 관심도 첫 화면(이전엔 예열 없음 → 적재 뒤 첫 열기 8초 이상)
+    if (m.holdingsDate) list.push(['holders', { q: '', pick: '' }]);   // v41: 종목→ETF 찾기 첫 화면
+    list.push(['flows', {}], ['flowTop', { ym: ym_(m.defaultDate || '') }], ['flowTop', { ym: latest ? ym_(latest) : '' }]);   // v42: 설정액(운용사별·유형별 NAV·요약 탭)
     list.forEach(x => {
       if (Date.now() - t0 > limit) { left++; return; }
       try { if (warmOne_(cache, x[0], x[1], P) === 'hit') hit++; else put++; } catch (e) {}

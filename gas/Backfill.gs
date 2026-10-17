@@ -25,7 +25,7 @@ function backfillMonthly() {
         const recs = lastTradingSnapshot_(y, m);
         if (recs) {
           ensureMaster_(recs, ctx, recs[0].date);
-          const rows = recs.map(r => [r.date, r.code, r.name, mgrShortOf_(r.code, ctx, r.name), r.nav, r.trdval, '', '']);
+          const rows = recs.map(r => [r.date, r.code, r.name, mgrShortOf_(r.code, ctx, r.name), r.nav, r.trdval, '', '', r.ps || '', r.sh || '']);   // v42: 1좌당 NAV·상장좌수
           appendRows_(sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), rows);
           PropertiesService.getScriptProperties().deleteProperty(PROP.MONTHLY_MAP);   // v17: 월별 위치 캐시 무효화
           log_('월말 백필 ' + key + ' (' + recs[0].date + ', ' + rows.length + '종목)');

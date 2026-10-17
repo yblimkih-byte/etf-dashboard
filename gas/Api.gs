@@ -34,8 +34,8 @@ function api(action, params) {
     const key = cacheKey_(action, params, P);
     const hit = getCached_(cache, key);
     if (hit) return action === 'meta' ? withLoadStatus_(hit, P) : hit;
-    const out = JSON.stringify({ ok: true, data: fn(params || {}) });
-    putCached_(cache, key, out);
+    const data = fn(params || {}), out = JSON.stringify({ ok: true, data: data });
+    if (!(data && data.ready === false && /^flow/.test(action))) putCached_(cache, key, out);   // v42: 설정액 준비 전(보충 진행률) 응답은 캐시하지 않음
     return action === 'meta' ? withLoadStatus_(out, P) : out;
   } catch (err) {
     return JSON.stringify({ ok: false, error: err.message });
@@ -48,7 +48,7 @@ const CACHE_GEN_ = 'a26';   // v26: 개별 종목 유형 = 유형최종3 → 이
 function cacheKey_(action, params, P) {
   const h = md5_(stableStr_(params));   // v31: UTF-8(한글 파라미터 캐시 충돌 해소)
   P = P || PropertiesService.getScriptProperties().getProperties();
-  const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : '';   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산
+  const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : /^flow/.test(action) ? '.f' + (P[PROP.FLOW_VER] || '0') : '';   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산 · v42: 설정액은 계산할 때마다
   return CACHE_GEN_ + ':' + verFor_(action, params, P) + tv + ':' + action + ':' + h;
 }
 function stableStr_(p) { p = p || {}; return '{' + Object.keys(p).sort().filter(k => p[k] !== undefined).map(k => JSON.stringify(k) + ':' + JSON.stringify(p[k])).join(',') + '}'; }
@@ -201,7 +201,10 @@ const ACTIONS = {
   turnover: apiTurnover_,
   theme: p => apiTheme_(p),  // v29: 테마 맵 (Theme.gs — 파일 실행 순서와 무관하게 호출 시점에 찾도록 함수로 감쌈)
   holders: p => apiHolders_(p),   // v29: 종목→ETF 찾기 (Kis.gs)
-  buzz: p => apiBuzz_(p)          // v29: 관심도 (Buzz.gs)
+  buzz: p => apiBuzz_(p),         // v29: 관심도 (Buzz.gs)
+  flows: p => apiFlows_(p),       // v42: 설정액(자금 유출입)·평가 증감 월별 시계열 (Flow.gs)
+  flowTop: p => apiFlowTop_(p),   // v42: 월별 설정 상위·해지 상위 ETF
+  flowCheck: p => apiFlowCheck_(p)   // v42: 점검용(ETF별 월 설정액, 산식 2종) — 외부 자료 대조
 };
 
 // ─────────────────────────── 공통 ───────────────────────────

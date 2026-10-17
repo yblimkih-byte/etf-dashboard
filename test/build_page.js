@@ -17,6 +17,7 @@ ${gsFiles}
   Object.keys(s.store).forEach(n => { const sh = ss.insertSheet(n); sh.rows = s.store[n]; });
   Object.keys(s.props).forEach(k => PropertiesService.getScriptProperties().setProperty(k, s.props[k]));
   ${process.env.V29B ? "(function(){ const P = PropertiesService.getScriptProperties(); P.setProperty(PROP.KIS_KEY, 'K'); P.setProperty(PROP.KIS_SECRET, 'S'); P.setProperty(PROP.NAVER_ID, 'I'); P.setProperty(PROP.NAVER_SECRET, 'S'); KIS.GAP_MS = 0; try { collectHoldings(); collectBuzz(); } catch (e) { console.error(e); } })();" : ''}   // v29: V29B=1 이면 모의 KIS·네이버로 구성종목·관심도 수집(종목→ETF 찾기·관심도 탭 표시)
+  ${process.env.NOFLOW ? '' : "try { PropertiesService.getScriptProperties().setProperty(PROP.FLOW_FILL, JSON.stringify({ ok: 'test' })); rebuildFlows_(); } catch (e) { console.error(e); }"}   // v42: 설정액 계산(NOFLOW=1 이면 준비 전 화면)
   window.MOCK = { calls: [], api: (a, p) => { window.MOCK.calls.push(a); return api(a, p); } };
   // v24: 메모리 캐시 + 예열 → doGet 처럼 첫 화면 묶음(BOOT)을 페이지에 넣음 (NOBOOT=1 이면 생략 → 화면이 직접 조회)
   if (${process.env.NOBOOT ? 'false' : 'true'}) { window.MOCK_CACHE = true; try { warmAll(); } catch (e) { console.error(e); } const j = bootEmbed_(); window.BOOT = j === 'null' ? null : JSON.parse(j); }
