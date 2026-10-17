@@ -21,7 +21,7 @@ ctx.Utilities.sleep = () => {};
 
 console.info('A) 산식');
 let r = J(`flowStep_({nav:100, ps:10}, {nav:110, ps:11})`); check('설정 없음: NAV +10% → 평가 +10, 설정 0', near(r[0], 0, 1e-9) && near(r[1], 10, 1e-9), r);
-r = J(`flowStep_({nav:100, ps:10}, {nav:132, ps:11})`); check('설정 있음: NAV 100→132, 1좌당 +10% → 평가 +10, 설정 +22', near(r[0], 22, 1e-9) && near(r[1], 10, 1e-9), r);
+r = J(`flowStep_({nav:100, ps:10}, {nav:132, ps:11})`); check('설정 있음: NAV 100→132, 1좌당 10→11 → 좌수 10→12, 설정 = 2좌 × 전일 NAV 10 = +20, 평가 = 12좌 × 1 = +12', near(r[0], 20, 1e-9) && near(r[1], 12, 1e-9), r);
 r = J(`flowStep_(null, {nav:50, ps:10})`); check('신규상장 = 첫날 순자산 전액 설정', r[0] === 50 && r[1] === 0, r);
 r = J(`flowStep_({nav:70, ps:9}, {nav:0, ps:0})`); check('상장폐지 = 직전 순자산 전액 해지', r[0] === -70 && r[1] === 0, r);
 r = J(`flowStep_({nav:1000, ps:50000}, {nav:1010, ps:5050})`); check('1:10 분할(1좌당 NAV 1/10, 내재 좌수 10배) → 배수 보정: 평가 +10, 설정 0', near(r[0], 0, 1e-6) && near(r[1], 10, 1e-6), r);
@@ -30,7 +30,7 @@ r = J(`flowStep_({nav:1000, ps:10000}, {nav:500, ps:5000})`); check('레버리�
 r = J(`flowStep_({nav:100, ps:0}, {nav:120, ps:0})`); check('1좌당 NAV 없음(보충 전) → 증감 전부 평가', r[0] === 0 && r[1] === 20, r);
 r = J(`flowSpan_({nav:100, ps:10}, {nav:165, ps:11})`); check('월말 두 시점 근사: 내재 좌수 10→15 × 평균 NAV 10.5 = 설정 52.5, 평가 12.5', near(r[0], 52.5, 1e-9) && near(r[1], 12.5, 1e-9), r);
 const m3 = J(`flowMonth_([{X:{nav:100, ps:10, name:'X', mgr:'m'}}, {X:{nav:132, ps:11, name:'X', mgr:'m'}}, {X:{nav:120, ps:10, name:'X', mgr:'m'}, Y:{nav:30, ps:10, name:'Y', mgr:'m'}}], 'D')`);
-check('한 달 합: X 설정 +22 + (120 − 132×10/11 = 0), 평가 +10 −12 · Y 신규 +30 · 기말 NAV', near(m3.X.f, 22, 1e-9) && near(m3.X.v, -2, 1e-9) && m3.X.e === 120 && m3.Y.f === 30 && m3.Y.e === 30, m3);
+check('한 달 합: X 설정 +20 + (12좌 → 12좌 = 0), 평가 +12 −12 · Y 신규 +30 · 기말 NAV', near(m3.X.f, 20, 1e-9) && near(m3.X.v, 0, 1e-9) && m3.X.e === 120 && m3.Y.f === 30 && m3.Y.e === 30, m3);
 
 console.info('B) 과거 보충(1좌당 NAV·상장좌수)');
 const want = {};   // 보충 전 값(정답)
@@ -38,6 +38,9 @@ const want = {};   // 보충 전 값(정답)
 R(`Object.keys(SHEET_W_).forEach(k => delete SHEET_W_[k])`);
 ctx.MOCK_TRIGGERS.length = 0;
 let calls0 = ctx.MOCK_CALLS, runs = 0;
+R(`const __fm = flowMap_; flowMap_ = () => { throw new Error('6분 한도(모의)'); }; try { backfillFlowCols(); } catch (e) {} flowMap_ = __fm;`);   // 실행 도중 끊김(6분 한도) 모의
+check('도중에 끊겨도 이어서 실행(시작할 때 8분 뒤 감시 예약)', ctx.MOCK_TRIGGERS.some(t => t.fn === 'cont_backfillFlowCols' && t.after === 8 * 60 * 1000) && !P('FLOW_FILL'), ctx.MOCK_TRIGGERS.map(t => t.fn + ':' + t.after));
+ctx.MOCK_TRIGGERS.length = 0; calls0 = ctx.MOCK_CALLS;
 R(`FLOW.FILL_MS = 0`);   // 1회 실행에 1일자만 → 이어서 실행 경로 점검
 R(`backfillFlowCols()`); runs++;
 const p1 = JSON.parse(P('FLOW_FILL'));
@@ -72,7 +75,7 @@ check('시장 합계: 월별 설정액 + 평가 증감 = 시장 NAV 증감', !mk
 // 일별 독립 계산(한 종목·한 달): Σ (NAV_t − NAV_t−1 × ps_t/ps_t−1)
 const code = rawD[0][1], ds = [...new Set(rawD.map(x => x[0]))].filter(d => d.slice(0, 7) === '2026-03').sort();
 const rec = d => rawD.find(x => x[0] === d && x[1] === code), pe = rawD.filter(x => x[0] === mEnd['2026-02'] && x[1] === code)[0];
-let fx = 0, a = pe; ds.forEach(d => { const b = rec(d); fx += b[4] - a[4] * b[8] / a[8]; a = b; });
+let fx = 0, a = pe; ds.forEach(d => { const b = rec(d); fx += (b[4] / b[8] - a[4] / a[8]) * a[8]; a = b; });   // Σ 좌수 증감 × 전일 NAV
 const got = rowsA.find(x => x[0] === '2026-03' && x[1] === code);
 check('독립 계산(한 종목 3월 일별 합)과 같음', got && near(got[4], fx, 1), { got: got && got[4], fx: Math.round(fx) });
 // 분할 주입 후 다시 계산
@@ -93,6 +96,23 @@ check('요약 시트: 상위구분 = 상위 5개사 + 기타, 산출 열', sum.e
 const fst = JSON.parse(P('FLOW_STATE')), lastD = Object.keys(J(`indexMap_()`)).sort().pop();
 check('상태: 마지막 반영일 = 최종 적재일, 설정액 버전 기록', fst.last === lastD && +P('FLOW_VER') > 0, fst);
 
+// 나눠 실행(월 단위로 끊어 이어서 — 실자료는 6분 초과) = 한 번에 계산. 이전 계산이 더 길었던 경우(남는 행)·도중 끊김(상태 되돌림)·진행 중 증분 갱신 보류
+const live = rows => JSON.stringify(rows.filter(x => x && x[0] !== '' && x[0] !== undefined && x[0] !== null));
+const one = live(S['agg_설정액월별'].rows), oneSum = live(S['agg_설정액요약'].rows);
+S['agg_설정액월별'].rows = S['agg_설정액월별'].rows.concat(S['agg_설정액월별'].rows.slice(1, 50).map(x => x.slice()));
+let nRun = 0, rr, saved = null, busy = null;
+do {
+  rr = J(`rebuildFlows_(1)`); nRun++;
+  if (nRun === 3) busy = J(`flowUpdate_()`).state;
+  if (nRun === 5) saved = P('FLOW_JOB');
+  if (nRun === 7) R(`PropertiesService.getScriptProperties().setProperty(PROP.FLOW_JOB, ${JSON.stringify(saved)})`);   // 6·7번째 실행이 끊겨 상태가 저장되지 않은 경우
+} while (rr.cont && nRun < 500);
+{ const a1 = JSON.parse(live(S['agg_설정액월별'].rows)), b1 = JSON.parse(one); var dbg = { nRun, cont: rr.cont, job: !!P('FLOW_JOB'), n: [a1.length, b1.length], sum: live(S['agg_설정액요약'].rows) === oneSum, firstDiff: a1.findIndex((x, i) => JSON.stringify(x) !== JSON.stringify(b1[i])) }; dbg.at = dbg.firstDiff >= 0 ? [a1[dbg.firstDiff], b1[dbg.firstDiff]] : null; }
+check('나눠 실행(월마다 끊고 이어서·도중 끊김 포함) = 한 번에 계산 · 남는 행 정리 · 작업 상태 삭제', !rr.cont && nRun > 60 && live(S['agg_설정액월별'].rows) === one && live(S['agg_설정액요약'].rows) === oneSum && !P('FLOW_JOB'), dbg);
+check('전체 계산 진행 중에는 증분 갱신 보류(busy)', busy === 'busy', busy);
+ctx.MOCK_TRIGGERS.length = 0; R(`rebuildFlows()`);
+check('메뉴 실행: 감시 예약 후 끝나면(한 번에 끝나는 크기) 상태 정리', !P('FLOW_JOB') && ctx.MOCK_TRIGGERS.some(t => t.fn === 'cont_rebuildFlows' && t.after === 8 * 60 * 1000), ctx.MOCK_TRIGGERS.map(t => t.fn + ':' + t.after));
+
 console.info('D) 증분 갱신');
 const full = JSON.stringify(S['agg_설정액월별'].rows), fullSum = JSON.stringify(S['agg_설정액요약'].rows);
 R(`PropertiesService.getScriptProperties().setProperty(PROP.FLOW_STATE, JSON.stringify({ last: '2026-08-20' }))`);
@@ -103,6 +123,10 @@ check('8월 20일 이후 → 8·9월만 다시 계산', u.state === 'inc' && /20
 check('다시 계산한 결과 = 전체 계산과 같음(ETF × 월·요약)', JSON.stringify(S['agg_설정액월별'].rows) === full && JSON.stringify(S['agg_설정액요약'].rows) === fullSum);
 check('앞 월(7월까지) 행은 그대로', JSON.stringify(S['agg_설정액월별'].rows.filter((x, i) => i && x[0] < '2026-08')) === early);
 check('최신이면 할 일 없음', J(`flowUpdate_()`).state === 'none');
+const fsv = P('FLOW_STATE'); R(`PropertiesService.getScriptProperties().deleteProperty(PROP.FLOW_STATE)`); ctx.MOCK_TRIGGERS.length = 0;
+const fu = J(`flowUpdate_()`);
+check('계산 기록 없음 → 전체 계산을 별도 실행으로 예약(적재 실행 안에서 돌리지 않음)', fu.state === 'full' && ctx.MOCK_TRIGGERS.some(t => t.fn === 'cont_rebuildFlows' && t.after === 60000), fu);
+R(`PropertiesService.getScriptProperties().setProperty(PROP.FLOW_STATE, ${JSON.stringify(fsv)})`);
 R(`PropertiesService.getScriptProperties().setProperty(PROP.FLOW_FILL, JSON.stringify({ left: 3 }))`);
 check('과거 보충 전이면 건너뜀', J(`flowUpdate_()`).state === 'notready');
 R(`PropertiesService.getScriptProperties().setProperty(PROP.FLOW_FILL, JSON.stringify({ ok: 'x' }))`);
@@ -126,6 +150,10 @@ const sheetU = {}; S['agg_설정액월별'].rows.slice(1).filter(x => x[7] === '
 const uBad = Object.keys(sheetU).filter(c => Object.keys(sheetU[c]).some(k => (fc.U[c] || {})[k] !== sheetU[c][k] && sheetU[c][k] !== 0));
 check('flowCheck: U(화면 산식) = 시트 값(백만원), 일별 월 목록, S1(상장좌수) 제공', fc.months.join() === fl.months.filter((k, i) => fl.method[i] === 'D').join() && !uBad.length && Object.keys(fc.S1).length > 100, { bad: uBad.length, months: fc.months.length });
 const k1 = R(`cacheKey_('flows', {})`); R(`PropertiesService.getScriptProperties().setProperty(PROP.FLOW_VER, '123')`); const k2 = R(`cacheKey_('flows', {})`);
+ctx.MOCK_CACHE = true; R(`PropertiesService.getScriptProperties().setProperty(PROP.FLOW_STATE, '')`); const nr1 = JSON.parse(R(`api('flows', {})`)).data; R(`PropertiesService.getScriptProperties().setProperty(PROP.FLOW_FILL, JSON.stringify({ done: 9, left: 1 }))`); const nr2 = JSON.parse(R(`api('flows', {})`)).data;
+ctx.MOCK_CACHE = false;
+check('준비 전 응답은 캐시하지 않음(진행률이 바로 바뀜)', nr1.ready === false && nr2.ready === false && nr2.fill.done === 9, { nr2: nr2.fill });
+R(`PropertiesService.getScriptProperties().setProperty(PROP.FLOW_FILL, JSON.stringify({ ok: 'x' }))`);
 check('캐시 키에 설정액 버전(계산할 때마다 새 응답)', k1 !== k2 && /\.f123:flows:/.test(k2) && !/\.f/.test(R(`cacheKey_('byMgr', { date: '2026-09-09', ref: 'py' })`)));
 
 console.info('F) 연결');

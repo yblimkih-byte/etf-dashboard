@@ -44,7 +44,7 @@ const num = t => { const m = String(t || '').replace(/,/g, '').match(/[-+−]?\d
     check('운용사별 NAV 증감(설정액 + 평가) = 위 표 증감액(전년말 대비) — 6개사·시장', !bad.length && Math.abs(num(ct.total[1]) - num(top.total[2])) <= 0.051, { bad, mkt: [ct.total[1], top.total[2]] });
     check('운용사별 표: 설정액 + 평가 증감 = NAV 증감, 점유율 합 100%', ct.rows.every(r => Math.abs(num(r[2]) + num(r[3]) - num(r[1])) <= 0.011) && (ct.total[4] === '-' || Math.abs(ct.rows.reduce((a, r) => a + num(r[4]), 0) - 100) < 0.6));
     check('설정 상위·해지 상위 ETF 표(기준월) · 설정액 부호', s.tbls.length === 4 && s.tbls[2].rows.length > 0 && s.tbls[2].rows.every(r => num(r[2]) > 0) && s.tbls[3].rows.every(r => num(r[2]) < 0) && s.subs.some(x => x.indexOf(ym + ' 설정 상위·해지 상위 ETF — 시장 전체') === 0), s.subs);
-    check('설명: 산식·산출 방법(일별 합·월말 근사)·내부 이름 없음', /설정액 = 좌수 변화 × 1좌당 NAV/.test(s.txt) && s.notes.some(n => /영업일별 합/.test(n) && /월말 두 시점 근사/.test(n)) && !/agg_|raw_|유형최종|FLOW|flows/.test(s.txt));
+    check('설명: 산식·산출 방법(일별 합·월말 근사)·내부 이름 없음', /설정액 = 좌수 변화 × 전일 1좌당 NAV/.test(s.txt) && /분배금은 유출이 아닌 평가로 봄/.test(s.txt) && s.notes.some(n => /영업일별 합/.test(n) && /월말 두 시점 근사/.test(n)) && !/agg_|raw_|유형최종|FLOW|flows/.test(s.txt));
     await freeze(); await p.evaluate(() => [...document.querySelectorAll('#view .section')].find(x => x.querySelector('.h2').textContent.indexOf('NAV 증감 요인') === 0).scrollIntoView());
     await p.screenshot({ path: `${OUT}/${name}_mgr_flow.png` });
     // 운용사 선택 → 한투
