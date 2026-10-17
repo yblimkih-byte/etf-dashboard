@@ -101,7 +101,7 @@ const OUT = __dirname + '/shots_v39';
     await p.waitForSelector('.race-bar, .race-row, .race', { timeout: 60000 }).catch(() => {}); await p.waitForTimeout(800);
     const mg = await p.evaluate(() => { const secs = [...document.querySelectorAll('#view > .section')]; const last = secs[secs.length - 1]; return { titles: secs.map(s => s.querySelector('.h2').textContent), raceInLast: !!last.querySelector('.race-ms-bar') && !!last.querySelector('input[type=range], .race-bar'), msBars: last.querySelectorAll('.race-ms-bar').length }; });
     check('운용사별 NAV: 맨 아래 = NAV 상위 20 변천(운용사별·유형별 M/S 막대 포함)', /NAV 상위 20 변천/.test(mg.titles[mg.titles.length - 1]) && mg.raceInLast && mg.msBars === 2, mg.titles.join(' / '));
-    check('운용사별 NAV: 변천 위의 기존 섹션 순서 유지(상위 5개사 → M/S 변동 요인 → 월별 M/S 추이)', /상위 5개사 NAV/.test(mg.titles[0]) && /M\/S 변동 요인/.test(mg.titles[1]) && /월별 M\/S 추이/.test(mg.titles[2]), mg.titles.slice(0, 3).join(' / '));
+    check('운용사별 NAV: 변천 위의 기존 섹션 순서 유지(상위 5개사 → (v42) NAV 증감 요인 → M/S 변동 요인 → 월별 M/S 추이)', /상위 5개사 NAV/.test(mg.titles[0]) && /NAV 증감 요인/.test(mg.titles[1]) && /M\/S 변동 요인/.test(mg.titles[2]) && /월별 M\/S 추이/.test(mg.titles[3]), mg.titles.slice(0, 4).join(' / '));
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_mgr.png`, fullPage: true });
     check('스크립트 오류 없음', errs.length === 0, errs.slice(0, 3).join(' | '));
     await p.close();

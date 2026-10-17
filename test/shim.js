@@ -4,6 +4,7 @@
   const props = {};
   class Range {
     constructor(sh, r, c, nr, nc) { this.sh = sh; this.r = r; this.c = c; this.nr = nr; this.nc = nc; }
+    getValue() { return this.getValues()[0][0]; }
     getValues() { const out = []; for (let i = 0; i < this.nr; i++) { const row = this.sh.rows[this.r - 1 + i] || []; const o = []; for (let j = 0; j < this.nc; j++) o.push(row[this.c - 1 + j] === undefined ? '' : row[this.c - 1 + j]); out.push(o); } return out; }
     setValues(v) { for (let i = 0; i < v.length; i++) { const ri = this.r - 1 + i; this.sh.rows[ri] = this.sh.rows[ri] || []; for (let j = 0; j < v[i].length; j++) this.sh.rows[ri][this.c - 1 + j] = v[i][j]; } return this; }
     setValue(v) { return this.setValues([[v]]); }
@@ -22,6 +23,7 @@
     getLastColumn() { return Math.max(0, ...this.rows.map(r => r.length)); }
     getRange(a, b, c, d) {
       if (typeof a === 'string') { const m = a.match(/^([A-Z]+):([A-Z]+)$/); if (m) return new Range(this, 1, m[1].charCodeAt(0) - 64, Math.max(this.rows.length, 1), 1); throw new Error('A1 unsupported: ' + a); }
+      if (this._strict && b + (d === undefined ? 1 : d) - 1 > this.getMaxColumns()) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');   // v42: 열 범위 점검(시험용)
       return new Range(this, a, b, c === undefined ? 1 : c, d === undefined ? 1 : d);
     }
     appendRow(r) { this.trim(); this.rows.push(r.slice()); return this; }
@@ -31,6 +33,7 @@
     setFrozenRows() { return this; }
     getMaxColumns() { return this._maxc || 26; }
     deleteColumns(c, n) { this._maxc = (this._maxc || 26) - n; return this; }
+    insertColumnsAfter(c, n) { this._maxc = (this._maxc || 26) + n; return this; }   // v42
   }
   const ss = {
     getSheetByName: n => store[n] || null,

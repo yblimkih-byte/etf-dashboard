@@ -19,9 +19,9 @@ const OUT = __dirname + '/shots_v24';
     const first = await p.evaluate(() => ({ calls: window.MOCK.calls.slice(), tab: App.state.tab, kv: [...document.querySelectorAll('table.kv tr')].map(tr => tr.cells[0].textContent + ' | ' + tr.cells[1].textContent), sumLines: document.querySelectorAll('.sum-lines').length,
       lede: (document.getElementById('lede') || {}).className || '-', cards: document.querySelectorAll('.cards .cd').length, tiles: document.querySelectorAll('#view > .head .tile').length, hl: [...document.querySelectorAll('#view > .head .ld, #lede .ld')].length, narrow: document.body.classList.contains('narrow-tab') }));
     check('첫 탭 = 요약, 폭 제한', first.tab === 'summary' && first.narrow);
-    const bg = ['treemap', 'race', 'turnover', 'theme', 'holders', 'buzz'];   // 첫 화면을 그린 뒤 시작되는 선조회 (v29: 테마 맵·종목→ETF 찾기·관심도 포함)
+    const bg = ['treemap', 'race', 'turnover', 'theme', 'holders', 'buzz', 'flows', 'flowTop'];   // v42: 설정액(운용사별·유형별 NAV 섹션, 요약 '자금 유출입' 행 — 첫 화면 뒤)   // 첫 화면을 그린 뒤 시작되는 선조회 (v29: 테마 맵·종목→ETF 찾기·관심도 포함)
     check('첫 화면: 서버 조회는 boot 1건(웹) / 없음(Apps Script, 페이지에 포함) — 그 밖에는 선조회만', name === 'web' ? first.calls[0] === 'boot' && first.calls.slice(1).every(a => bg.includes(a)) : first.calls.every(a => bg.includes(a)), first.calls.join(',') || '(없음)');
-    check('핵심 요약 표 5행·설명 문장 목록 없음', first.kv.length === 5 && first.sumLines === 0, first.kv.map(x => x.split(' | ')[0]).join(' · '));
+    check('핵심 요약 표 6행(v42: 자금 유출입 — 설정액 자료 도착 뒤 추가)·설명 문장 목록 없음', first.kv.length === 6 && first.kv[2].indexOf('자금 유출입') === 0 && first.sumLines === 0, first.kv.map(x => x.split(' | ')[0]).join(' · '));
     console.log('     ' + first.kv.join('\n     '));
     if (name === 'web') check('웹: (v41) 결론 한 줄 + 지표 카드 4개', first.lede.indexOf('empty') < 0 && first.hl === 1 && first.cards === 4, first.lede + ' / ' + first.cards);
     else check('Apps Script: (v41) 결론 한 줄 + 지표 4개(웹과 같은 카드)', first.hl === 1 && first.tiles === 4, first.tiles);
@@ -34,14 +34,15 @@ const OUT = __dirname + '/shots_v24';
     await p.evaluate(() => App.show('mgr')); await wait();
     const mgr = await p.evaluate(() => {
       const view = document.getElementById('view'), secs = [...view.querySelectorAll(':scope > .section')], t1 = secs[0].querySelector('table.tbl');
-      return { narrow: document.body.classList.contains('narrow-tab'), viewW: Math.round(view.getBoundingClientRect().width), secW: Math.round(secs[0].getBoundingClientRect().width), tblW: Math.round(t1.getBoundingClientRect().width),
-        titles: secs.map(s => s.querySelector('.h2').textContent), contrib: /점유율 효과|구성 효과|기여도/.test(view.textContent), gcols: secs[1] ? [...secs[1].querySelectorAll('table.tbl thead tr:last-child th')].map(th => th.textContent) : [],
-        sub: secs[1] ? secs[1].querySelector('.h3').textContent : '', rows: secs[1] ? secs[1].querySelectorAll('table.tbl tbody tr').length : 0 };
+      const r0 = { narrow: document.body.classList.contains('narrow-tab'), viewW: Math.round(view.getBoundingClientRect().width), secW: Math.round(secs[0].getBoundingClientRect().width), tblW: Math.round(t1.getBoundingClientRect().width),
+        titles: secs.map(s => s.querySelector('.h2').textContent), contrib: /점유율 효과|구성 효과|기여도/.test(view.textContent), ms: secs.find(s => /^M\/S 변동 요인/.test(s.querySelector('.h2').textContent)) };
+      const ms = r0.ms; delete r0.ms; return Object.assign(r0, { gcols: ms ? [...ms.querySelectorAll('table.tbl thead tr:last-child th')].map(th => th.textContent) : [],
+        sub: ms ? ms.querySelector('.h3').textContent : '', rows: ms ? ms.querySelectorAll('table.tbl tbody tr').length : 0 });
     });
     check(name === 'web' ? '운용사별: 폭 제한' : '운용사별: (v41) Apps Script 는 폭 제한 없음(머리글과 같은 폭)', mgr.narrow && (name === 'web' ? mgr.viewW <= 1060 : mgr.viewW > 1100), mgr.viewW + 'px');
     check('운용사별: 상위 5개사 표 폭 < 섹션 폭(내용 폭)', mgr.tblW < mgr.secW - 40, mgr.tblW + ' / ' + mgr.secW);
     check('운용사별: 점유율/구성 효과·기여도 표시 없음', !mgr.contrib);
-    check('운용사별: M/S 변동 요인 표(v26: 유형별 M/S 기여 6열)', mgr.titles[1] && mgr.titles[1].indexOf('M/S 변동 요인') === 0 && mgr.gcols.length === 6, mgr.gcols.join('|'));
+    check('운용사별: M/S 변동 요인 표(v26: 유형별 M/S 기여 6열)', mgr.titles.some(t => t.indexOf('M/S 변동 요인') === 0) && mgr.gcols.length === 6, mgr.gcols.join('|'));
     console.log('     ' + mgr.sub);
     await p.evaluate(() => { const c = [...document.querySelectorAll('.chip-m')].find(b => b.dataset.k === '삼성'); c.click(); });
     const sub2 = await p.evaluate(() => [...document.querySelectorAll('#view > .section')][1].querySelector('.h3').textContent);
