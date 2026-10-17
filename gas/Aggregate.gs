@@ -223,7 +223,7 @@ function fullAggFinished_(hash) {
   props.setProperty(PROP.AGG_HASH, hash);
   props.deleteProperty(PROP.FULL_AGG);
   clearTriggers_('cont_fullAgg');
-  try { if (flowReady_() && ss_().getSheetByName(CFG.SHEET.FLOW_ETF)) { flowSummary_(); props.setProperty(PROP.FLOW_VER, String(Date.now())); } } catch (e) { log_('설정액 요약 다시 쓰기 실패: ' + e.message, 'WARN'); }   // v42: 범례(운용사·유형) 변경 반영
+  try { if (flowReady_() && !flowBusy_() && ss_().getSheetByName(CFG.SHEET.FLOW_ETF)) { flowSummary_(); props.setProperty(PROP.FLOW_VER, String(Date.now())); } } catch (e) { log_('설정액 요약 다시 쓰기 실패: ' + e.message, 'WARN'); }   // v42: 범례(운용사·유형) 변경 반영
 }
 
 /** 전체 재계산 예약(분할 실행). 이미 진행 중이면 예약만 확인. 오늘 중단된 적이 있으면 예약하지 않음(내일 야간 점검·메뉴로) → 반환 true/false */

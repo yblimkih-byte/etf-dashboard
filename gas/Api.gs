@@ -34,8 +34,8 @@ function api(action, params) {
     const key = cacheKey_(action, params, P);
     const hit = getCached_(cache, key);
     if (hit) return action === 'meta' ? withLoadStatus_(hit, P) : hit;
-    const out = JSON.stringify({ ok: true, data: fn(params || {}) });
-    putCached_(cache, key, out);
+    const data = fn(params || {}), out = JSON.stringify({ ok: true, data: data });
+    if (!(data && data.ready === false && /^flow/.test(action))) putCached_(cache, key, out);   // v42: 설정액 준비 전(보충 진행률) 응답은 캐시하지 않음
     return action === 'meta' ? withLoadStatus_(out, P) : out;
   } catch (err) {
     return JSON.stringify({ ok: false, error: err.message });

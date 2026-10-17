@@ -177,7 +177,7 @@ const gpct = (A, g, cur) => g === null || g === undefined ? (cur > 0 ? '신규' 
  *  flows = {ready, months[], method[]('D' 일별 합 | 'M' 월말 두 시점 근사), unit(억원), groups{시장 전체·상위 5개사·기타:{f,v,e,n}}, types{유형:{…}}, doms{국내·해외:{…}}, mt{운용사:{유형:{f,v}}}}
  *  f = 설정액, v = 평가 증감, e = 기말 NAV (월별 배열, 단위 unit) — 화면에서는 원으로 바꿔 A.eok·A.signed 사용 */
 const FLOW_C = { f: '#1863dc', v: '#c4c4cc', d: '#17171c' };   // 설정액 · 평가 증감 · NAV 증감(선)
-const FLOW_DEF = '설정액 = 좌수 변화 × 1좌당 NAV(신규상장은 첫 순자산, 상장폐지는 직전 순자산 전액), 평가 증감 = 나머지(가격 변동·분배)';
+const FLOW_DEF = '설정액 = 좌수 변화 × 전일 1좌당 NAV(설정·해지 기준가 — 신규상장은 첫 순자산, 상장폐지는 직전 순자산 전액), 평가 증감 = 나머지(가격 변동·분배금 — 분배금은 유출이 아닌 평가로 봄)';
 const FLOW_RANGES = [['ytd', '올해'], ['24', '최근 24개월'], ['all', '2021년 이후']];
 /** 선택(운용사 top·유형 type)의 월별 계열(원) {f, v, e|null} */
 function flowSeries(fl, top, type) {

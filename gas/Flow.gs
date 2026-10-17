@@ -1,11 +1,13 @@
 /**
  * Flow.gs — v42 설정액(자금 유출입)·평가 증감 분리
- *  설정액(순설정) = Σ일별 (내재 좌수_t − 내재 좌수_t−1) × 1좌당 NAV_t,  내재 좌수 = 순자산총액 ÷ 1좌당 NAV (KRX ETF 일별매매정보 같은 응답)
- *              = 순자산총액_t − 순자산총액_t−1 × (NAV_t ÷ NAV_t−1)   →   평가 증감 = 순자산총액_t−1 × (NAV_t ÷ NAV_t−1 − 1)
+ *  설정액(순설정) = Σ일별 (내재 좌수_t − 내재 좌수_t−1) × 1좌당 NAV_t−1,  내재 좌수 = 순자산총액 ÷ 1좌당 NAV (KRX ETF 일별매매정보 같은 응답)
+ *              = 순자산총액_t × (NAV_t−1 ÷ NAV_t) − 순자산총액_t−1   →   평가 증감 = 순자산총액_t × (1 − NAV_t−1 ÷ NAV_t) = 좌수_t × NAV 변동
+ *   · 평가 가격 = 전일 1좌당 NAV: 당일 설정·해지는 당일 기준가(= 전일 종가 기준 NAV)로 이루어짐. v42 검증(2026-01~09, 외부 자료 ETF × 월 7,980건)에서
+ *     당일 NAV 평가 58% → 전일 NAV 평가 77% 가 ±1% 이내로 일치(오차 합 13.7조 → 8.9조)
  *   · 상장좌수는 설정·해지가 다음 영업일에 반영돼(2026-10-14 실측: 순자산총액 ≈ NAV × 같은 날 좌수 76% · 다음 날 좌수 94%) 계산에 쓰지 않음(분할 판정 보조·점검용)
  *   · 신규상장 = 첫날 순자산총액 전액 설정, 상장폐지 = 직전 순자산총액 전액 해지
  *   · 분할·병합: 1좌당 NAV 가 정수배로 바뀌고 내재 좌수도 같은 배수로 바뀐 날은 그 배수만큼 보정(가격 급변·대량 설정과 구분)
- *   · 평가 증감에는 분배금 지급(분배락)·보수가 포함됨(KRX 응답에 분배금 없음)
+ *   · 평가 증감에는 분배금 지급(분배락)·보수가 포함됨(KRX 응답에 분배금 없음 — 분배금을 유출로 보는 자료보다 설정액이 그만큼 큼)
  *  산출: 2026-01 이후(일별 적재) = 일별 합 'D' · 2021-02~2025-12 = 월말 두 시점 근사 'M'(내재 좌수 증감 × 두 시점 평균 NAV)
  *  시트: agg_설정액월별(ETF × 월) · agg_설정액요약(월 × 운용사 × 유형최종2 × 국내해외 — 화면은 이 시트만 읽음)
  *  갱신: 일별 적재 뒤 바뀐 월만(flowUpdate_) · 메뉴 '설정액 다시 계산'(rebuildFlows) · 과거 보충(backfillFlowCols, 1회) 끝나면 전체 계산
@@ -14,7 +16,8 @@ const FLOW = {
   HEADER: ['월', '종목코드', '종목명', '운용사', '설정액', '평가증감', '기말NAV', '산출'],
   SUM_HEADER: ['월', '운용사', '상위구분', '유형최종2', '국내해외', '설정액', '평가증감', '기말NAV', '종목수', '산출'],
   SPLITS: [2, 3, 4, 5, 10, 20, 25, 50, 100],   // 분할 배수 후보
-  FILL_MS: 4.2 * 60 * 1000,                     // 과거 보충 1회 실행 시한(6분 한도 여유)
+  FILL_MS: 3.5 * 60 * 1000,                     // 과거 보충 1회 실행 시한(6분 한도 여유 — KRX 응답이 느린 날 대비)
+  JOB_MS: 3.5 * 60 * 1000,                      // 전체 계산 1회 실행 시한(월 단위로 끊어 이어서 실행)
   UNIT: 1e8                                     // API 응답 단위(억원)
 };
 
@@ -35,7 +38,7 @@ function flowStep_(a, b) {
   if (!an && !bn) return [0, 0];
   if (!an) return [b.nav, 0];
   if (!bn) return [-a.nav, 0];
-  if (a.ps > 0 && b.ps > 0) { const k = flowSplit_(a, b), val = a.nav * (b.ps * k / a.ps - 1); return [b.nav - a.nav - val, val]; }
+  if (a.ps > 0 && b.ps > 0) { const k = flowSplit_(a, b), f = b.nav * a.ps / (b.ps * k) - a.nav; return [f, b.nav - a.nav - f]; }   // 좌수 증감 × 전일 NAV(분할 배수 k 보정)
   return [0, b.nav - a.nav];   // 1좌당 NAV 없음(보충 전 자료) → 증감 전부 평가로
 }
 /** 월말 두 시점(a → b) 근사 → [설정액, 평가증감] = 내재 좌수 증감 × 두 시점 평균 NAV */
@@ -139,35 +142,74 @@ function flowReady_() { try { const o = JSON.parse(PropertiesService.getScriptPr
 
 // ─────────────────────────── 전체·증분 계산 ───────────────────────────
 
-/** 메뉴 '설정액 다시 계산': 2021-02 ~ 최근 영업일 전체(약 1~2분) */
-function rebuildFlows() {
+/** 메뉴 '설정액 다시 계산': 2021-02 ~ 최근 영업일 전체. 실자료는 6분을 넘으므로 월 단위로 끊어 이어서 실행(작업 상태 FLOW_JOB)
+ *  rebuildFlows = 처음부터 · cont_rebuildFlows = 이어서(작업 상태가 없으면 처음부터) · 시작할 때 8분 뒤 감시 예약(6분 한도로 끊겨도 계속) */
+function rebuildFlows() { flowJobRun_(true); }
+function cont_rebuildFlows() { clearTriggers_('cont_rebuildFlows'); flowJobRun_(false); }
+function flowJobRun_(fresh) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) { scheduleContinue_('rebuildFlows', 3); return; }
-  try { const r = rebuildFlows_(); log_('설정액 전체 계산: ' + r.msg); } finally { lock.releaseLock(); }
+  try {
+    if (fresh) PropertiesService.getScriptProperties().deleteProperty(PROP.FLOW_JOB);
+    scheduleContinue_('rebuildFlows', 8);   // 감시
+    const r = rebuildFlows_(FLOW.JOB_MS);
+    if (r.cont) { scheduleContinue_('rebuildFlows', 1); log_('설정액 전체 계산 진행: ' + r.msg + ' (이어서 실행)'); }
+    else { clearTriggers_('cont_rebuildFlows'); log_('설정액 전체 계산: ' + r.msg); }
+  } finally { lock.releaseLock(); }
 }
-function cont_rebuildFlows() { clearTriggers_('cont_rebuildFlows'); rebuildFlows(); }
-function rebuildFlows_() {
-  const t0 = Date.now(), ix = indexMap_(), shM = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), mm = monthlyMap_(shM), dFrom = ym_(CFG.DAILY_FROM);
-  const rows = [];
-  let prev = null, nM = 0, nD = 0;
-  Object.keys(mm).filter(k => k < dFrom).sort().forEach(k => {   // 월말 근사 구간
-    const cur = flowMonthlyMap_(shM, mm, k);
-    if (prev && cur) { flowRows_(k, flowMonth_([prev, cur], 'M'), 'M').forEach(r => rows.push(r)); nM++; }
-    if (cur) prev = cur;
-  });
-  const by = flowDailyMonths_(ix), dks = Object.keys(by).sort();
-  if (dks.length && !prev) prev = flowDailyStart_(shM, mm);
-  dks.forEach(k => {   // 일별 구간
-    const maps = flowDailyMaps_(by[k], ix), chain = [prev || {}].concat(by[k].map(d => maps[d]));
-    flowRows_(k, flowMonth_(chain, 'D'), 'D').forEach(r => rows.push(r)); nD++;
-    prev = maps[by[k][by[k].length - 1]];
-  });
-  flowWrite_(rows, null);
-  const ns = flowSummary_();
+/** 전체 계산이 진행 중(여러 실행에 걸침)인지 — 진행 중에는 증분 갱신·요약 다시 쓰기를 하지 않음 */
+function flowBusy_() { return !!PropertiesService.getScriptProperties().getProperty(PROP.FLOW_JOB); }
+/** 전체 계산 본체. budget(ms) 를 넘으면 그 월까지 쓰고 작업 상태를 남긴 뒤 {cont: true} (budget 없음 = 한 번에 끝까지)
+ *  단계: M(월말 근사, raw_월말) → D(일별 합, raw_일별 월 단위) → S(요약). 행은 버퍼에 모았다가 체크포인트마다 job.row 부터 씀(다시 실행해도 같은 자리에 같은 값) */
+function rebuildFlows_(budget) {
+  budget = budget || Infinity;
+  const t0 = Date.now(), P = PropertiesService.getScriptProperties(), ix = indexMap_(), shM = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), mm = monthlyMap_(shM), dFrom = ym_(CFG.DAILY_FROM);
+  const mks = Object.keys(mm).filter(k => k < dFrom).sort(), by = flowDailyMonths_(ix), dks = Object.keys(by).sort();
+  const sh = sheet_(CFG.SHEET.FLOW_ETF, FLOW.HEADER), w = FLOW.HEADER.length;
+  let job = null; try { job = JSON.parse(P.getProperty(PROP.FLOW_JOB) || 'null'); } catch (e) {}
+  if (!job) { job = { phase: 'M', i: 0, row: 2, nM: 0, nD: 0, rows: 0, sec: 0, t: {} }; sh.getRange(1, 1, 1, w).setValues([FLOW.HEADER]); sh.setFrozenRows(1); }
+  let buf = [], tp = Date.now();
+  const sec0 = job.sec || 0;
+  const over = () => Date.now() - t0 > budget;
+  const lap = k => { job.t[k] = Math.round(((job.t[k] || 0) + (Date.now() - tp) / 1000) * 10) / 10; tp = Date.now(); };
+  const flush = () => { if (!buf.length) return; const tw = Date.now(); sh.getRange(job.row, 2, buf.length, 1).setNumberFormat('@'); sh.getRange(job.row, 1, buf.length, w).setValues(buf); job.row += buf.length; job.rows += buf.length; buf = []; job.t.w = Math.round(((job.t.w || 0) + (Date.now() - tw) / 1000) * 10) / 10; };
+  const save = () => { flush(); job.sec = Math.round((sec0 + (Date.now() - t0) / 1000) * 10) / 10; P.setProperty(PROP.FLOW_JOB, JSON.stringify(job)); };
+  const prog = () => `${job.phase} 단계 · 월말 근사 ${job.nM}개월 · 일별 합 ${job.nD}개월 · ${job.rows}행 · 누적 ${Math.round(job.sec)}s ${JSON.stringify(job.t)}`;
+  if (job.phase === 'M') {   // 월말 근사 구간
+    let prev = job.i > 0 ? flowMonthlyMap_(shM, mm, mks[job.i - 1]) : null;
+    while (job.i < mks.length) {
+      const k = mks[job.i], cur = flowMonthlyMap_(shM, mm, k); lap('rm');
+      if (prev && cur) { flowRows_(k, flowMonth_([prev, cur], 'M'), 'M').forEach(r => buf.push(r)); job.nM++; }
+      if (cur) prev = cur;
+      job.i++; lap('cm');
+      if (over() && job.i < mks.length) { save(); return { cont: true, msg: prog() }; }
+    }
+    job.phase = 'D'; job.i = 0; save();
+    if (over()) return { cont: true, msg: prog() };
+  }
+  if (job.phase === 'D') {   // 일별 구간
+    let prev;
+    if (job.i > 0) { const pk = dks[job.i - 1], d = by[pk][by[pk].length - 1]; prev = flowDailyMaps_([d], ix)[d]; } else prev = flowDailyStart_(shM, mm);
+    while (job.i < dks.length) {
+      const k = dks[job.i], maps = flowDailyMaps_(by[k], ix); lap('rd');
+      flowRows_(k, flowMonth_([prev || {}].concat(by[k].map(d => maps[d])), 'D'), 'D').forEach(r => buf.push(r)); job.nD++;
+      prev = maps[by[k][by[k].length - 1]];
+      job.i++; lap('cd');
+      if (over() && job.i < dks.length) { save(); return { cont: true, msg: prog() }; }
+    }
+    flush();
+    const lr = sh.getLastRow(); if (lr >= job.row) sh.getRange(job.row, 1, lr - job.row + 1, w).clearContent();   // 이전 계산의 남은 행
+    job.phase = 'S'; save();
+    if (over()) return { cont: true, msg: prog() };
+  }
+  tp = Date.now();
+  const ns = flowSummary_(); lap('s');
   const last = dks.length ? by[dks[dks.length - 1]].slice(-1)[0] : (Object.keys(mm).sort().pop() || '');
-  const msg = `월말 근사 ${nM}개월 · 일별 합 ${nD}개월 · ${rows.length}행 · 요약 ${ns}행 · ${Math.round((Date.now() - t0) / 1000)}s`;
+  job.sec = Math.round((sec0 + (Date.now() - t0) / 1000) * 10) / 10;
+  const msg = `월말 근사 ${job.nM}개월 · 일별 합 ${job.nD}개월 · ${job.rows}행 · 요약 ${ns}행 · ${Math.round(job.sec)}s ${JSON.stringify(job.t)}`;
+  P.deleteProperty(PROP.FLOW_JOB);
   flowDone_(last, msg);
-  return { msg: msg, rows: rows.length, last: last };
+  return { cont: false, msg: msg, rows: job.rows, last: last };
 }
 /** 이어서 실행용(적재 실행의 시한이 빠듯할 때) */
 function flowUpdateRun() {
@@ -179,9 +221,10 @@ function cont_flowUpdateRun() { clearTriggers_('cont_flowUpdateRun'); flowUpdate
 /** 일별 적재 뒤(적재 실행·야간 점검): 마지막 반영일이 속한 월 ~ 최근 월만 다시 계산. 과거 보충 전이면 건너뜀 → {state, msg} */
 function flowUpdate_() {
   if (!flowReady_()) return { state: 'notready', msg: '과거 보충 전' };
+  if (flowBusy_()) return { state: 'busy', msg: '전체 계산 진행 중' };
   const P = PropertiesService.getScriptProperties(), ix = indexMap_(), dates = Object.keys(ix).sort(), last = dates[dates.length - 1];
   let st = null; try { st = JSON.parse(P.getProperty(PROP.FLOW_STATE) || 'null'); } catch (e) {}
-  if (!st || !st.last || !ss_().getSheetByName(CFG.SHEET.FLOW_ETF)) { const r = rebuildFlows_(); return { state: 'full', msg: r.msg }; }
+  if (!st || !st.last || !ss_().getSheetByName(CFG.SHEET.FLOW_ETF)) { scheduleContinue_('rebuildFlows', 1); return { state: 'full', msg: '전체 계산 예약' }; }   // 6분 넘는 작업 → 별도 실행
   if (!last || st.last === last) return { state: 'none', msg: '최신' };
   const t0 = Date.now(), from = st.last > last ? ym_(last) : ym_(st.last), by = flowDailyMonths_(ix), ks = Object.keys(by).sort().filter(k => k >= from);
   if (!ks.length) return { state: 'none', msg: '일별 구간 아님' };
@@ -220,6 +263,7 @@ function backfillFlowCols() {
   const t0 = Date.now(), P = PropertiesService.getScriptProperties();
   let st = {}; try { st = JSON.parse(P.getProperty(PROP.FLOW_FILL) || '{}') || {}; } catch (e) {}
   const failed = st.failed || {};
+  scheduleContinue_('backfillFlowCols', 8);   // 감시: 6분 한도로 끊겨도 8분 뒤 이어서 실행(채운 일자는 시트에 남아 있어 건너뜀)
   try {
     const todo = flowFillTodo_().filter(b => (failed[b.date] || 0) < 3);
     let done = 0, miss = 0;
@@ -238,7 +282,7 @@ function backfillFlowCols() {
     const left = flowFillTodo_().filter(b => (failed[b.date] || 0) < 3).length;
     st = { done: (st.done || 0) + done, left: left, miss: (st.miss || 0) + miss, failed: failed, at: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm') };
     if (left) { P.setProperty(PROP.FLOW_FILL, JSON.stringify(st)); scheduleContinue_('backfillFlowCols', 1); log_(`설정액 자료 보충 진행: 이번 ${done}개 일자, 남은 ${left}개 (이어서 실행)`); return; }
-    st.ok = st.at; P.setProperty(PROP.FLOW_FILL, JSON.stringify(st));
+    st.ok = st.at; P.setProperty(PROP.FLOW_FILL, JSON.stringify(st)); clearTriggers_('cont_backfillFlowCols');
     const nf = Object.keys(failed).filter(d => failed[d] >= 3);
     log_(`설정액 자료 보충 완료: ${st.done}개 일자` + (st.miss ? ` · 응답에 없던 종목 ${st.miss}행` : '') + (nf.length ? ` · 받지 못한 일자 ${nf.join(', ')}` : '') + ' → 설정액 전체 계산 예약', nf.length ? 'WARN' : 'INFO');
     scheduleContinue_('rebuildFlows', 1);
@@ -291,9 +335,15 @@ function apiFlowTop_(p) {
 }
 /** flowCheck(점검용): 일별 구간 각 월의 ETF별 설정액 — U(화면 산식: 내재 좌수) · S1(상장좌수, 다음 영업일 좌수로 맞춤) [원 → 백만원 반올림]
  *  외부 자료와의 대조에 사용(화면에는 쓰지 않음). 일별 원자료를 모두 읽으므로 수십 초 */
-function apiFlowCheck_() {
+function apiFlowCheck_(p) {
   const ix = indexMap_(), by = flowDailyMonths_(ix), ks = Object.keys(by).sort(), shM = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), mm = monthlyMap_(shM);
-  const U = {}, S = {}, names = {}, M6 = v => Math.round(v / 1e6);
+  if (p && p.codes) {   // 점검: 지정 종목의 일별 원자료 [일자, 순자산총액, 1좌당 NAV, 상장좌수] (최대 10종목)
+    const want = String(p.codes).split(',').slice(0, 10).map(padCode_), out = {}; want.forEach(c => out[c] = []);
+    ks.forEach(k => { const maps = flowDailyMaps_(by[k], ix); by[k].forEach(d => want.forEach(c => { const r = maps[d] && maps[d][c]; if (r) out[c].push([d, r.nav, r.ps, r.sh]); })); });
+    return { series: out };
+  }
+  const U = {}, S = {}, names = {}, M6 = v => Math.round(v / 1e6), alt = !!(p && p.alt), V1 = {}, V2 = {}, DL = {}, NL = {};
+  const add = (o, c, k, v) => { if (!v) return; const x = o[c] = o[c] || {}; x[k] = (x[k] || 0) + v; };
   let prev = flowDailyStart_(shM, mm);
   ks.forEach((k, ki) => {
     const ds = by[k], nextFirst = ks[ki + 1] ? by[ks[ki + 1]][0] : null, maps = flowDailyMaps_(nextFirst ? ds.concat([nextFirst]) : ds, ix);
@@ -309,7 +359,17 @@ function apiFlowCheck_() {
         else if (!tail && bn && !an) f = b.nav; else if (!tail && an && !bn) f = -a.nav;
         if (f) { const o = S[c] = S[c] || {}; o[k] = (o[k] || 0) + M6(f); } });
     }
+    // alt(점검): 좌수 증감의 평가 가격 바꿔 보기 — V1 = 전 영업일 1좌당 NAV, V2 = 다음 영업일 1좌당 NAV(분할 배수 보정) · DL = 상장폐지(직전 순자산 전액 해지)분
+    if (alt) for (let i = 0; i < ds.length; i++) {
+      const A = seq[i] || {}, B = seq[i + 1] || {}, C = seq[i + 2] || null, codes = {}; Object.keys(A).forEach(c => codes[c] = 1); Object.keys(B).forEach(c => codes[c] = 1);
+      Object.keys(codes).forEach(c => { const a = A[c], b = B[c], an = !!(a && a.nav > 0), bn = !!(b && b.nav > 0);
+        if (an && bn && a.ps > 0 && b.ps > 0) { const kk = flowSplit_(a, b), dU = b.nav / b.ps - a.nav / a.ps * kk, cc = C && C[c];
+          add(V1, c, k, dU * a.ps / kk); add(V2, c, k, dU * (cc && cc.ps > 0 && cc.nav > 0 ? cc.ps * flowSplit_(b, cc) : b.ps)); }
+        else if (bn && !an) { add(V1, c, k, b.nav); add(V2, c, k, b.nav); add(NL, c, k, b.nav); }
+        else if (an && !bn) { add(V1, c, k, -a.nav); add(V2, c, k, -a.nav); add(DL, c, k, -a.nav); } });
+    }
     prev = maps[ds[ds.length - 1]];
   });
-  return { months: ks, unit: 1e6, U: U, S1: S, names: names };
+  const r6 = o => { Object.keys(o).forEach(c => Object.keys(o[c]).forEach(k => { o[c][k] = M6(o[c][k]); })); return o; };
+  return alt ? { months: ks, unit: 1e6, U: U, S1: S, V1: r6(V1), V2: r6(V2), DL: r6(DL), NL: r6(NL), names: names } : { months: ks, unit: 1e6, U: U, S1: S, names: names };
 }

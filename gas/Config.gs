@@ -147,7 +147,7 @@ const PROP = { KRX_KEY: 'KRX_AUTH_KEY', LAST_DAILY: 'LAST_DAILY_DATE', BACKFILL_
   NAVER_ID: 'NAVER_CLIENT_ID', NAVER_SECRET: 'NAVER_CLIENT_SECRET',   // v29: 네이버 API(검색어 트렌드·뉴스 — 관심도 탭) · v30: NAVER API HUB Application 키
   KIS_TOKEN: 'KIS_TOKEN', KIS_STATE: 'KIS_PDF_STATE', KIS_RUN: 'KIS_PDF_RUN', KIS_DATE: 'KIS_PDF_DATE', KIS_INFO: 'KIS_PDF_INFO', KIS_TOP: 'KIS_PDF_TOP',   // v29: 구성종목 수집(Kis.gs)
   BUZZ_DATE: 'BUZZ_DATE', BUZZ_INFO: 'BUZZ_INFO',   // v29: 관심도 수집(Buzz.gs)
-  FLOW_STATE: 'FLOW_STATE', FLOW_FILL: 'FLOW_FILL', FLOW_VER: 'FLOW_VER' };   // v42: 설정액 계산 상태(마지막 반영일)·과거 보충 진행·화면 캐시 버전(Flow.gs)
+  FLOW_STATE: 'FLOW_STATE', FLOW_FILL: 'FLOW_FILL', FLOW_VER: 'FLOW_VER', FLOW_JOB: 'FLOW_JOB' };   // v42: 설정액 계산 상태(마지막 반영일)·과거 보충 진행·화면 캐시 버전(Flow.gs)
 
 function krxKey_() {
   const k = PropertiesService.getScriptProperties().getProperty(PROP.KRX_KEY);
