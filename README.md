@@ -6,7 +6,7 @@ KRX Open API 기반 국내 ETF 시장 데이터를 Google 스프레드시트에 
 - 데이터 시트: `ETF_Dashboard` (spreadsheetId `1Wlz32KuXGS8fnh8z5U1ZhuwQK7vQkVKre5nOdeJBd4U`)
 - Apps Script 프로젝트: 시트에 바운드된 `ETF Dashboard` (scriptId 는 `.clasp.json`)
 - 웹 화면(Vercel): https://etf-dashboard-roan.vercel.app/ (`web/` + `api/data.js`, Apps Script 웹앱을 데이터 서버로 사용)
-- 현재 배포 버전: Apps Script v41 / Vercel v125 (2026-10-16) — 변경 내역은 `CHANGELOG.md`
+- 현재 배포 버전: Apps Script v42 (2026-10-17) / Vercel v126 (PR 병합 시 자동 배포) — 변경 내역은 `CHANGELOG.md`
 
 ## 저장소 구성
 
@@ -16,6 +16,7 @@ KRX Open API 기반 국내 ETF 시장 데이터를 Google 스프레드시트에 
 | `gas/Config.gs` | 시트명·컬럼·KRX API 경로·상위 5개사 색상 등 설정 |
 | `gas/Util.gs` `Krx.gs` `Load.gs` `Backfill.gs` `Aggregate.gs` | 적재(ETL)·집계 서버 로직 |
 | `gas/Api.gs` | 웹앱 진입점(`doGet`, v34 `doPost` = FunETF 구성종목 반영) 및 대시보드 데이터 API(`api(action, params)`) |
+| `gas/Flow.gs` | (v42) 설정액(자금 유출입)·평가 증감 분리: 1좌당 NAV·상장좌수 과거 보충, ETF × 월 계산(2026년 이후 영업일별 합, 이전은 월말 두 시점 근사)·요약 시트·증분 갱신, API `flows`·`flowTop`·`flowCheck` |
 | `gas/Theme.gs` | 테마 맵: 종목명·기초지수명 키워드 규칙(사용자 수정 시트)으로 테마·상품구조·지역 분류 |
 | `gas/Kis.gs` | 종목→ETF 찾기: FunETF 공개 구성종목 반영(v38 화·금 새벽 GitHub 작업 — v41 부터 Apps Script 트리거가 01:40 전후 실행 호출 · FunETF 화면의 즐겨찾기 버튼 → 웹앱 doPost, 해외 주식 포함)·한국투자증권 Open API 주간 수집(국내 상장 상위 30, 보완)·검색 |
 | `gas/Buzz.gs` | 관심도: NAVER API HUB(네이버 클라우드) 검색어 트렌드·뉴스 검색 일간 수집 |
