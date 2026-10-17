@@ -12,7 +12,16 @@ function sheet_(name, header) {
     sh = ss.insertSheet(name);
     if (header) { sh.getRange(1, 1, 1, header.length).setValues([header]); sh.setFrozenRows(1); }
   }
+  if (!SHEET_W_[name] && (name === CFG.SHEET.RAW_DAILY || name === CFG.SHEET.RAW_MONTHLY)) { ensureWidth_(sh, CFG.RAW_HEADER); SHEET_W_[name] = 1; }   // v42: raw 2열 추가(1좌당 NAV·상장좌수)
   return sh;
+}
+/** v42: 시트 열이 머리글보다 적으면 열을 늘리고 빈 머리글 칸을 채움(실행마다 1회). 2026-09 빈 열 정리로 raw 시트는 8열 → 10열로 */
+const SHEET_W_ = {};
+function ensureWidth_(sh, header) {
+  const w = header.length, mc = sh.getMaxColumns();
+  if (mc < w) sh.insertColumnsAfter(mc, w - mc);
+  const h = sh.getRange(1, 1, 1, w).getValues()[0];
+  if (h.some((v, i) => String(v).trim() === '' && header[i])) sh.getRange(1, 1, 1, w).setValues([header.map((x, i) => String(h[i]).trim() || x)]);
 }
 
 /** 'YYYY-MM-DD' ↔ Date ↔ 'YYYYMMDD' */

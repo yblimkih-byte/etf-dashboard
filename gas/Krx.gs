@@ -21,7 +21,8 @@ function krxGet_(path, params) {
   return Array.isArray(block) ? block : [];
 }
 
-/** ETF 일별매매정보 → 표준 레코드 {date, code, name, nav, trdval, idx}. v29: idx = 기초지수명(테마 분류용, ETF마스터 '기초지수' 열) */
+/** ETF 일별매매정보 → 표준 레코드 {date, code, name, nav, trdval, idx, ps, sh}. v29: idx = 기초지수명(테마 분류용, ETF마스터 '기초지수' 열)
+ *  v42: ps = 1좌당 NAV(원), sh = 상장좌수 — 설정액(자금 유출입) 계산용 */
 function fetchEtfDaily_(dateStr) {
   const rows = krxGet_(CFG.KRX.ETF_DAILY, { basDd: fmtKrx_(parse_(dateStr)) });
   const F = CFG.KRX.F;
@@ -31,7 +32,8 @@ function fetchEtfDaily_(dateStr) {
     name: String(pick_(r, F.NAME) || '').trim(),
     nav: toNum_(pick_(r, F.NAV_TOT)),
     trdval: toNum_(pick_(r, F.TRDVAL)),
-    idx: String(pick_(r, F.IDX_IND) || '').trim()
+    idx: String(pick_(r, F.IDX_IND) || '').trim(),
+    ps: toNum_(pick_(r, F.NAV_PS)), sh: toNum_(pick_(r, F.SHARES))
   })).filter(r => r.code && r.code !== '000000' && r.date === dateStr);   // v17: 요청일과 다른 기준일자 행(전일 값 이월 등)은 제외
   // KRX는 휴장일(연말 휴장, 설·추석 등)에도 값이 0인 행을 반환함 → 전 종목 NAV 0이면 비거래일/미게시로 간주
   // (당일 19:00 시점에는 거래대금만 먼저 게시되고 순자산총액이 0인 경우가 있음 → 빈 응답으로 취급해 다음 실행에 재시도)
