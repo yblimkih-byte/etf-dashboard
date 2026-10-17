@@ -166,5 +166,12 @@ check('메뉴: 설정액 자료 보충·다시 계산', /'backfillFlowCols'/.tes
 const rows9 = J(`buildDailyRows_(fetchEtfDaily_('2026-09-09'), null, '2026-09-09', ctx_())`);
 check('일별 적재 행 10열(1좌당 NAV·상장좌수 포함)', rows9[0].length === 10 && rows9[0][8] > 0 && rows9[0][9] > 0, rows9[0].slice(8));
 
+// Vercel 프록시(api/data.js) 허용 목록 = 화면이 부르는 action 전부(v42 배포 직후 flows·flowTop 누락 → 웹 화면 400)
+const used = new Set(); ['gas/Tabs.html', 'gas/App.html', 'web/src/shell.js'].forEach(f => { const t = fs.readFileSync(path.join(__dirname, '..', f), 'utf8'); for (const m of t.matchAll(/A\.call\('([A-Za-z]+)'|\['([A-Za-z]+)', \{/g)) used.add(m[1] || m[2]); });
+const proxy = fs.readFileSync(path.join(__dirname, '..', 'api', 'data.js'), 'utf8'), allow = JSON.parse(proxy.match(/const ACTIONS = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+const actionsGs = J(`Object.keys(ACTIONS)`);
+const miss = [...used].filter(a => !allow.includes(a)), notApi = [...used].filter(a => !actionsGs.includes(a) && a !== 'boot');
+check('웹 프록시 허용 목록에 화면이 부르는 action 모두 포함(flowCheck 는 제외)', !miss.length && !notApi.length && !allow.includes('flowCheck') && allow.includes('flows') && allow.includes('flowTop'), { miss, notApi });
+
 console.info(fails ? `\n${fails}건 실패` : '\n모두 통과');
 process.exit(fails ? 1 : 0);
