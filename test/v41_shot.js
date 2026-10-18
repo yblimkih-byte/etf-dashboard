@@ -57,7 +57,7 @@ const OUT = __dirname + '/shots_v41';
       if (id === 'mgr') {
         check('운용사별: 결론 한 줄 + 운용사 카드 5개', h.lines.length === 1 && /한투 M\/S/.test(h.lines[0]) && h.cards.length === 5, h.lines[0]);
         const toc = await p.evaluate(() => [...document.querySelectorAll('.toc-a')].map(x => x.textContent));
-        check('섹션 바로가기 5개(v42 NAV 증감 요인 · 맨 아래 변천 포함)', toc.length === 5 && /NAV 증감 요인/.test(toc[1]) && /변천/.test(toc[4]), toc.join(' · '));
+        check('섹션 바로가기 5개(v43 운용사별 설정액 · 맨 아래 변천 포함)', toc.length === 5 && /운용사별 설정액/.test(toc[1]) && /변천/.test(toc[4]), toc.join(' · '));
         await p.evaluate(() => [...document.querySelectorAll('.toc-a')].pop().click()); await p.waitForTimeout(1200);
         const pos = await p.evaluate(() => { const s = [...document.querySelectorAll('#view > .section')].pop(), hdr = document.querySelector('.hdr-wrap, .top'); return { top: Math.round(s.getBoundingClientRect().top), hdr: hdr.offsetHeight, y: Math.round(window.scrollY) }; });
         check('바로가기 누르면 그 섹션이 머리글 바로 아래로', pos.y > 500 && pos.top >= pos.hdr - 2 && pos.top <= pos.hdr + 40, pos);

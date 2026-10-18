@@ -160,7 +160,7 @@ console.info('F) 연결');
 const load = fs.readFileSync(path.join(gasDir, 'Load.gs'), 'utf8'), agg = fs.readFileSync(path.join(gasDir, 'Aggregate.gs'), 'utf8'), setup = fs.readFileSync(path.join(gasDir, 'Setup.gs'), 'utf8');
 check('일별 적재 뒤 설정액 갱신(시한 부족 시 이어서 실행)', /flowUpdate_\(\)/.test(load) && /scheduleContinue_\('flowUpdateRun', 1\)/.test(load));
 check('야간 점검에서도 갱신 · 전체 집계(범례 변경) 뒤 요약 다시 쓰기', /nightlyAgg[\s\S]*flowUpdate_\(\)/.test(agg) && /fullAggFinished_[\s\S]{0,400}flowSummary_\(\)/.test(agg));
-check('예열 목록: flows · flowTop(기본 기준일 월·최근 월)', /\['flows', \{\}\], \['flowTop', \{ ym: ym_\(m\.defaultDate/.test(agg));
+check('예열 목록: flows · flowTop(기본 기준일 월·최근 월 × 전체·한투(운용사 탭 기본)·첫 유형(유형 탭 기본)) — v43', /\['flows', \{\}\]/.test(agg) && /\[m\.defaultDate \|\| '', latest \|\| ''\]/.test(agg) && /\['flowTop', \{ ym: y \}\], \['flowTop', \{ ym: y, top: '한투' \}\], \['flowTop', \{ ym: y, f2: CFG\.TYPE_ORDER\[0\] \}\]/.test(agg));
 check('메뉴: 설정액 자료 보충·다시 계산', /'backfillFlowCols'/.test(setup) && /'rebuildFlows'/.test(setup));
 // 새 적재 행에 1좌당 NAV·상장좌수
 const rows9 = J(`buildDailyRows_(fetchEtfDaily_('2026-09-09'), null, '2026-09-09', ctx_())`);
