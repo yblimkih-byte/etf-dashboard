@@ -427,7 +427,10 @@ function warmAll() {
     list.push(['race', { n: 20 }]);
     if (m.buzzDate) list.push(['buzz', {}]);                        // v41: 관심도 첫 화면(이전엔 예열 없음 → 적재 뒤 첫 열기 8초 이상)
     if (m.holdingsDate) list.push(['holders', { q: '', pick: '' }]);   // v41: 종목→ETF 찾기 첫 화면
-    list.push(['flows', {}], ['flowTop', { ym: ym_(m.defaultDate || '') }], ['flowTop', { ym: latest ? ym_(latest) : '' }]);   // v42: 설정액(운용사별·유형별 NAV·요약 탭)
+    list.push(['flows', {}]);   // v42: 설정액(운용사별·유형별 NAV·요약 탭)
+    [m.defaultDate || '', latest || ''].filter((d, i, a) => a.indexOf(d) === i).forEach(d => {   // v43: 첫 화면 기본 선택 — 운용사 탭 한투 · 유형 탭 첫 유형 (+ 선택 해제 시 전체)
+      const y = ym_(d); list.push(['flowTop', { ym: y }], ['flowTop', { ym: y, top: '한투' }], ['flowTop', { ym: y, f2: CFG.TYPE_ORDER[0] }]);
+    });
     list.forEach(x => {
       if (Date.now() - t0 > limit) { left++; return; }
       try { if (warmOne_(cache, x[0], x[1], P) === 'hit') hit++; else put++; } catch (e) {}

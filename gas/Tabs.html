@@ -176,9 +176,9 @@ const gpct = (A, g, cur) => g === null || g === undefined ? (cur > 0 ? '신규' 
 /* ── v42: NAV 증감 요인 — 설정액(자금 유출입)·평가 증감. 운용사별 NAV·유형별 NAV 탭 섹션 + 요약 '자금 유출입' 행
  *  flows = {ready, months[], method[]('D' 일별 합 | 'M' 월말 두 시점 근사), unit(억원), groups{시장 전체·상위 5개사·기타:{f,v,e,n}}, types{유형:{…}}, doms{국내·해외:{…}}, mt{운용사:{유형:{f,v}}}}
  *  f = 설정액, v = 평가 증감, e = 기말 NAV (월별 배열, 단위 unit) — 화면에서는 원으로 바꿔 A.eok·A.signed 사용 */
-const FLOW_C = { f: '#1863dc', v: '#c4c4cc', d: '#17171c' };   // 설정액 · 평가 증감 · NAV 증감(선)
+const FLOW_ACC = '#1863dc', FLOW_GRAY = '#c3c2b7', FLOW_IN = '#1c5cab', FLOW_OUT = '#b3261e';   // v43: 선택 선 · 나머지 선 · 유입 막대 · 유출 막대
 const FLOW_DEF = '설정액 = 좌수 변화 × 전일 1좌당 NAV(설정·해지 기준가 — 신규상장은 첫 순자산, 상장폐지는 직전 순자산 전액), 평가 증감 = 나머지(가격 변동·분배금 — 분배금은 유출이 아닌 평가로 봄)';
-const FLOW_RANGES = [['ytd', '올해'], ['24', '최근 24개월'], ['all', '2021년 이후']];
+const FLOW_YW = 56;   // v43: 위(누적 선)·아래(월별 막대) 두 그림의 Y축 폭 — 오른쪽 여백(끝 라벨 폭)도 같게 → 같은 월이 같은 가로 위치
 /** 선택(운용사 top·유형 type)의 월별 계열(원) {f, v, e|null} */
 function flowSeries(fl, top, type) {
   const U = fl.unit || 1e8, z = fl.months.map(() => 0);
@@ -189,83 +189,157 @@ function flowSeries(fl, top, type) {
 /** 기간 합계: (base 월, ym 월] — base 가 없으면 처음부터. 반환 {idx, first, last, sum(series)→{f,v}} */
 function flowPeriod(fl, base, ym) {
   const idx = []; fl.months.forEach((k, i) => { if ((!base || k > base) && k <= ym) idx.push(i); });
+  return flowIdx(fl, idx);
+}
+function flowIdx(fl, idx) {
   return { idx, first: idx.length ? fl.months[idx[0]] : null, last: idx.length ? fl.months[idx[idx.length - 1]] : null,
     sum: s => idx.reduce((a, i) => ({ f: a.f + s.f[i], v: a.v + s.v[i] }), { f: 0, v: 0 }) };
 }
-/** 차트 구간 [i0, i1] — 끝 = 기준월(없으면 그 이전 최근 월) */
-function flowWindow(fl, mode, ym) {
-  let i1 = -1; fl.months.forEach((k, i) => { if (k <= ym) i1 = i; }); if (i1 < 0) i1 = fl.months.length - 1;
-  const i0 = mode === 'all' ? 0 : mode === 'ytd' ? Math.max(0, fl.months.findIndex(k => k >= fl.months[i1].slice(0, 4) + '-01')) : Math.max(0, i1 - 23);
-  return [i0, i1];
-}
+/** v43: 연도 목록(자료가 있는 해 중 기준 연도 이하, 최근 먼저) · 그 해 월 인덱스(기준 연도는 기준월까지, 지난해는 12월까지) */
+function flowYears(fl, ym) { return [...new Set(fl.months.map(k => k.slice(0, 4)))].filter(y => y <= ym.slice(0, 4)).sort().reverse(); }
+function flowYearIdx(fl, y, ym) { const out = []; fl.months.forEach((k, i) => { if (k.slice(0, 4) === y && k <= ym) out.push(i); }); return out; }
 /** 준비 중 문구(과거 자료 보충 진행률) */
 function flowWait(fl) {
   const f = fl && fl.fill, n = f ? (f.done || 0) + (f.left || 0) : 0;
   return '설정액 자료 준비 중 — 과거 자료 보충이 끝나면 자동으로 표시' + (n ? ` (${Math.round((f.done || 0) / n * 100)}%)` : '');
 }
-/** 월별 막대(설정액·평가 증감 누적) + NAV 증감 선 */
-function flowChart(A, canvas, labels, f, v, meth) {
-  const o = A.baseOpts(), n = labels.length, mx = Math.max.apply(null, labels.map((x, i) => Math.abs(f[i]) + Math.abs(v[i])).concat([1])), dg = mx >= 4e12 ? 0 : mx >= 4e11 ? 1 : 2;
-  o.scales.x.stacked = true; o.scales.y.stacked = true;
-  o.scales.y.ticks.callback = x => A.eok(x, dg); o.scales.y.title = { display: true, text: '조원', font: { size: 11 } };
-  o.scales.x.ticks = { maxRotation: 0, autoSkip: false, callback: function (val, i) { const l = this.getLabelForValue(val); return n <= 15 || /-(01|07)$/.test(l) || i === n - 1 ? ymTick(l) : ''; } };
-  o.plugins.legend.position = 'top';
-  o.plugins.tooltip.callbacks = { title: it => it.length ? `${labels[it[0].dataIndex]}${meth && meth[it[0].dataIndex] === 'M' ? ' (월말 두 시점 근사)' : ''}` : '', label: c => ` ${c.dataset.label}: ${A.signed(c.raw, 2)}조원` };
-  return A.chart(canvas, { type: 'bar', data: { labels, datasets: [
-    { type: 'line', label: 'NAV 증감', data: f.map((x, i) => x + v[i]), borderColor: FLOW_C.d, backgroundColor: FLOW_C.d, borderWidth: 1.5, pointRadius: n > 30 ? 0 : 2.5, pointHoverRadius: 4, tension: 0, stack: 'nav', order: 0 },
-    { label: '설정액(자금 유출입)', data: f, backgroundColor: FLOW_C.f, stack: 's', order: 1, barPercentage: 0.8, categoryPercentage: 0.8 },
-    { label: '평가 증감', data: v, backgroundColor: FLOW_C.v, stack: 's', order: 1, barPercentage: 0.8, categoryPercentage: 0.8 }
-  ] }, options: o });
+/** v43: 값 크기에 맞춘 소수 자릿수(조원) */
+const flowDg = mx => mx >= 4e12 ? 0 : mx >= 4e11 ? 1 : 2;
+/** v43: 끝 라벨 폭 → 두 그림 공통 오른쪽 여백 */
+function flowPR(A, sets, fmt) {
+  const c = document.createElement('canvas').getContext('2d'); c.font = '700 12px ' + getComputedStyle(document.documentElement).getPropertyValue('--font');
+  return Math.ceil(Math.max.apply(null, sets.map(s => c.measureText(s.k + ' ' + fmt(s.cum[s.cum.length - 1])).width).concat([40]))) + 26;
 }
-/** 섹션: kind 'mgr'(운용사별 NAV 탭) | 'type'(유형별 NAV 탭). d = byMgr/byType 응답(기준일·비교 기준) */
+/** v43: 누적 선 끝 라벨(이름 + 마지막 값) — 15px 간격으로 벌리고 짧은 연결선, 선택 선은 굵게 */
+const flowEndLabels = {
+  id: 'flowEnd',
+  afterDatasetsDraw(ch) {
+    const o = ch.$flowEnd; if (!o) return;
+    const ctx = ch.ctx, fam = Chart.defaults.font.family, ca = ch.chartArea; ctx.save(); ctx.textBaseline = 'middle';
+    const pts = ch.data.datasets.map((ds, di) => { const m = ch.getDatasetMeta(di); let j = ds.data.length - 1; while (j >= 0 && (ds.data[j] === null || ds.data[j] === undefined)) j--; const el = j >= 0 && m.data[j]; return el ? { ds, j, x: el.x, y: el.y, ly: el.y } : null; }).filter(Boolean).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < pts.length; i++) if (pts[i].ly - pts[i - 1].ly < 15) pts[i].ly = pts[i - 1].ly + 15;
+    const over = pts.length ? pts[pts.length - 1].ly - (ca.bottom + 6) : 0; if (over > 0) pts.forEach(p => { p.ly -= over; });
+    pts.forEach(p => {
+      ctx.strokeStyle = FLOW_GRAY; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x + 6, p.y); ctx.lineTo(p.x + 14, p.ly); ctx.stroke();
+      ctx.font = (p.ds.$on ? '700 ' : '') + '12px ' + fam; ctx.fillStyle = p.ds.$on ? '#0b0b0b' : '#52514e'; ctx.textAlign = 'left';
+      ctx.fillText(p.ds.label + ' ' + o.fmt(p.ds.data[p.j]), p.x + 18, p.ly);
+    });
+    ctx.restore();
+  }
+};
+/** v43: 위 — 연초 이후 누적(선). sets = [{k 이름, cum[], on 선택}] · labels = ['전년말', '1월', …] · pr = 오른쪽 여백 · unit = 툴팁 이름(설정액|NAV 증감) */
+function flowLineChart(A, canvas, labels, sets, pr, unit) {
+  const o = A.baseOpts(), mx = Math.max.apply(null, sets.map(s => Math.max.apply(null, s.cum.map(Math.abs))).concat([1])), dg = flowDg(mx);
+  o.plugins.legend.display = false; o.layout = { padding: { top: 12, right: pr } };
+  o.scales.x.offset = true; o.scales.x.ticks = { maxRotation: 0, autoSkip: false };
+  o.scales.y.ticks.callback = v => A.eok(v, dg); o.scales.y.afterFit = sc => { sc.width = FLOW_YW; }; o.scales.y.grace = '6%';
+  o.scales.y.grid = { color: c => c.tick && c.tick.value === 0 ? FLOW_GRAY : '#e5e7eb' };
+  o.plugins.tooltip.callbacks = { title: it => it.length ? (it[0].dataIndex ? labels[it[0].dataIndex] + '까지 누적 ' + unit : labels[0]) : '',
+    label: c => ` ${c.dataset.label}: ${A.signed(c.raw, 2)}조원` + (c.dataIndex ? ` (당월 ${A.signed(c.raw - c.dataset.data[c.dataIndex - 1], 2)})` : '') };
+  o.plugins.tooltip.itemSort = (a, b) => b.raw - a.raw;
+  const ds = sets.map(s => ({ label: s.k, data: s.cum, $on: s.on, borderColor: s.on ? FLOW_ACC : FLOW_GRAY, backgroundColor: s.on ? FLOW_ACC : FLOW_GRAY, borderWidth: s.on ? 2.5 : 1.5,
+    pointRadius: s.on ? 4 : 0, pointHoverRadius: s.on ? 5 : 3, pointBorderColor: '#fff', pointBorderWidth: 2, tension: 0, order: s.on ? 0 : 1 }));
+  const ch = A.chart(canvas, { type: 'line', data: { labels, datasets: ds }, options: o, plugins: [flowEndLabels], noFocus: true });
+  ch.$flowEnd = { fmt: v => A.signed(v, Math.max(1, dg)) }; ch.update('none');
+  return ch;
+}
+/** v43: 아래 — 선택 항목의 월별 값(막대, 별도 축). vals[0] = null(전년말 자리 — 위 그림과 같은 가로 위치) · info(i) = 툴팁 추가 줄 */
+function flowBarChart(A, canvas, labels, vals, name, pr, info) {
+  const o = A.baseOpts(), mx = Math.max.apply(null, vals.map(v => Math.abs(v || 0)).concat([1])), dg = flowDg(mx);
+  o.plugins.legend.display = false; o.layout = { padding: { top: 18, right: pr, bottom: 2 } };
+  o.scales.x.offset = true; o.scales.x.ticks = { maxRotation: 0, autoSkip: false, callback: function (v, i) { return i ? this.getLabelForValue(v) : ''; } };
+  o.scales.y.ticks.callback = v => A.eok(v, dg); o.scales.y.afterFit = sc => { sc.width = FLOW_YW; }; o.scales.y.grace = '14%';
+  o.scales.y.grid = { color: c => c.tick && c.tick.value === 0 ? FLOW_GRAY : '#e5e7eb' };
+  o.plugins.tooltip.filter = it => it.raw !== null; o.plugins.tooltip.displayColors = false;
+  o.plugins.tooltip.callbacks = { title: it => it.length ? labels[it[0].dataIndex] : '', label: c => ` ${name}: ${A.signed(c.raw, 2)}조원`, afterLabel: c => info ? info(c.dataIndex) : '' };
+  const ch = A.chart(canvas, { type: 'bar', data: { labels, datasets: [{ label: name, data: vals, backgroundColor: vals.map(v => (v || 0) < 0 ? FLOW_OUT : FLOW_IN), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 24, barPercentage: 0.7, categoryPercentage: 0.8 }] },
+    options: o, plugins: [A.valueLabels], noFocus: true });
+  ch.$labels = { mode: 'end', size: 11, color: '#52514e', fmt: v => A.signed(v, Math.max(1, dg)) }; ch.update('none');
+  return ch;
+}
+/** v43: 버튼 묶음(지표·연도) */
+function flowSeg(A, bar, label, items, cur, onPick) {
+  const w = A.div(bar, 'ctl flow-rng', `<label>${label}</label><div class="seg"></div>`);
+  items.forEach(([v, t]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.dataset.v = v; b.classList.toggle('on', v === cur);
+    b.onclick = () => { if (b.classList.contains('on')) return; w.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); onPick(v); }; w.querySelector('.seg').appendChild(b); });
+  return w;
+}
+/** 섹션: kind 'mgr'(운용사별 NAV 탭) | 'type'(유형별 NAV 탭). d = byMgr/byType 응답(기준일·비교 기준)
+ *  v43: 위 = 연초 이후 누적 설정액(선 — 선택 항목 파랑, 나머지 회색) · 아래 = 선택 항목의 월별 설정액(막대, 별도 축, 같은 월 위치)
+ *       지표(설정액 | NAV 증감) · 연도 선택. 운용사 탭 기본 선택 = 한투, 유형 탭 기본 선택 = 첫 유형 */
 function flowSection(A, root, d, kind) {
   const RL = A.refLabel(d), ym = String(d.date).slice(0, 7), base = d.ref && d.ref.py ? String(d.ref.py).slice(0, 7) : null, isM = kind === 'mgr';
-  const sec = A.section(root, isM ? 'NAV 증감 요인 — 설정액(자금 유출입)·평가 증감' : '유형별 NAV 증감 요인 — 설정액(자금 유출입)·평가 증감', `NAV 증감 = 설정액 + 평가 증감 · ${FLOW_DEF}`);
+  const sec = A.section(root, isM ? '운용사별 설정액(자금 유출입) — 연초 이후 누적·월별' : '유형별 설정액(자금 유출입) — 연초 이후 누적·월별', `NAV 증감 = 설정액 + 평가 증감 · ${FLOW_DEF}`);
   const holder = A.div(sec, 'empty', '설정액 자료를 불러오는 중…');
   A.call('flows', {}).then(fl => {
     if (!holder.isConnected) return;
     if (!fl || !fl.ready || !fl.months || !fl.months.length) { holder.textContent = flowWait(fl); return; }
     holder.remove();
-    const st = A.state.flow = A.state.flow || { range: '24' }, U = fl.unit || 1e8, sj = v => A.signed(v, 2), neg = v => v < -5e9 ? 'neg' : '';
+    const st = A.state.flow = A.state.flow || {}, U = fl.unit || 1e8, sj = v => A.signed(v, 2), neg = v => v < -5e9 ? 'neg' : '';
     const types = (fl.typeOrder || A.meta.typeOrder).filter(t => fl.types[t]).concat(Object.keys(fl.types).filter(t => (fl.typeOrder || A.meta.typeOrder).indexOf(t) < 0));
+    const years = flowYears(fl, ym);
+    if (!st.metric) st.metric = 'f';
     const bar = A.div(sec, 'flow-bar'), body = A.div(sec);
-    let top = null, type = null;
-    if (!isM) A.chips(bar, types, { hint: '유형', reset: '전체 유형', colorFn: tc, onSelect: s => { type = s; draw(); } });
-    A.chips(bar, GROUPS(), { hint: '운용사', reset: '시장 전체', onSelect: s => { top = s; draw(); } });
-    const rg = A.div(bar, 'ctl flow-rng', '<label>기간</label><div class="seg"></div>');
-    FLOW_RANGES.forEach(([v, t]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.dataset.v = v; b.classList.toggle('on', v === st.range); b.onclick = () => { if (v === st.range) return; st.range = v; rg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === v)); draw(); }; rg.querySelector('.seg').appendChild(b); });
-    const P = flowPeriod(fl, base, ym), mi = fl.months.indexOf(ym);
+    let top = isM && GROUPS().indexOf(A.FOCUS) >= 0 ? A.FOCUS : null, type = isM ? null : types[0] || null;
+    if (!isM) A.chips(bar, types, { hint: '유형', reset: '전체 유형', plain: true, selected: type, onSelect: s => { type = s; draw(); } });
+    A.chips(bar, GROUPS(), { hint: '운용사', reset: '시장 전체', plain: true, selected: top, onSelect: s => { top = s; draw(); } });
+    flowSeg(A, bar, '지표', [['f', '설정액'], ['nav', 'NAV 증감']], st.metric, v => { st.metric = v; draw(); });
+    const Y0 = () => years.indexOf(st.year) >= 0 ? st.year : years[0];
+    flowSeg(A, bar, '연도', years.map(y => [y, y]), Y0(), v => { st.year = v; draw(); });
     const draw = () => {
       body.innerHTML = '';
-      const who = (type ? type + ' · ' : '') + (top || '시장 전체'), s = flowSeries(fl, top, type), [i0, i1] = flowWindow(fl, st.range, ym);
-      const lab = fl.months.slice(i0, i1 + 1), f = s.f.slice(i0, i1 + 1), v = s.v.slice(i0, i1 + 1), meth = fl.method.slice(i0, i1 + 1), ps = P.sum(s);
-      A.sub(body, `${who}: ${RL} 이후(${P.first || '-'}~${P.last || '-'}) 설정액 ${sj(ps.f)}조원 · 평가 증감 ${sj(ps.v)}조원 → NAV 증감 ${sj(ps.f + ps.v)}조원`);
-      flowChart(A, A.canvas(body, 'mid'), lab, f, v, meth);
-      const hasM = meth.indexOf('M') >= 0, hasD = meth.indexOf('D') >= 0;
-      A.div(body, 'note', (hasD ? `${fl.dailyFrom ? fl.dailyFrom.slice(0, 4) : '2026'}년 이후 = 영업일별 합` : '') + (hasD && hasM ? ' · ' : '') + (hasM ? '그 이전 = 월말 두 시점 근사(좌수 변화 × 두 시점 평균 1좌당 NAV — 월중 설정·해지가 엇갈리면 차이 가능)' : '') + ` · 최근 반영 ${fl.last || '-'}`);
-      // 월별 표(최근 월부터)
-      const rows = lab.map((k, j) => ({ ym: k, f: f[j], v: v[j], e: s.e ? s.e[i0 + j] : null, m: meth[j] })).reverse();
-      A.div(body, '', A.table(rows, [
-        { h: '월', f: r => r.ym, l: 1 }, { h: '설정액(조원)', f: r => sj(r.f), cls: r => neg(r.f) }, { h: '평가 증감(조원)', f: r => sj(r.v), cls: r => neg(r.v) },
-        { h: 'NAV 증감(조원)', f: r => sj(r.f + r.v), cls: r => neg(r.f + r.v) }].concat(s.e ? [{ h: '기말 NAV(조원)', f: r => A.eok(r.e, 1) }] : []).concat([{ h: '산출', f: r => r.m === 'D' ? '일별 합' : '월말 근사', l: 1 }
+      const Y = Y0(), yi = flowYearIdx(fl, Y, ym), P = flowIdx(fl, yi), nav = st.metric === 'nav', W = nav ? 'NAV 증감' : '설정액';
+      const who = isM ? (top || '시장 전체') : (type ? type + ' · ' : '') + (top || '시장 전체'), s = flowSeries(fl, top, type), ps = P.sum(s);
+      const val = x => i => nav ? x.f[i] + x.v[i] : x.f[i], m1 = P.first ? +P.first.slice(5) : 1, m2 = P.last ? +P.last.slice(5) : 1;
+      A.sub(body, `${who}: ${Y}년 ${m1}~${m2}월 누적 설정액 ${sj(ps.f)}조원 · NAV 증감 ${sj(ps.f + ps.v)}조원 (평가 증감 ${sj(ps.v)}조원)`);
+      // 계열: 운용사 탭 — 미선택 = 시장 전체 1개, 선택 = 운용사 6개(선택 강조) · 유형 탭 — 미선택 = (운용사) 전체 1개, 선택 = 유형별(선택 강조)
+      const one = (k, x) => ({ k, x, on: true });
+      let list = isM ? (top ? GROUPS().map(k => ({ k, x: flowSeries(fl, k, null), on: k === top })) : [one('시장 전체', s)])
+        : (type ? types.map(t => ({ k: t, x: flowSeries(fl, top, t), on: t === type })) : [one(top ? top + ' 전체' : '시장 전체', s)]);
+      list = list.filter(o => o.on || yi.some(i => o.x.f[i] || o.x.v[i]));
+      const sets = list.map(o => { const g = val(o.x), cum = [0]; yi.forEach(i => cum.push(cum[cum.length - 1] + g(i))); return { k: o.k, cum, on: o.on }; });
+      const labels = [m1 === 1 ? '전년말' : `${m1 - 1}월 말`].concat(yi.map(i => `${+fl.months[i].slice(5)}월`));
+      const mx = Math.max.apply(null, sets.map(o => Math.max.apply(null, o.cum.map(Math.abs))).concat([1])), efmt = v => A.signed(v, Math.max(1, flowDg(mx))), pr = flowPR(A, sets, efmt);
+      const sw = c => `<i style="background:${c}"></i>`;
+      A.div(body, 'flow-ct', `<b>연초 이후 누적 ${W}</b><span class="u">(조원)</span>`);
+      flowLineChart(A, A.canvas(body, 'mid'), labels, sets, pr, W);
+      const mv = [null].concat(yi.map(val(s))), sel = sets.find(o => o.on) || sets[0];
+      A.div(body, 'flow-ct', `<b>월별 ${W} — ${who}</b><span class="u">(조원)</span><span class="lg">${sw(FLOW_IN)}${nav ? '증가' : '유입'}${sw(FLOW_OUT)}${nav ? '감소' : '유출'}</span>`);
+      flowBarChart(A, A.canvas(body, 'short'), labels, mv, who, pr, j => {
+        if (!j) return ''; const i = yi[j - 1], cf = yi.slice(0, j).reduce((a, k) => a + s.f[k], 0), cn = yi.slice(0, j).reduce((a, k) => a + s.f[k] + s.v[k], 0);
+        return [nav ? ` 설정액: ${sj(s.f[i])}조원` : ` NAV 증감: ${sj(s.f[i] + s.v[i])}조원`, ` 누적 설정액: ${sj(cf)}조원`, ` 누적 NAV 증감: ${sj(cn)}조원`];
+      });
+      const meth = yi.map(i => fl.method[i]), hasM = meth.indexOf('M') >= 0, hasD = meth.indexOf('D') >= 0;
+      A.div(body, 'note', `누적 = ${Y}년 ${m1}월~${m2}월${Y === ym.slice(0, 4) ? '(기준월이 진행 중이면 최근 반영일까지)' : ''} · 위 선과 아래 막대는 같은 월 위치(세로 축은 각각) · 지표를 NAV 증감으로 바꾸면 두 그림 모두 NAV 기준 · 점·막대에 마우스를 올리면 당월·누적 값 · `
+        + (hasD ? `${fl.dailyFrom ? fl.dailyFrom.slice(0, 4) : '2026'}년 이후 = 영업일별 합` : '') + (hasD && hasM ? ' · ' : '') + (hasM ? '그 이전 = 월말 두 시점 근사(좌수 변화 × 두 시점 평균 1좌당 NAV — 월중 설정·해지가 엇갈리면 차이 가능)' : '') + ` · 최근 반영 ${fl.last || '-'}`);
+      // 월별 표(표 보기) — 선택 항목, 선택 연도
+      let cf = 0, cn = 0;
+      const rows = yi.map(i => { cf += s.f[i]; cn += s.f[i] + s.v[i]; return { ym: fl.months[i], f: s.f[i], v: s.v[i], cf, cn, e: s.e ? s.e[i] : null, m: fl.method[i] }; });
+      const det = document.createElement('details'); det.className = 'flow-tb'; det.innerHTML = `<summary>월별 표 보기 — ${who} ${Y}년</summary>`; body.appendChild(det);
+      A.div(det, '', A.table(rows, [
+        { h: '월', f: r => r.ym, l: 1 }, { h: '설정액(조원)', f: r => sj(r.f), cls: r => neg(r.f) }, { h: 'NAV 증감(조원)', f: r => sj(r.f + r.v), cls: r => neg(r.f + r.v) }, { h: '평가 증감(조원)', f: r => sj(r.v), cls: r => neg(r.v) },
+        { h: '누적 설정액(조원)', f: r => sj(r.cf), cls: r => neg(r.cf) }, { h: '누적 NAV 증감(조원)', f: r => sj(r.cn), cls: r => neg(r.cn) }].concat(s.e ? [{ h: '기말 NAV(조원)', f: r => A.eok(r.e, 1) }] : []).concat([{ h: '산출', f: r => r.m === 'D' ? '일별 합' : '월말 근사', l: 1 }
       ]), { compact: true }));
-      // 비교 표: 운용사별(운용사 탭) · 유형별(유형 탭, 선택 운용사 기준) — 비교 기준 이후 합계 + 기준월
+      // 비교 표: 운용사별(운용사 탭) · 유형별(유형 탭, 선택 운용사 기준) — 선택 연도 누적 + 그 해 마지막 월
+      const mi = yi.length ? yi[yi.length - 1] : -1, lastYm = mi >= 0 ? fl.months[mi] : ym;
       const keys = isM ? GROUPS() : types, ser = k => isM ? flowSeries(fl, k, null) : flowSeries(fl, top, k);
       const tot = flowSeries(fl, isM ? null : top, null), tp = P.sum(tot);
       const cmp = keys.map(k => { const x = ser(k), p = P.sum(x); return { k, f: p.f, v: p.v, mf: mi >= 0 ? x.f[mi] : null, mv: mi >= 0 ? x.v[mi] : null }; }).filter(r => r.f || r.v || r.mf);
       const toW = o => ({ f: o.f.map(x => x * U), v: o.v.map(x => x * U) });
       if (!isM && !top) Object.keys(fl.doms || {}).forEach((k, j) => { const x = toW(fl.doms[k]), p = P.sum(x); cmp.push({ k, dom: 1, sep: !j, f: p.f, v: p.v, mf: mi >= 0 ? x.f[mi] : null, mv: mi >= 0 ? x.v[mi] : null }); });
-      const G = `${RL} 이후 (${P.first || '-'}~${P.last || '-'})`, GM = `기준월 ${ym}`;
-      A.sub(body, isM ? '운용사별 설정액' : `유형별 설정액${top ? ' — ' + top : ''}`);
-      A.div(body, '', A.table(cmp, [
+      const G = `${Y}년 누적 (${P.first || '-'}~${P.last || '-'})`, GM = `${lastYm === ym ? '기준월' : '마지막 월'} ${lastYm}`;
+      A.sub(body, isM ? `운용사별 설정액 — ${Y}년` : `유형별 설정액 — ${Y}년${top ? ' · ' + top : ''}`);
+      const tw = A.div(body, '', A.table(cmp, [
         { h: isM ? '운용사' : '구분', f: r => (isM ? A.sw(r.k) : A.swc(r.dom ? (DOM_COLORS[r.k] || '#c4c4cc') : tc(r.k))) + r.k, l: 1 },
-        { h: 'NAV 증감', g: G, f: r => sj(r.f + r.v), cls: r => neg(r.f + r.v) }, { h: '설정액', g: G, f: r => sj(r.f), cls: r => neg(r.f) }, { h: '평가 증감', g: G, f: r => sj(r.v), cls: r => neg(r.v) },
-        { h: '설정액 점유율', g: G, f: r => r.dom ? '-' : tp.f > 0 ? A.share(r.f / tp.f * 100) : '-' },
-        { h: '설정액', g: GM, f: r => r.mf === null ? '-' : sj(r.mf), cls: r => neg(r.mf || 0) }, { h: '평가 증감', g: GM, f: r => r.mv === null ? '-' : sj(r.mv), cls: r => neg(r.mv || 0) }
-      ], { compact: true, tools: false, attr: r => (isM ? `data-top="${r.k}"` : '') + (r.sep ? ' class="sep"' : ''),
-        total: { [isM ? '운용사' : '구분']: isM || !top ? '시장 전체' : top + ' 합계', [G + '|NAV 증감']: sj(tp.f + tp.v), [G + '|설정액']: sj(tp.f), [G + '|평가 증감']: sj(tp.v), [G + '|설정액 점유율']: tp.f > 0 ? '100.0%' : '-', [GM + '|설정액']: mi >= 0 ? sj(tot.f[mi]) : '-', [GM + '|평가 증감']: mi >= 0 ? sj(tot.v[mi]) : '-' } }));
-      A.div(body, 'note', `설정액 점유율 = 운용사(유형) 설정액 ÷ ${isM || !top ? '시장' : top} 설정액(설정액 합계가 순유입일 때만) · NAV 증감은 위 NAV 표의 ${RL} 대비 증감액과 같음(반올림 차 제외)`);
-      if (isM && top) A.highlightRows(body, top);
+        { h: '설정액', g: G, f: r => sj(r.f), cls: r => neg(r.f) }, { h: '설정액 점유율', g: G, f: r => r.dom ? '-' : tp.f > 0 ? A.share(r.f / tp.f * 100) : '-' },
+        { h: 'NAV 증감', g: G, f: r => sj(r.f + r.v), cls: r => neg(r.f + r.v) }, { h: '평가 증감', g: G, f: r => sj(r.v), cls: r => neg(r.v) },
+        { h: '설정액', g: GM, f: r => r.mf === null ? '-' : sj(r.mf), cls: r => neg(r.mf || 0) }, { h: 'NAV 증감', g: GM, f: r => r.mf === null ? '-' : sj(r.mf + r.mv), cls: r => neg((r.mf || 0) + (r.mv || 0)) }
+      ], { compact: true, tools: false, attr: r => (r.dom ? '' : `data-top="${r.k}"`) + (r.sep ? ' class="sep"' : ''),
+        total: { [isM ? '운용사' : '구분']: isM || !top ? '시장 전체' : top + ' 합계', [G + '|설정액']: sj(tp.f), [G + '|설정액 점유율']: tp.f > 0 ? '100.0%' : '-', [G + '|NAV 증감']: sj(tp.f + tp.v), [G + '|평가 증감']: sj(tp.v),
+          [GM + '|설정액']: mi >= 0 ? sj(tot.f[mi]) : '-', [GM + '|NAV 증감']: mi >= 0 ? sj(tot.f[mi] + tot.v[mi]) : '-' } }));
+      const same = Y === ym.slice(0, 4) && base === `${+Y - 1}-12`;
+      A.div(body, 'note', `설정액 점유율 = ${isM ? '운용사' : '유형'} 설정액 ÷ ${isM || !top ? '시장' : top} 설정액(설정액 합계가 순유입일 때만)` + (same ? ` · NAV 증감은 위 NAV 표의 ${RL} 대비 증감액과 같음(반올림 차 제외)` : ''));
+      A.highlightRows(tw, isM ? top : type);
       // 기준월 설정 상위·해지 상위 ETF
       const hb = A.div(body, 'empty', 'ETF별 설정액을 불러오는 중…'), q = { ym: ym };
       if (top) q.top = top; if (type) q.f2 = type;
@@ -274,10 +348,10 @@ function flowSection(A, root, d, kind) {
         if (!t || !t.ready || (!t.inflow.length && !t.outflow.length)) { hb.textContent = `${ym} 설정·해지 ETF 없음`; return; }
         hb.className = ''; hb.innerHTML = '';
         A.sub(hb, `${t.ym} 설정 상위·해지 상위 ETF — ${who} (설정 ${A.num(t.nIn)}종목 · 해지 ${A.num(t.nOut)}종목)`);
-        const g2 = A.div(hb, 'grid grid-2'), eo = x => A.num(x, 0);
+        const g2 = A.div(hb, 'grid grid-2 flow-g2'), eo = x => A.num(x, 0);
         const byMg = isM || !!type, cols = [{ h: '종목명', f: r => r[1], l: 1 }, { h: byMg ? '운용사' : '유형', f: r => byMg ? r[2] : r[3], l: 1 }, { h: '설정액(억원)', f: r => (r[4] > 0 ? '+' : '') + eo(r[4]), cls: r => r[4] < 0 ? 'neg' : '' }, { h: 'NAV(억원)', f: r => eo(r[6]) }];
         [['설정 상위', t.inflow], ['해지 상위', t.outflow]].forEach(([h, xs]) => { const c = A.div(g2); A.sub(c, h); A.div(c, '', xs.length ? A.table(xs, cols, { compact: true, tools: false, attr: r => `data-top="${r[2]}" title="${r[0]} · 평가 증감 ${(r[5] > 0 ? '+' : '') + eo(r[5])}억원"` }) : '<div class="empty">해당 없음</div>'); });
-        A.div(hb, 'note', `NAV = ${t.ym} 말 순자산(당월은 최근 영업일) · 신규상장 종목은 첫 순자산 전액이 설정액 · 종목명에 마우스를 올리면 종목코드·평가 증감`);
+        A.div(hb, 'note', `NAV = ${t.ym} 말 순자산(당월은 최근 영업일) · 신규상장 종목은 첫 순자산 전액이 설정액 · 종목명에 마우스를 올리면 종목코드·평가 증감 · 연도 선택과 관계없이 기준월 기준`);
       }).catch(e => { hb.className = 'error'; hb.textContent = e.message; });
     };
     draw();
@@ -409,7 +483,7 @@ function twoRowStack(A, canvas, d, keys, getPy, getCur, colorFn, twoLine) {   //
 /* 2. 운용사별 NAV (v24: 폭 제한 · 표 내용 폭 · 기여도 분해 제거 → 증감률 비교) */
 App.registerTab({
   id: 'mgr', narrow: true, label: '운용사별 NAV', controls: ['date', 'ref'], action: 'byMgr', params: s => ({ date: s.date, ref: s.ref }),
-  prefetch: s => [['race', { n: 20 }], ['flows', {}], ['flowTop', { ym: String(s.date || '').slice(0, 7) }]],   // v39: NAV 상위 20 변천(bar chart race)을 이 탭 맨 아래로 옮김 · v42: 설정액
+  prefetch: (s, A) => [['race', { n: 20 }], ['flows', {}], ['flowTop', { ym: String(s.date || '').slice(0, 7), top: A.FOCUS }]],   // v39: NAV 상위 20 변천(bar chart race)을 이 탭 맨 아래로 옮김 · v42: 설정액 · v43: 기본 선택 한투
   render(d, root, A) {
     const keys = GROUPS(), RL = A.refLabel(d), G = RL + ' 대비', pp = v => A.pct(v).replace('%', '%p');
     const byK = {}; d.rows.forEach(r => byK[r.mgr] = r);
@@ -463,7 +537,7 @@ App.registerTab({
 /* 3. 유형별 NAV (v24: 폭 제한 · 두 막대를 위아래로 · 히트맵은 유형별 띠 배치, 화면을 그리기 전에 히트맵 자료 요청) */
 App.registerTab({
   id: 'type', narrow: true, label: '유형별 NAV', controls: ['date', 'ref'], action: 'byType', params: s => ({ date: s.date, ref: s.ref }),
-  prefetch: s => [['treemap', { date: s.date, ref: s.ref }], ['flows', {}]],
+  prefetch: (s, A) => [['treemap', { date: s.date, ref: s.ref }], ['flows', {}], ['flowTop', { ym: String(s.date || '').slice(0, 7), f2: A.meta.typeOrder[0] }]],   // v43: 설정액 기본 선택(첫 유형)의 설정·해지 상위 ETF
   render(d, root, A) {
     const RL = A.refLabel(d), G = RL + ' 대비';
     const tmP = A.call('treemap', { date: d.date, ref: A.state.ref });   // 가장 오래 걸리는 조회 → 먼저 요청(미리 받아 두었으면 즉시)

@@ -268,7 +268,7 @@ const App = {
     if (opts.reset) { const b = document.createElement('button'); b.className = 'chip-m reset'; b.dataset.k = ''; b.textContent = opts.reset === true ? '초기화' : opts.reset; b.onclick = () => { sel = null; render(); if (opts.onSelect) opts.onSelect(null); }; w.appendChild(b); }
     keys.forEach(k => {
       const b = document.createElement('button'); b.className = 'chip-m'; b.dataset.k = k;
-      b.innerHTML = `<span class="sw" style="background:${opts.colorFn ? opts.colorFn(k) : this.color(k)}"></span>${opts.labelFn ? opts.labelFn(k) : k}`;
+      b.innerHTML = (opts.plain ? '' : `<span class="sw" style="background:${opts.colorFn ? opts.colorFn(k) : this.color(k)}"></span>`) + (opts.labelFn ? opts.labelFn(k) : k);   // v43: plain = 색 견본 없이(차트가 강조색 1개·회색일 때)
       b.onclick = () => { sel = sel === k ? null : k; render(); if (opts.onSelect) opts.onSelect(sel); };
       w.appendChild(b);
     });
@@ -300,7 +300,8 @@ const App = {
   },
   canvas(parent, cls) { const w = document.createElement('div'); w.className = 'chart-wrap ' + (cls || ''); const c = document.createElement('canvas'); w.appendChild(c); parent.appendChild(w); return c; },
   chart(canvas, cfg) {
-    if (this.state.focus) {   // v19: 강조 모드 — 데이터셋 색이 운용사 고유색이면 한투 외 흐리게 (유형색·검정 단일 막대는 그대로)
+    const noFocus = cfg.noFocus; delete cfg.noFocus;   // v43: 자체 강조(선택 1개 파랑·나머지 회색) 차트는 'ACE 강조' 흐림을 적용하지 않음
+    if (this.state.focus && !noFocus) {   // v19: 강조 모드 — 데이터셋 색이 운용사 고유색이면 한투 외 흐리게 (유형색·검정 단일 막대는 그대로)
       try {
         const mc = {}; Object.keys(this.meta.colors).forEach(k => mc[String(this.meta.colors[k]).toLowerCase()] = k);
         const dim = (c, label) => { const k = mc[String(c).toLowerCase()]; if (k) return this.focusColor(c, k); if (label && this.meta.colors[label]) return this.focusColor(c, label); return c; };
