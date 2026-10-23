@@ -23,8 +23,8 @@ const OUT = __dirname + '/shots_v24';
     check('첫 화면: 서버 조회는 boot 1건(웹) / 없음(Apps Script, 페이지에 포함) — 그 밖에는 선조회만', name === 'web' ? first.calls[0] === 'boot' && first.calls.slice(1).every(a => bg.includes(a)) : first.calls.every(a => bg.includes(a)), first.calls.join(',') || '(없음)');
     check('핵심 요약 표 6행(v42: 자금 유출입 — 설정액 자료 도착 뒤 추가)·설명 문장 목록 없음', first.kv.length === 6 && first.kv[2].indexOf('자금 유출입') === 0 && first.sumLines === 0, first.kv.map(x => x.split(' | ')[0]).join(' · '));
     console.log('     ' + first.kv.join('\n     '));
-    if (name === 'web') check('웹: (v41) 결론 한 줄 + 지표 카드 4개', first.lede.indexOf('empty') < 0 && first.hl === 1 && first.cards === 4, first.lede + ' / ' + first.cards);
-    else check('Apps Script: (v41) 결론 한 줄 + 지표 4개(웹과 같은 카드)', first.hl === 1 && first.tiles === 4, first.tiles);
+    if (name === 'web') check('웹: (v44) 결론 세 줄 + 지표 카드 4개', first.lede.indexOf('empty') < 0 && first.hl === 3 && first.cards === 4, first.lede + ' / ' + first.cards);
+    else check('Apps Script: (v44) 결론 세 줄 + 지표 4개(웹과 같은 카드)', first.hl === 3 && first.tiles === 4, first.tiles);
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_summary.png`, fullPage: true });
     await p.waitForTimeout(2500);   // 선조회(히트맵·변천·거래대금)
     const pre = await p.evaluate(() => window.MOCK.calls.slice());

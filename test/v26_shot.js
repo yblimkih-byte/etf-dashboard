@@ -30,7 +30,7 @@ const OUT = __dirname + '/shots_v26';
       return { row, chk };
     });
     console.log('     M/S 변동 요인 | ' + sm.row[1]);
-    check('요약: M/S 변동 요인 = NAV 증감률 비교 + 유형별 M/S 기여 상위 유형(시장 증가분 중 몫 vs 비교 기준 M/S)', /(하락|상승) 요인/.test(sm.row[1]) && /시장 증가분 중 한투 몫/.test(sm.row[1]) && /M\/S \d/.test(sm.row[1]) && /<br>/.test(sm.row[2]));
+    check('요약: M/S 변동 요인 = NAV 증감률 비교 + 유형별 M/S 기여 상위 유형(시장 증가분 중 몫 vs 비교 기준 M/S)', /(하락|상승) 요인/.test(sm.row[1]) && /시장 증가분 중 한투 비율/.test(sm.row[1]) && /M\/S \d/.test(sm.row[1]) && (sm.row[2].match(/class="nl"/g) || []).length >= 3);   // v44: 한 줄에 하나씩
     check('요약: v24 문구(주력 유형 중 차이 최대) 없음', !/주력 유형/.test(sm.row[1]));
     if (sm.chk) {
       check('계산: 운용사별 유형별 M/S 기여 합계 = M/S 변동(5개사)', sm.chk.length === 5 && sm.chk.every(x => Math.abs(x.sum - x.dms) < 1e-9 && Math.abs(x.dms - x.ms) < 1e-6), sm.chk.map(x => `${x.mgr} ${x.sum.toFixed(3)}/${x.ms.toFixed(3)}`).join(' · '));
@@ -40,11 +40,11 @@ const OUT = __dirname + '/shots_v26';
       const mk = (type, c, cap) => ({ type, c, cap });
       const gr = { dms: 0.227, s0: 7.56, rows: [mk('국내주식형', -0.262, 3.3), mk('해외주식형', 0.200, 12.7), mk('채권형', -0.070, 6.3), mk('파생형', -0.025, 3.2), mk('혼합채권형', 0.118, 37.4), mk('기타', 0.265, 34.7)] };
       const g2 = { dms: -1.273, s0: 8.53, rows: [mk('국내주식형', -0.863, 3.9), mk('해외주식형', -0.090, 7.5), mk('채권형', -0.030, 3.5), mk('파생형', -0.312, 1.4), mk('혼합채권형', 0.016, 9.3), mk('기타', 0.007, 11.2)] };
-      return [msDriverText(App, gr, '한투', '전년말').replace(/<[^>]+>/g, ''), msDriverText(App, g2, '한투', '전년말').replace(/<[^>]+>/g, '')];
+      return [msDriverText(App, gr, '한투', '전년말').join(' / ').replace(/<[^>]+>/g, ''), msDriverText(App, g2, '한투', '전년말').join(' / ').replace(/<[^>]+>/g, '')];   // v44: 줄 배열
     });
     console.log('     ' + off.join('\n     '));
-    check('상쇄 요인: M/S 상승(+0.23%p)이어도 국내주식형 −0.26%p 표시', /^상승 요인 기타 \+0\.27%p · 해외주식형 \+0\.20%p .* · 상쇄 요인 국내주식형 -0\.26%p \(한투 몫 3\.3%\)$/.test(off[0]), off[0]);
-    check('상쇄 요인: 반대 방향 0.1%p 미만이면 생략(09-30)', /^하락 요인 국내주식형 -0\.86%p · 파생형 -0\.31%p /.test(off[1]) && !/상쇄/.test(off[1]), off[1]);
+    check('상쇄 요인: M/S 상승(+0.23%p)이어도 국내주식형 −0.26%p 표시', /^상승 요인: 기타 \+0\.27%p \(한투 몫 [\d.]+%\), 해외주식형 \+0\.20%p .* \/ 상쇄 요인: 국내주식형 -0\.26%p \(한투 몫 3\.3%\) \/ /.test(off[0]), off[0]);
+    check('상쇄 요인: 반대 방향 0.1%p 미만이면 생략(09-30)', /^하락 요인: 국내주식형 -0\.86%p \(한투 몫 [\d.]+%\), 파생형 -0\.31%p /.test(off[1]) && !/상쇄/.test(off[1]), off[1]);
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_summary.png`, fullPage: true });
 
     // 운용사별
@@ -58,7 +58,7 @@ const OUT = __dirname + '/shots_v26';
         lede: (document.getElementById('lede') || {}).textContent || '' };
     });
     console.log('     ' + mg.title + '\n     ' + mg.sub + '\n     ' + mg.drv + '\n     ' + mg.cols.join(' | ') + '\n     ' + mg.body.map(r => r.join(' | ')).join('\n     '));
-    check('운용사별: 제목·설명(기여 산식·합계 = M/S 변동)', /유형별 M\/S 기여/.test(mg.title) && /시장 증감액 × 전년말 M\/S/.test(mg.desc) && /합계 = M\/S 변동/.test(mg.desc), mg.desc);
+    check('운용사별: 제목·설명(기여 산식·합계 = M/S 변동)', /유형별 M\/S 기여/.test(mg.title) && /시장 증감액 × 전년말 M\/S/.test(mg.desc) && /더하면 M\/S 변동과 같음/.test(mg.desc), mg.desc);   // v44 문구
     check('운용사별: 6열(유형·시장 증감액·한투 증감액·시장 증가분 중 한투 몫·M/S 기여·한투 내 비중)', mg.cols.length === 6 && mg.cols[3] === '시장 증가분 중 한투 몫' && mg.cols[4] === 'M/S 기여(%p)', mg.cols.join('|'));
     const ci = mg.cols.indexOf('M/S 기여(%p)'), last = mg.body[mg.body.length - 1];
     const sumC = mg.body.filter(r => r[0] !== '합계').reduce((s, r) => s + parseFloat(r[ci].replace('%p', '').replace('−', '-')), 0);
