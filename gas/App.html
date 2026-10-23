@@ -628,9 +628,14 @@ const App = {
 
   section(parent, title, note) {
     const s = document.createElement('div'); s.className = 'section';
-    s.innerHTML = `<div class="section-h"><h2 class="h2">${title}</h2>${note ? `<span class="note">${note}</span>` : ''}</div>`;
+    const nt = Array.isArray(note) ? (note.some(Boolean) ? `<div class="note note-lines">${this.lines(note)}</div>` : '') : note ? `<span class="note">${note}</span>` : '';   // v44: 배열 = 한 줄에 하나씩
+    s.innerHTML = `<div class="section-h"><h2 class="h2">${title}</h2>${nt}</div>`;
     parent.appendChild(s); return s;
   },
+  /** v44: 여러 줄 설명 — 빈 값을 뺀 배열을 한 줄에 하나씩(<span class="nl">). 설명을 '·'로 길게 잇지 않음 */
+  lines(arr) { return (Array.isArray(arr) ? arr : [arr]).filter(x => x !== null && x !== undefined && x !== false && x !== '').map(x => `<span class="nl">${x}</span>`).join(''); },
+  /** v44: 설명 상자(한 줄에 하나씩) */
+  note(parent, arr) { return this.div(parent, 'note note-lines', this.lines(arr)); },
   sub(parent, title) { const d = document.createElement('div'); d.className = 'h3'; d.textContent = title; parent.appendChild(d); return d; },
   div(parent, cls, html) { const d = document.createElement('div'); if (cls) d.className = cls; if (html) { d.innerHTML = html; if (d.querySelector('.tbl-tools')) this.tableTools(d); } parent.appendChild(d); return d; },
   /** v19: 표 도구 — 머리글 클릭 정렬(숫자·문자 자동 판별, 합계 행은 항상 맨 아래), 검색(행 텍스트 부분 일치), CSV 내려받기(현재 보이는 행) */

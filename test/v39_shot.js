@@ -65,8 +65,8 @@ const OUT = __dirname + '/shots_v39';
     const sAll = await snap(), nAll = await p.evaluate(() => App.call('topEtf', { date: App.state.date, n: 'all' }).then(d => d.count));
     check('전체: 목록 = NAV>0 전 종목, 막대는 상위 100개까지(안내 문구)', sAll.list === nAll && sAll.bars === Math.min(100, nAll) && /전체 [\d,]+종목 중/.test(sAll.titles[0]), `${sAll.bars}/${sAll.list}/${nAll} · ${sAll.titles[0]}`);
     check('전체: 목록 제목·요약 머리글(전체 내 종목수)', /^전체 ETF \([\d,]+종목\)$/.test(sAll.titles[1]) && /전체 내 종목수/.test(sAll.sumHead.join('|')), sAll.titles[1]);
-    if (name === 'web') check('웹: 카드·문장이 전체 기준으로(전체 합계의 %, 시장 순자산)', sAll.cards.every(c => /전체 합계의/.test(c)) && /전체 [\d,]+종목 · 시장 순자산/.test(sAll.lede), sAll.lede.slice(0, 70));
-    else check('Apps Script: 카드·결론 줄 전체 기준(전체 합계의 %, 시장 순자산)', sAll.tiles.length === 6 && sAll.tiles.every(t => /전체 합계의/.test(t)) && /전체 [\d,]+종목 · 시장 순자산/.test(sAll.hlede), sAll.tiles[0]);
+    if (name === 'web') check('웹: 카드·문장이 전체 기준으로(전체 합계의 %, 시장 순자산)', sAll.cards.every(c => /전체 합계의/.test(c)) && /전체 [\d,]+종목, 시장 순자산/.test(sAll.lede), sAll.lede.slice(0, 70));
+    else check('Apps Script: 카드·결론 줄 전체 기준(전체 합계의 %, 시장 순자산)', sAll.tiles.length === 6 && sAll.tiles.every(t => /전체 합계의/.test(t)) && /전체 [\d,]+종목, 시장 순자산/.test(sAll.hlede), sAll.tiles[0]);
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_all.png`, fullPage: true });
     // 운용사 칩: 목록 필터 동작
     const chip = await p.evaluate(() => { const c = [...document.querySelectorAll('.sticky-chips .chip-m')].find(b => b.dataset.k === '한투'); c.click(); const t = [...document.querySelectorAll('#view > .section')][1].querySelectorAll('table.tbl')[1]; return { shown: [...t.querySelectorAll('tbody tr')].filter(r => !r.classList.contains('fold')).length }; });

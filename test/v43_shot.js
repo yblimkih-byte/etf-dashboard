@@ -25,7 +25,7 @@ const num = t => { const m = String(t || '').replace(/,/g, '').match(/[-+−]?\d
       return { subs: [...s.querySelectorAll('.h3')].map(x => x.textContent.trim()), cts: [...s.querySelectorAll('.flow-ct')].map(x => x.textContent.trim()), tbls, ch,
         chips: [...s.querySelectorAll('.chip-m')].map(x => x.textContent.trim() + (x.classList.contains('on') ? '*' : '')), sw: s.querySelectorAll('.chip-m .sw').length,
         segs: [...s.querySelectorAll('.flow-rng')].map(w => [...w.querySelectorAll('button')].map(x => x.textContent + (x.classList.contains('on') ? '*' : ''))),
-        det: !!s.querySelector('details.flow-tb'), notes: [...s.querySelectorAll('.note')].map(x => x.textContent), txt: s.textContent }; }, t);
+        det: !!s.querySelector('details.flow-tb'), lineNotes: s.querySelectorAll('.note-lines .nl').length, notes: [...s.querySelectorAll('.note')].map(x => x.textContent), txt: s.textContent }; }, t);
     const click = (t, label, n) => p.evaluate(([t, label, n]) => { const s = [...document.querySelectorAll('#view .section')].find(x => (x.querySelector('.h2') || {}).textContent.indexOf(t) === 0); const btn = [...s.querySelectorAll('.chip-m, .flow-rng button')].filter(x => x.textContent.trim() === label)[n || 0]; btn.click(); return !!btn; }, [t, label, n]);
     const W = v => v / 1e12;
     await wait();
@@ -65,7 +65,7 @@ const num = t => { const m = String(t || '').replace(/,/g, '').match(/[-+−]?\d
     check('누적 선 끝 값(각 운용사) = 운용사별 표 설정액', L.ds.every(d => Math.abs(W(d.data[M]) - num(ct.rows.find(r => r[0] === d.k)[1])) < 0.006), L.ds.map(d => d.k + ' ' + W(d.data[M]).toFixed(2)));
     check('설정 상위·해지 상위 ETF(기준월) — 한투만 · 설정액 부호', s.tbls.length === 4 && s.subs.some(x => x.indexOf(ym + ' 설정 상위·해지 상위 ETF — 한투') === 0) && s.tbls[2].rows.length > 0 && s.tbls[2].rows.concat(s.tbls[3].rows).every(r => r[1] === '한투')
       && s.tbls[2].rows.every(r => num(r[2]) > 0) && s.tbls[3].rows.every(r => num(r[2]) < 0), s.subs);
-    check('설명: 산식·산출 방법(일별 합·월말 근사 — 해당 연도)·내부 이름 없음', /설정액 = 좌수 변화 × 전일 1좌당 NAV/.test(s.txt) && /분배금은 유출이 아닌 평가로 봄/.test(s.txt) && s.notes.some(n => /같은 월 위치/.test(n) && /영업일별 합/.test(n)) && !/agg_|raw_|유형최종|FLOW|flows/.test(s.txt));
+    check('설명(v44 한 줄에 하나씩): 산식·산출 방법(일별 합·월말 근사 — 해당 연도)·내부 이름 없음', /설정액: 늘어난 좌수 × 전날 1좌당 NAV/.test(s.txt) && /분배금은 유출이 아니라 평가 증감에 포함/.test(s.txt) && s.notes.some(n => /같은 가로 위치/.test(n)) && s.notes.some(n => /영업일마다 계산해 더함/.test(n)) && s.lineNotes > 0 && !/agg_|raw_|유형최종|FLOW|flows/.test(s.txt));
     await freeze(); await p.addStyleTag({ content: '.hdr-wrap{position:static!important}' });
     await p.evaluate(T => [...document.querySelectorAll('#view .section')].find(x => x.querySelector('.h2').textContent.indexOf(T) === 0).scrollIntoView(), T);
     await p.screenshot({ path: `${OUT}/${name}_mgr_flow.png`, fullPage: false });

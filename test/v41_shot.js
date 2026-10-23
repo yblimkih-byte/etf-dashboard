@@ -39,7 +39,7 @@ const OUT = __dirname + '/shots_v41';
       await p.evaluate(i => App.show(i), id); await wait();
       const h = await head(); heads[name + ':' + id] = h;
       if (id === 'summary') {
-        check('요약: 결론 한 줄(한투 M/S·순위·시장 NAV) + 카드 4개', h.lines.length === 1 && /한투 M\/S [\d.]+%/.test(h.lines[0]) && /위/.test(h.lines[0]) && /시장 NAV/.test(h.lines[0]) && h.cards.length === 4, h.lines[0]);
+        check('요약: (v44) 결론 세 줄(한투 M/S · 순위 · 시장 NAV) + 카드 4개', h.lines.length === 3 && /한투 M\/S [\d.]+%/.test(h.lines[0]) && /상위 5개사 중 \d위/.test(h.lines[1]) && /시장 NAV/.test(h.lines[2]) && h.cards.length === 4, h.lines.join(' / '));
         check('기준 표시: 컨트롤 줄 맨 앞, 당월 일자 = 기준 YYYY-MM-DD', h.asofFirst && /^기준 \d{4}-\d{2}-\d{2}$/.test(h.asof), h.asof);
         const opt = await p.evaluate(() => { const se = [...document.querySelectorAll('#controls select')][0]; return [...se.options].map(o => o.textContent); });
         check('기준일자 목록: 지난 달은 "YYYY-MM 말"', opt.some(o => /^\d{4}-\d{2} 말$/.test(o)) && opt.some(o => /^\d{4}-\d{2}-\d{2}$/.test(o)), opt.slice(0, 3).join(', '));
@@ -55,7 +55,7 @@ const OUT = __dirname + '/shots_v41';
         if (name === 'web') check('웹 상단 제목 = 전체 이름(ETF 시장 개관)', await p.evaluate(() => document.getElementById('topTitle').textContent) === 'ETF 시장 개관');
       }
       if (id === 'mgr') {
-        check('운용사별: 결론 한 줄 + 운용사 카드 5개', h.lines.length === 1 && /한투 M\/S/.test(h.lines[0]) && h.cards.length === 5, h.lines[0]);
+        check('운용사별: (v44) 결론 두 줄(한투 M/S · 순위) + 운용사 카드 5개', h.lines.length === 2 && /한투 M\/S/.test(h.lines[0]) && /상위 5개사 중 \d위/.test(h.lines[1]) && h.cards.length === 5, h.lines.join(' / '));
         const toc = await p.evaluate(() => [...document.querySelectorAll('.toc-a')].map(x => x.textContent));
         check('섹션 바로가기 5개(v43 운용사별 설정액 · 맨 아래 변천 포함)', toc.length === 5 && /운용사별 설정액/.test(toc[1]) && /변천/.test(toc[4]), toc.join(' · '));
         await p.evaluate(() => [...document.querySelectorAll('.toc-a')].pop().click()); await p.waitForTimeout(1200);
