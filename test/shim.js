@@ -147,6 +147,8 @@
     const res = b.keywordGroups.map(kg => ({ title: kg.groupName, keywords: kg.keywords, data: per.map((p, i) => ({ period: p, ratio: kg.groupName === 'ETF' ? 90 + (i % 3) * 5 : +(1 + h(kg.groupName) % 7 + (h(kg.groupName) % 2 ? i * 0.15 : -i * 0.03)).toFixed(5) })) }));
     const mx = Math.max.apply(null, res.map(r => Math.max.apply(null, r.data.map(d => d.ratio))));
     res.forEach(r => r.data.forEach(d => d.ratio = +(d.ratio / mx * 100).toFixed(5)));
+    // v45: 실제 DataLab 처럼 검색량이 아주 적은 주는 응답에서 뺌 — 만기매칭채권 = 최근 6주 없음, 그룹주 = 3주에 1번만
+    res.forEach(r => { if (r.title === '만기매칭채권') r.data = r.data.slice(0, Math.max(0, r.data.length - 6)); else if (r.title === '그룹주') r.data = r.data.filter((d, i) => i % 3 === 0); });
     return { startDate: b.startDate, endDate: b.endDate, timeUnit: b.timeUnit, results: res };
   }
   function newsMock(query, start, display) {
