@@ -4,7 +4,7 @@
  *          키(Application 의 Client ID·Secret)는 메뉴 [ETF Dashboard] › 네이버 API 키 설정(사용자 직접 입력)
  *  · 대상: 범례_테마의 '관심도 검색어' 열(테마·상품구조 행). 비어 있으면 그 테마는 건너뜀
  *  · 검색 관심도: 요청마다 기준어 'ETF'를 함께 넣어(그룹 5개 중 1개) 검색량을 'ETF 검색 = 100'으로 환산 → 요청이 달라도 테마끼리 비교 가능.
- *               최근 4주 평균 vs 직전 4주 평균 변화율
+ *               최근 4주 평균 vs 직전 4주 평균 변화율. DataLab 이 값을 주지 않은 주(검색량이 아주 적음)는 0으로 계산(v45: 주 위치 맞춤)
  *  · 뉴스: 검색어마다 "검색어"(따옴표 = 구문 일치) 최신순 100건씩 병렬 조회, 14일 이전 기사가 나올 때까지(검색어당 최대 500건) → 최근 7일·이전 7일 기사 수(같은 기사 중복 제거).
  *          기사가 많아 14일을 다 덮지 못하면 덮은 구간의 하루 평균으로 7일분을 환산(추정 표시)
  *  · 새 단어: 'ETF' 최신 뉴스 제목(최대 1,000건)의 단어 빈도 — 모은 제목이 덮는 기간을 반으로 나눠 최근 절반 vs 이전 절반. 테마 규칙 키워드에 없는 단어 표시(사전 보강 후보)
@@ -14,7 +14,8 @@ const BUZZ = {
   DATALAB: 'https://naverapihub.apigw.ntruss.com/search-trend/v1/search',   // v30: NAVER API HUB(이전 openapi.naver.com/v1/datalab/search)
   NEWS: 'https://naverapihub.apigw.ntruss.com/search/v1/news',               // v30: NAVER API HUB(이전 openapi.naver.com/v1/search/news.json)
   SHEET: '관심도', HEADER: ['구분', '대상', '기간', '값'],
-  ANCHOR: 'ETF', WEEKS: 26, NEWS_PAGES: 5, ANCHOR_PAGES: 10, NEWS_PAR: 10, NEWS_GAP_MS: 1000, KW_MAX: 3, RUN_MS: 4.5 * 60 * 1000,
+  ANCHOR: 'ETF', WEEKS: 26, LOW_MISS: 4,   // v45: 최근 8주 중 값 없는 주가 4주 이상이면 '검색량 적음'(변화율 계산 안 함)
+  NEWS_PAGES: 5, ANCHOR_PAGES: 10, NEWS_PAR: 10, NEWS_GAP_MS: 1000, KW_MAX: 3, RUN_MS: 4.5 * 60 * 1000,
   STOP: ['ETF', 'ETN', '상장', '출시', '운용', '자산운용', '투자', '투자자', '수익률', '순자산', '돌파', '종목', '시장', '지수', '증시', '상품', '국내', '해외', '최대', '최고', '최초', '올해', '연초',
     '이후', '이번', '관련', '대비', '기록', '규모', '전망', '공개', '추천', '분석', '전략', '포트폴리오', '개인', '외국인', '기관', '매수', '순매수', '매도', '자금', '유입', '유출', '억원', '조원', '만원',
     '코스피', '코스닥', 'KODEX', 'TIGER', 'ACE', 'RISE', 'SOL', 'KIWOOM', 'PLUS', 'HANARO', 'KoAct', 'TIME', '1Q', '삼성', '미래에셋', '한투', '한국투자', '신한', 'KB', '키움', '한화', 'NH', '하나', '우리',
@@ -66,6 +67,17 @@ function buzzTrend_(series) {
   const s4 = avg(v.slice(Math.max(0, n - 4))), p4 = avg(v.slice(Math.max(0, n - 8), Math.max(0, n - 4)));
   return { s4: s4, p4: p4, chg: p4 > 0 ? (s4 / p4 - 1) * 100 : null };
 }
+
+/** v45: 주 목록 = 시트에 있는 주 ∪ 수집 구간(시작 주 ~ 끝, 7일 간격) — 정렬 */
+function buzzWeeks_(have, range) {
+  const out = {}, gen = []; (have || []).forEach(w => out[w] = 1);
+  if (range && range[0] && range[1]) { const a = Date.parse(range[0] + 'T00:00:00Z'), b = Date.parse(range[1] + 'T00:00:00Z');
+    if (!isNaN(a) && !isNaN(b)) for (let t = a; t <= b; t += 7 * 86400000) gen.push(new Date(t).toISOString().slice(0, 10)); }
+  if (!(have || []).length || gen.some(w => out[w])) gen.forEach(w => out[w] = 1);   // 주 표기(시작 요일)가 시트와 맞을 때만 보탬
+  return Object.keys(out).sort();
+}
+/** v45: [[주, 값]] → 주 목록 순서의 값 배열(그 주 값이 없으면 null = 검색량이 아주 적어 DataLab 이 주지 않은 주) */
+function buzzAlign_(pairs, weeks) { const m = {}; (pairs || []).forEach(x => m[x[0]] = x[1]); return weeks.map(w => m[w] === undefined ? null : m[w]); }
 
 // ─────────────────────────── 수집 ───────────────────────────
 
@@ -203,11 +215,14 @@ function apiBuzz_() {
   // 사전 단어: 테마 규칙 키워드 + 관심도 검색어(정규형)
   const dict = []; themeRuleRows_().forEach(r => themeTokens_(r.inc).concat(themeTokens_(r.buzz)).concat([r.value]).forEach(x => { const n = themeNorm_(String(x).replace(/^~/, '').replace(/ETF$/i, '')); if (n.length >= 2 && !/^[\/*]/.test(n) && n.indexOf(':') < 0) dict.push(n); }));
   const inDict = w => { const n = themeNorm_(w); return dict.some(d => d.indexOf(n) >= 0 || n.indexOf(d) >= 0); };
-  const items = Object.keys(T).map(n => { const t = T[n], tr = buzzTrend_(t.s.sort((a, b) => a[0] < b[0] ? -1 : 1)), m = meta[n] || [n, 'theme', '', []];
-    return { key: n, kind: m[1], group: m[2], kw: m[3], s: t.s.map(x => x[1]), s4: tr.s4, p4: tr.p4, chg: tr.chg, news7: t.news7, newsP: t.newsP, newsEst: !!t.est, newsChg: t.newsP > 0 ? (t.news7 / t.newsP - 1) * 100 : null }; });
+  // v45: 주 위치 맞춤 — DataLab 은 검색량이 아주 적은 주를 응답에서 뺌. 이전에는 값만 앞에서부터 채워 그림·4주 평균이 밀렸음(예: 20주 값이 26주 축의 앞 20칸에 그려짐)
+  const info = kisJson_(P.getProperty(PROP.BUZZ_INFO)) || {}, wk = buzzWeeks_(Object.keys(weeks), info.weeks);
+  const items = Object.keys(T).map(n => { const t = T[n], al = buzzAlign_(t.s, wk), tr = buzzTrend_(wk.map((w, i) => [w, al[i]])), m = meta[n] || [n, 'theme', '', []];
+    const miss = al.filter(v => v === null).length, low = al.slice(-8).filter(v => v === null).length >= BUZZ.LOW_MISS;
+    return { key: n, kind: m[1], group: m[2], kw: m[3], s: al, s4: tr.s4, p4: tr.p4, chg: low ? null : tr.chg, miss: miss, low: low, news7: t.news7, newsP: t.newsP, newsEst: !!t.est, newsChg: t.newsP > 0 ? (t.news7 / t.newsP - 1) * 100 : null }; });
   const tot = W['(제목 수)'] || { n7: 0, nP: 0 }; delete W['(제목 수)'];
   const words = Object.keys(W).map(w => ({ w: w, n7: W[w].n7, nP: W[w].nP, dict: inDict(w) })).sort((a, b) => b.n7 - a.n7);
-  return { ready: true, date: date, info: kisJson_(P.getProperty(PROP.BUZZ_INFO)), weeks: Object.keys(weeks).sort(), items: items, words: words, titles: tot, anchor: BUZZ.ANCHOR };
+  return { ready: true, date: date, info: info, weeks: wk, items: items, words: words, titles: tot, anchor: BUZZ.ANCHOR };
 }
 
 /** 메뉴: 네이버 연결 테스트 — DataLab 1회(ETF·반도체 ETF)·뉴스 1회 결과를 _log 에 */

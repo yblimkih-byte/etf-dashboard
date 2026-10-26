@@ -127,6 +127,13 @@ const bz = api('buzz');
 const semi = bz.items.find(x => x.key === '반도체');
 check('API: 대상별 26주 지수·4주 변화·뉴스 7일', bz.ready && semi && semi.s.length >= 25 && semi.chg !== null && semi.news7 > 0 && semi.newsP > 0, semi && JSON.stringify({ n: semi.s.length, s4: semi.s4.toFixed(2), chg: semi.chg.toFixed(1), news7: semi.news7, newsP: semi.newsP }));
 check('뉴스: 하루 n건 × 7일(중복 제거, 검색어 최대 3개 합산)', bz.items.every(x => x.news7 > 0));
+// v45: 값 없는 주(DataLab 이 뺀 주) — 주 위치 맞춤 · 0으로 계산 · 검색량 적음
+const mk = bz.items.find(x => x.key === '만기매칭채권'), gj = bz.items.find(x => x.key === '그룹주');
+check('v45 주 위치 맞춤: 모든 대상 값 개수 = 주 수(26), 값 없는 주는 null', bz.weeks.length === 26 && bz.items.every(x => x.s.length === bz.weeks.length) && mk && mk.s.slice(-6).every(v => v === null) && mk.s.slice(0, 20).every(v => v !== null) && mk.miss === 6,
+  JSON.stringify({ weeks: bz.weeks.length, mk: mk && mk.s.map(v => v === null ? '_' : 'o').join(''), gj: gj && gj.s.map(v => v === null ? '_' : 'o').join('') }));
+check('v45 검색량 적음: 최근 8주 중 4주 이상 값 없음 → 변화율 없음(low), 최근 4주 평균은 0으로 계산', mk.low && mk.chg === null && mk.s4 === 0 && gj.low && gj.chg === null && gj.miss >= 16 && !semi.low && semi.miss === 0 && semi.chg !== null, JSON.stringify({ mk: [mk.low, mk.s4, mk.chg], gj: [gj.low, gj.miss] }));
+check('v45 주 목록 보충: 수집 구간의 빠진 주 추가(시작 요일이 시트와 다르면 보태지 않음)', JSON.stringify(J(`buzzWeeks_(['2026-01-05', '2026-01-19'], ['2026-01-05', '2026-01-25'])`)) === JSON.stringify(['2026-01-05', '2026-01-12', '2026-01-19'])
+  && JSON.stringify(J(`buzzWeeks_(['2026-01-06'], ['2026-01-05', '2026-01-18'])`)) === JSON.stringify(['2026-01-06']) && JSON.stringify(J(`buzzAlign_([['b', 2]], ['a', 'b'])`)) === JSON.stringify([null, 2]));
 const sw = bz.words.find(w => w.w === '스테이블코인'), sd = bz.words.find(w => w.w === '반도체');
 check('새 단어: 스테이블코인 = 사전에 없음, 반도체 = 사전에 있음', sw && !sw.dict && sd && sd.dict, JSON.stringify([sw, sd]));
 check('새 단어: 최근 7일 많은 순', bz.words.every((w, i) => !i || w.n7 <= bz.words[i - 1].n7));
