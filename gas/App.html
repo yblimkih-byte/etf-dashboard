@@ -474,7 +474,7 @@ const App = {
   line(canvas, labels, datasets, opts) {
     opts = opts || {};
     const ds = datasets.map((d, i) => ({ label: d.label, data: d.data, borderColor: opts.area ? '#fff' : d.color, backgroundColor: opts.area ? (d.fill || d.color) : d.color, borderWidth: opts.area ? 1 : 2,
-      pointRadius: opts.area ? 0 : (labels.length > 40 ? 0 : 3), pointHoverRadius: opts.area ? 0 : 5, tension: 0, spanGaps: true, yAxisID: 'y', fill: opts.area ? (i ? '-1' : 'origin') : false }));
+      pointRadius: opts.area ? 0 : (labels.length > 40 ? 0 : 3), pointHoverRadius: opts.area ? 0 : 5, tension: 0, spanGaps: !opts.gaps, yAxisID: 'y', fill: opts.area ? (i ? '-1' : 'origin') : false }));
     const o = this.baseOpts();
     o.plugins.legend.display = datasets.length > 1 && !opts.noLegend;
     if (opts.legendPos) o.plugins.legend.position = opts.legendPos;

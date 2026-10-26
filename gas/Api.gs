@@ -48,7 +48,7 @@ const CACHE_GEN_ = 'a26';   // v26: 개별 종목 유형 = 유형최종3 → 이
 function cacheKey_(action, params, P) {
   const h = md5_(stableStr_(params));   // v31: UTF-8(한글 파라미터 캐시 충돌 해소)
   P = P || PropertiesService.getScriptProperties().getProperties();
-  const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : /^flow/.test(action) ? '.f' + (P[PROP.FLOW_VER] || '0') : '';   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산 · v42: 설정액은 계산할 때마다
+  const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : /^flow/.test(action) ? '.f' + (P[PROP.FLOW_VER] || '0') : action === 'buzz' ? '.b45' : '';   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산 · v42: 설정액은 계산할 때마다 · v45: 관심도 응답 형식 변경(주 위치 맞춤) → 관심도 캐시만 새로
   return CACHE_GEN_ + ':' + verFor_(action, params, P) + tv + ':' + action + ':' + h;
 }
 function stableStr_(p) { p = p || {}; return '{' + Object.keys(p).sort().filter(k => p[k] !== undefined).map(k => JSON.stringify(k) + ':' + JSON.stringify(p[k])).join(',') + '}'; }

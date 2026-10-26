@@ -986,6 +986,8 @@ function bzModel(A, d, kind) {
     words: (d.words || []).slice(0, 40), newWords: (d.words || []).filter(w => !w.dict) };
 }
 const bzWk = p => String(p || '').slice(5).replace('-', '/');
+/** v45: 검색 관심도 값 — 1 미만은 소수 둘째 자리(0.1 vs 0.1 인데 +53% 처럼 보이지 않게) */
+const bzNum = (A, v) => v === null || v === undefined ? '-' : A.num(v, Math.abs(v) < 1 ? 2 : 1);
 const BZ_NEWS_MIN = 5;   // v41: 증가율을 보여 주는 최소 기사 수(이전 7일)
 const bzNewsOk = r => r.newsChg !== null && r.newsChg !== undefined && r.newsP !== null && r.newsP !== undefined && r.newsP >= BZ_NEWS_MIN;
 /** v41: 뉴스 변화 표기 — 이전 기사가 적으면 증가율 대신 건수('1→9건') */
@@ -995,14 +997,16 @@ function bzDetail(A, host, d, Z, key) {
   (host._charts || []).forEach(c => { try { c.destroy(); } catch (e) {} A.charts = A.charts.filter(x => x !== c); }); host._charts = [];
   const F = A.FOCUS, m = r.m;
   const s = A.section(host, `${Z.label} 상세 — ${hdEsc(r.key)}`, `검색어 ${hdEsc((r.kw || []).join(', '))}`);
-  A.kv(s, [['검색 관심도', A.lines([`최근 4주 평균 <b>${A.num(r.s4, 1)}</b>, 직전 4주 ${A.num(r.p4, 1)} (${A.pct(r.chg)})`, "'ETF' 검색량 = 100 기준"])],   // v44: 한 줄에 하나씩
+  A.kv(s, [['검색 관심도', A.lines([`최근 4주 평균 <b>${bzNum(A, r.s4)}</b>, 직전 4주 ${bzNum(A, r.p4)} (${r.low ? '검색량 적음 — 변화율 계산 안 함' : A.pct(r.chg)})`, "'ETF' 검색량 = 100 기준",
+      r.miss ? `값이 없는 주 ${r.miss}주 — 검색량이 아주 적어 네이버가 값을 주지 않음(0으로 계산)` : null])],   // v44: 한 줄에 하나씩 · v45: 값 없는 주
     ['뉴스 기사', A.lines([`최근 7일 <b>${A.num(r.news7)}건</b>` + (r.newsP === null ? '' : `, 이전 7일 ${A.num(r.newsP)}건` + (bzNewsOk(r) ? ` (${A.pct(r.newsChg)})` : '')), r.newsEst ? '기사가 많아 일부 기간의 하루 평균으로 환산' : null])],
     ['NAV', m ? A.lines([`${A.eok(m.nav)}조원, ${Z.RL} 대비 ${A.signed(m.chg)}조원`, `상품 ${A.num(m.n)}종목`]) : '해당 상품 없음'],
     [F, m && m.fNav > 0 ? A.lines([`점유율 <b>${A.share(m.fShare)}</b>`, `운용사 ${m.nMgr}곳 중 ${m.fRank}위, ${m.fN}종목`]) : '상품 없음'],
     ['1위 운용사', m && m.lead ? `${hdEsc(m.lead.mgr)} ${A.share(m.leadShare)}` : '-']]);
   A.div(s, 'sub-h', `주간 검색 관심도 (${(d.weeks || []).length}주)`);
   host._charts.push(A.line(A.canvas(s, 'short'), (d.weeks || []).map(bzWk), [{ label: r.key, data: r.s, color: thColor(r.group, Z.label === '상품구조' ? 'struct' : 'theme') }],
-    { noLegend: true, fmt: v => A.num(v, 1), yFmt: v => v, unit: "'ETF' 검색 = 100" }));
+    { noLegend: true, gaps: true, fmt: v => bzNum(A, v), yFmt: v => v, unit: "'ETF' 검색 = 100" }));   // v45: 값 없는 주는 끊어서
+  if (r.miss) A.note(s, [`끊긴 구간 = 값이 없는 주(${r.miss}주) — 검색량이 아주 적어 네이버가 값을 주지 않은 주`]);   // v45
 }
 App.registerTab({
   id: 'buzz', label: '관심도', controls: [], when: m => !!m.buzzDate,
@@ -1030,7 +1034,7 @@ App.registerTab({
     const G1 = '검색 관심도', G2 = '뉴스 기사', G3 = 'NAV', G4 = F;
     const cols = [{ h: L, f: r => A.swc(thColor(r.group, st.kind)) + hdEsc(r.key), l: 1 }].concat(st.kind === 'theme' ? [{ h: '테마군', k: 'group', l: 1 }] : []).concat([
       { h: '검색어', f: r => hdEsc((r.kw || []).slice(0, 2).join(', ')) + ((r.kw || []).length > 2 ? ' 외' : ''), l: 1 },
-      { h: '최근 4주', g: G1, f: r => A.num(r.s4, 1) }, { h: '변화', g: G1, f: r => A.pct(r.chg), cls: r => A.clsP(r.chg) },
+      { h: '최근 4주', g: G1, f: r => bzNum(A, r.s4) }, { h: '변화', g: G1, f: r => r.low ? '검색량 적음' : A.pct(r.chg), cls: r => r.low ? '' : A.clsP(r.chg) },
       { h: '최근 7일', g: G2, f: r => A.num(r.news7) + (r.newsEst ? '*' : '') }, { h: '변화', g: G2, f: r => bzNewsChg(A, r), cls: r => bzNewsOk(r) ? A.clsP(r.newsChg) : '' },
       { h: '조원', g: G3, f: r => r.m ? A.eok(r.m.nav) : '-' }, { h: '증감', g: G3, f: r => r.m ? A.signed(r.m.chg) : '-', cls: r => r.m ? A.cls(r.m.chg) : '' },
       { h: '점유율', g: G4, f: r => r.m && r.m.fNav > 0 ? A.share(r.m.fShare) : '-' }, { h: '상품 수', g: G4, f: r => r.m && r.m.fN ? r.m.fN : '-' },
@@ -1039,6 +1043,7 @@ App.registerTab({
     host.querySelectorAll('tr.clk').forEach(tr => tr.onclick = () => pick(tr.dataset.key));
     const hl = () => host.querySelectorAll('tr.clk').forEach(tr => tr.classList.toggle('sel', tr.dataset.key === st.sel));
     A.note(s2, [`<b>검색 관심도</b>: 네이버 데이터랩의 주간 검색량. 함께 조회한 'ETF' 검색량을 100으로 놓고 환산해 항목끼리 비교 가능`,
+      '검색량이 아주 적은 주는 네이버가 값을 주지 않음 — 0으로 계산, 최근 8주 중 4주 이상 값이 없으면 변화율 대신 "검색량 적음"',
       '<b>뉴스</b>: 네이버 뉴스에서 검색어가 그대로 들어간 기사 수 (중복 제외)', '* 표시: 기사가 많아 일부 기간의 하루 평균으로 7일 치를 환산한 값',
       `<b>변화</b>: 이전 7일 기사가 ${BZ_NEWS_MIN}건 미만이면 증가율 대신 건수로 표시 (예: 1→9건)`,
       `<b>관심 상승 후보</b>: 검색 관심이 오르는데 ${F} 점유율이 시장 전체 ${F} 점유율${Z.ySplit === null ? '' : `(${A.share(Z.ySplit)})`}보다 낮거나 ${F} 상품이 없는 항목`,
