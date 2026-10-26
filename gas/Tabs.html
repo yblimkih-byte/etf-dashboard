@@ -12,7 +12,7 @@ const isQ = ym => /-(03|06|09|12)$/.test(ym);
 const dlabel = d => (d && d.slice(0, 7) < App.meta.curMonth) ? d.slice(0, 7) : d;
 /* 축 라벨 '2026-01' → ['26', '-01'] (두 줄) */
 const ymTick = ym => [String(ym).slice(2, 4), String(ym).slice(4, 7)];
-/* 증감 레이블 '(+0.0조, +0.0%p)' */
+/* 증감 레이블 '(+0.00조, +0.0%p)' */
 const deltaLabel = (A, cur, py, shCur, shPy) => `${A.signed(cur - py)}조\n${A.pct(shCur - shPy).replace('%', '%p')}`;
 const Y_W = 56;   // 위아래로 놓는 차트의 Y축 폭 고정(X축 정렬)
 
@@ -65,6 +65,7 @@ function treemap(A, host, d) {
   const cap = (chgs.length ? chgs[Math.floor(chgs.length * 0.9)] : 0) || 1e12;   // 상위 10% 이상은 최대 채도
   // v19: 색 대비 확대 — 증가는 녹색 명도 계단(연녹→진녹), 감소는 적색 명도 계단(연분홍→진적). 0 부근은 중립 회백으로 두어 방향이 없을 때 색이 없음
   const col = chg => { if (chg === null) return '#d4d4d8'; const t = Math.min(1, Math.abs(chg) / cap); if (t < 0.04) return '#ececef'; const up = chg >= 0; const r = up ? Math.round(226 - 200 * t) : Math.round(250 - 60 * t), g = up ? Math.round(240 - 130 * t) : Math.round(228 - 200 * t), b = up ? Math.round(226 - 170 * t) : Math.round(226 - 190 * t); return `rgb(${r},${g},${b})`; };
+  const tmW = (() => { const c = document.createElement('canvas').getContext('2d'); c.font = '11px ' + (getComputedStyle(host).fontFamily || 'sans-serif'); return t => c.measureText(t).width * 1.1; })();   // v46: 칸 글자 폭(고정폭 숫자 여유 10%)
   const HEAD = 20, MHEAD = 16, PAD = 2, MIN_MGR_AREA = 4200, MIN_CELL = 1600;   // 운용사 칸 최소 면적(px²) 미만은 '기타 운용사'로 묶음 · v19: ETF 박스 최소 면적 900→1,600(작은 박스는 '기타 n종목'으로)
   /* ETF 박스 채우기: 컨테이너(inner, iw×ih)에 list 를 squarify. 작은 박스는 '기타 n종목' */
   const fillCells = (inner, list, iw, ih) => {
@@ -79,7 +80,11 @@ function treemap(A, host, d) {
       if (it.top) el.setAttribute('data-top', it.top);   // v19: 강조 모드(한투 박스 테두리·나머지 흐림)용
       const chars = Math.max(2, Math.floor(w / 7.2));
       // v19: 이름은 6자 이상 들어갈 때만 표기(잘린 'KO…' 표기 제거), 그 미만은 툴팁으로만
-      if (w >= 48 && h >= 26 && chars >= 6) el.innerHTML = `<div class="tm-n">${shortName(it.name, chars)}</div>` + (h >= 40 ? `<div class="tm-c">${A.eok(it.nav)}${it.chg === null ? '' : ` (${A.signed(it.chg)})`}</div>` : '');
+      if (w >= 48 && h >= 26 && chars >= 6) {   // v46: 금액 2자리로 길어짐 → 'NAV (증감)'이 칸 폭에 안 들어가면 두 줄(높이 될 때) 또는 NAV만
+        const nv = A.eok(it.nav), cg = it.chg === null ? '' : `(${A.signed(it.chg)})`, room = w - 12, one = cg ? `${nv} ${cg}` : nv;
+        const val = h < 40 ? '' : tmW(one) <= room ? `<div class="tm-c">${one}</div>` : cg && h >= 52 && tmW(cg) <= room ? `<div class="tm-c">${nv}</div><div class="tm-c">${cg}</div>` : `<div class="tm-c">${nv}</div>`;
+        el.innerHTML = `<div class="tm-n">${shortName(it.name, chars)}</div>` + val;
+      }
       const tipName = it.others ? it.others.slice(0, 12).map(o => o.name).join(', ') + (it.others.length > 12 ? ` 외 ${it.others.length - 12}종목` : '') : it.name;
       el.setAttribute('data-tip', `${tipName}` + (it.mgr && !it.others ? `\n${it.mgr}` : '') + `\nNAV ${A.eok(it.nav)}조원` + (it.chg === null ? `\n${A.refLabel(d)} 자료 없음` : `\n${it.isNew ? '상장(' + it.listDd + ') 이후' : A.refLabel(d) + ' 대비'} ${A.signed(it.chg)}조원`));
       inner.appendChild(el);
@@ -206,8 +211,8 @@ function flowWait(fl) {
   const f = fl && fl.fill, n = f ? (f.done || 0) + (f.left || 0) : 0;
   return '설정액 자료 준비 중 — 과거 자료 보충이 끝나면 자동으로 표시' + (n ? ` (${Math.round((f.done || 0) / n * 100)}%)` : '');
 }
-/** v43: 값 크기에 맞춘 소수 자릿수(조원) */
-const flowDg = mx => mx >= 4e12 ? 0 : mx >= 4e11 ? 1 : 2;
+/** v43: 값 크기에 맞춘 눈금 소수 자릿수(조원). v46: 소수가 붙으면 둘째 자리까지(첫째 자리 단계 삭제) */
+const flowDg = mx => mx >= 4e12 ? 0 : 2;
 /** v43: 끝 라벨 폭 → 두 그림 공통 오른쪽 여백 */
 function flowPR(A, sets, fmt) {
   const c = document.createElement('canvas').getContext('2d'); c.font = '700 12px ' + getComputedStyle(document.documentElement).getPropertyValue('--font');
@@ -243,7 +248,7 @@ function flowLineChart(A, canvas, labels, sets, pr, unit) {
   const ds = sets.map(s => ({ label: s.k, data: s.cum, $on: s.on, borderColor: s.on ? FLOW_ACC : FLOW_GRAY, backgroundColor: s.on ? FLOW_ACC : FLOW_GRAY, borderWidth: s.on ? 2.5 : 1.5,
     pointRadius: s.on ? 4 : 0, pointHoverRadius: s.on ? 5 : 3, pointBorderColor: '#fff', pointBorderWidth: 2, tension: 0, order: s.on ? 0 : 1 }));
   const ch = A.chart(canvas, { type: 'line', data: { labels, datasets: ds }, options: o, plugins: [flowEndLabels], noFocus: true });
-  ch.$flowEnd = { fmt: v => A.signed(v, Math.max(1, dg)) }; ch.update('none');
+  ch.$flowEnd = { fmt: v => A.signed(v, 2) }; ch.update('none');
   return ch;
 }
 /** v43: 아래 — 선택 항목의 월별 값(막대, 별도 축). vals[0] = null(전년말 자리 — 위 그림과 같은 가로 위치) · info(i) = 툴팁 추가 줄 */
@@ -257,7 +262,7 @@ function flowBarChart(A, canvas, labels, vals, name, pr, info) {
   o.plugins.tooltip.callbacks = { title: it => it.length ? labels[it[0].dataIndex] : '', label: c => ` ${name}: ${A.signed(c.raw, 2)}조원`, afterLabel: c => info ? info(c.dataIndex) : '' };
   const ch = A.chart(canvas, { type: 'bar', data: { labels, datasets: [{ label: name, data: vals, backgroundColor: vals.map(v => (v || 0) < 0 ? FLOW_OUT : FLOW_IN), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 24, barPercentage: 0.7, categoryPercentage: 0.8 }] },
     options: o, plugins: [A.valueLabels], noFocus: true });
-  ch.$labels = { mode: 'end', size: 11, color: '#52514e', fmt: v => A.signed(v, Math.max(1, dg)) }; ch.update('none');
+  ch.$labels = { mode: 'end', size: 11, color: '#52514e', fmt: v => A.signed(v, 2) }; ch.update('none');
   return ch;
 }
 /** v43: 버튼 묶음(지표·연도) */
@@ -302,7 +307,7 @@ function flowSection(A, root, d, kind) {
       list = list.filter(o => o.on || yi.some(i => o.x.f[i] || o.x.v[i]));
       const sets = list.map(o => { const g = val(o.x), cum = [0]; yi.forEach(i => cum.push(cum[cum.length - 1] + g(i))); return { k: o.k, cum, on: o.on }; });
       const labels = [m1 === 1 ? '전년말' : `${m1 - 1}월 말`].concat(yi.map(i => `${+fl.months[i].slice(5)}월`));
-      const mx = Math.max.apply(null, sets.map(o => Math.max.apply(null, o.cum.map(Math.abs))).concat([1])), efmt = v => A.signed(v, Math.max(1, flowDg(mx))), pr = flowPR(A, sets, efmt);
+      const efmt = v => A.signed(v, 2), pr = flowPR(A, sets, efmt);
       const sw = c => `<i style="background:${c}"></i>`;
       A.div(body, 'flow-ct', `<b>연초 이후 누적 ${W}</b><span class="u">(조원)</span>`);
       flowLineChart(A, A.canvas(body, 'mid'), labels, sets, pr, W);
@@ -326,7 +331,7 @@ function flowSection(A, root, d, kind) {
       const det = document.createElement('details'); det.className = 'flow-tb'; det.innerHTML = `<summary>월별 표 보기 — ${who} ${Y}년</summary>`; body.appendChild(det);
       A.div(det, '', A.table(rows, [
         { h: '월', f: r => r.ym, l: 1 }, { h: '설정액(조원)', f: r => sj(r.f), cls: r => neg(r.f) }, { h: 'NAV 증감(조원)', f: r => sj(r.f + r.v), cls: r => neg(r.f + r.v) }, { h: '평가 증감(조원)', f: r => sj(r.v), cls: r => neg(r.v) },
-        { h: '누적 설정액(조원)', f: r => sj(r.cf), cls: r => neg(r.cf) }, { h: '누적 NAV 증감(조원)', f: r => sj(r.cn), cls: r => neg(r.cn) }].concat(s.e ? [{ h: '기말 NAV(조원)', f: r => A.eok(r.e, 1) }] : []).concat([{ h: '산출', f: r => r.m === 'D' ? '일별 합' : '월말 근사', l: 1 }
+        { h: '누적 설정액(조원)', f: r => sj(r.cf), cls: r => neg(r.cf) }, { h: '누적 NAV 증감(조원)', f: r => sj(r.cn), cls: r => neg(r.cn) }].concat(s.e ? [{ h: '기말 NAV(조원)', f: r => A.eok(r.e, 2) }] : []).concat([{ h: '산출', f: r => r.m === 'D' ? '일별 합' : '월말 근사', l: 1 }
       ]), { compact: true }));
       // 비교 표: 운용사별(운용사 탭) · 유형별(유형 탭, 선택 운용사 기준) — 선택 연도 누적 + 그 해 마지막 월
       const mi = yi.length ? yi[yi.length - 1] : -1, lastYm = mi >= 0 ? fl.months[mi] : ym;
@@ -373,7 +378,7 @@ function flowKv(A, d, F, RL) {
   if (!P.idx.length) return [];
   const g = k => P.sum(flowSeries(fl, k, null)), m = g(null), f = g(F), best = GROUPS().filter(k => k !== '기타').map(k => ({ k, f: g(k).f })).sort((a, b) => b.f - a.f)[0];
   return [['자금 유출입', A.lines([`${F} 설정액 <b>${A.signed(f.f, 2)}조원</b>, 평가 증감 ${A.signed(f.v, 2)}조원 (${RL} 이후 ${P.first}~${P.last})`,
-    `시장 설정액 ${A.signed(m.f, 1)}조원` + (m.f > 0 ? `, 그중 ${F} 몫 <b>${A.share(f.f / m.f * 100)}</b>` : ''), best ? `설정액 1위 ${best.k} ${A.signed(best.f, 1)}조원` : null])]];   // v44: 한 줄에 하나씩
+    `시장 설정액 ${A.signed(m.f, 2)}조원` + (m.f > 0 ? `, 그중 ${F} 몫 <b>${A.share(f.f / m.f * 100)}</b>` : ''), best ? `설정액 1위 ${best.k} ${A.signed(best.f, 2)}조원` : null])]];   // v44: 한 줄에 하나씩
 }
 /* 0. 요약 (v19, v24 개편) — 상단 지표 + '핵심 요약' 표(항목·내용) + 상위 5개사 · 한투 유형 구성 · 한투 신규상장. 서버 액션 추가 없이 기존 조회 6건으로 구성 */
 function summaryModel(A, d) {
@@ -472,7 +477,7 @@ App.registerTab({
 
 /* 공용: 전년말·기준일 2행 가로 누적 막대 (운용사/유형/국내해외)
    - 막대 위(전년말 행): 구간 이름 / 막대 안: 수치만 / 두 행 사이: 점선 연결 + 증감 레이블(좁으면 생략) */
-function twoRowStack(A, canvas, d, keys, getPy, getCur, colorFn, twoLine) {   // twoLine: 'paren'(0.0조/(0.0%)) | true(0.0조/0.0%) | false(한 줄)
+function twoRowStack(A, canvas, d, keys, getPy, getCur, colorFn, twoLine) {   // twoLine: 'paren'(0.00조/(0.0%)) | true(0.00조/0.0%) | false(한 줄)
   const rows = [`${A.refLabel(d)} ${d.ref && d.ref.py ? dlabel(d.ref.py) : '-'}`, `기준일 ${dlabel(d.date)}`];
   const totPy = keys.reduce((s, k) => s + (getPy(k) || 0), 0), totCur = keys.reduce((s, k) => s + (getCur(k) || 0), 0);
   const sh = (k, tot, get) => tot ? (get(k) || 0) / tot * 100 : 0;
@@ -1137,7 +1142,7 @@ const TAB_HEAD = (() => {
           .concat(m ? [{ k: 'NAV 1위 운용사', v: esc(m.mgr), txt: 1, l1: `${A.eok(m.nav)}조원`, l2: `신규상장 NAV 의 ${A.share(m.nav / d.total * 100)}` }] : [])
           .concat(big ? [{ k: '최대 종목', v: esc(big.name), txt: 1, l1: `${A.eok(big.nav)}조원`, l2: esc(big.mgr || '') }] : []) };
     },
-    turnover(d) {   // v41: 일평균 소수 1자리(다른 금액과 같게), 조회 구간은 상단 기준 표시로
+    turnover(d) {   // v41→v46: 일평균 소수 2자리(다른 금액과 같게), 조회 구간은 상단 기준 표시로
       const t = d.top[0];
       return { lines: [`ETF 거래대금 <b>${jo(d.marketSum)}</b> (${A.num(d.days)}영업일), 일평균 ${jo(d.marketSum / d.days)}`].concat(t ? [`1위 ${esc(t.name)} ${A.eok(t.sum)}조원 (${A.share(t.sum / d.marketSum * 100)})`] : []),
         cards: [{ k: '기간 합계', d: DEF.turn, v: U(A.eok(d.marketSum), '조원'), l1: `${A.num(d.days)}영업일`, l2: `${esc(d.from)} ~ ${esc(d.to)}` },
