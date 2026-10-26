@@ -221,8 +221,8 @@ const App = {
     const head = view.querySelector(':scope > .head'); view.insertBefore(nav, head ? head.nextSibling : view.firstChild);
   },
 
-  /* ── 포맷 ── 금액 단위는 조원(소수 둘째자리에서 반올림, 첫째자리 표기)으로 통일 */
-  eok(v, d) { if (v === null || v === undefined || isNaN(v)) return '-'; const f = d === undefined ? 1 : d; let x = v / 1e12; if (Math.abs(x) < Math.pow(10, -f) / 2) x = 0; return x.toLocaleString('ko-KR', { maximumFractionDigits: f, minimumFractionDigits: f }); },
+  /* ── 포맷 ── 금액 단위는 조원(v46: 소수 셋째자리에서 반올림, 둘째자리 표기)으로 통일 */
+  eok(v, d) { if (v === null || v === undefined || isNaN(v)) return '-'; const f = d === undefined ? 2 : d; let x = v / 1e12; if (Math.abs(x) < Math.pow(10, -f) / 2) x = 0; return x.toLocaleString('ko-KR', { maximumFractionDigits: f, minimumFractionDigits: f }); },
   jo(v, d) { return v === null || v === undefined ? '-' : this.eok(v, d) + '조'; },
   pct(v, d) { if (v === null || v === undefined || isNaN(v)) return '-'; const f = d === undefined ? 1 : d; if (Math.abs(v) < Math.pow(10, -f) / 2) v = 0; return (v > 0 ? '+' : '') + v.toFixed(f) + '%'; },
   share(v, d) { return v === null || v === undefined || isNaN(v) ? '-' : v.toFixed(d === undefined ? 1 : d) + '%'; },
@@ -517,7 +517,7 @@ const App = {
     o.scales = {
       x: { type: 'linear', min: xMin - padX, max: xMax + padX, grid: { color: '#f0f0f2' }, border: { display: false },
         afterBuildTicks: sc => { const lo = inv(sc.min), hi = inv(sc.max); let t = NICE.filter(v => v >= lo && v <= hi); if (t.length > 9) t = t.filter(v => Math.abs(v) >= 1 || v === 0); sc.ticks = t.map(v => ({ value: tr(v * U) })); },
-        ticks: { callback: v => { const r = Math.round(inv(v) * 10) / 10; return (r > 0 ? '+' : '') + r; }, autoSkip: false, maxRotation: 0 },
+        ticks: { callback: v => { const r = Math.round(inv(v) * 100) / 100; return (r > 0 ? '+' : '') + (Number.isInteger(r) ? r : r.toFixed(2)); }, autoSkip: false, maxRotation: 0 },   // v46: 소수 눈금은 둘째 자리까지
         title: { display: true, text: opts.xTitle || '증감액 (조원, 제곱근 눈금)', font: { size: 11 } } },
       y: { min: 0, max: Math.ceil(yMax), grid: { color: '#f0f0f2' }, border: { display: false }, ticks: { callback: v => v + '%' },
         title: { display: true, text: opts.yTitle || '점유율 (%)', font: { size: 11 } } }

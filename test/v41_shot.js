@@ -1,7 +1,7 @@
 /* v41 화면 점검 (index.html = Apps Script 화면 1568×751, web.html = Vercel 빌드 1920×919) — '3초 테스트' 개선 반영
  *  V29B=1 node build_page.js && V29B=1 node build_web.js && CHROME_PATH=/opt/pw-browsers/chromium node v41_shot.js
  *  공통 탭 머리(두 화면 같은 결론 줄·카드) · 기준 표시(월말 'n월 말 기준'·기간·구성종목 지연) · Apps Script 머리 압축(탭 한 줄)·본문 폭 ·
- *  긴 표 앞 20행 + 전체 보기 · 섹션 바로가기 · 거래대금 기본 구간 끝 = 최근 영업일 · 일평균 소수 1자리 · 유형 배지 '비중' · 지수 카드 전월 대비 ·
+ *  긴 표 앞 20행 + 전체 보기 · 섹션 바로가기 · 거래대금 기본 구간 끝 = 최근 영업일 · 일평균 소수 2자리(v46) · 유형 배지 '비중' · 지수 카드 전월 대비 ·
  *  테마 맵 조건 접힘·제목 · 종목→ETF 칩 짧은 표기·갱신 지연 · 관심도 '관심 상승 후보'·뉴스 소표본 */
 const { chromium } = require('playwright'), fs = require('fs');
 const OUT = __dirname + '/shots_v41';
@@ -81,7 +81,7 @@ const OUT = __dirname + '/shots_v41';
         check('거래대금 기본 구간 끝 = 최근 영업일', r.to === latest, `${r.from} ~ ${r.to} (최근 ${latest})`);
         check('기준 표시 = 기간', h.asof === `기간 ${r.from} ~ ${r.to}`, h.asof);
         const avg = h.cards.find(c => c.k === '일평균');
-        check('일평균 소수 1자리(다른 금액과 같게)', avg && /^[\d,]+\.\d조원$/.test(avg.v), avg && avg.v);
+        check('일평균 소수 2자리(다른 금액과 같게)', avg && /^[\d,]+\.\d{2}조원$/.test(avg.v), avg && avg.v);
         check('카드에 "조회 구간" 없음(결론 숫자만)', !h.cards.some(c => /조회 구간/.test(c.k)));
       }
       if (id === 'theme') {
