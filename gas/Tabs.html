@@ -132,7 +132,7 @@ function treemap(A, host, d) {
 /* v24: M/S 변동 요인 — 운용사·시장의 NAV 증감률 비교(유형별). byMgr.mix = {mkt:{유형:[기준일, 비교 기준]}, mgr:{운용사:{유형:[…]}}}
    (v19~v23 의 '점유율 효과·구성 효과' 기여도 분해는 보고·실무용으로 이해가 어려워 제거)
    v26: 유형별 M/S 기여 c = (운용사 증감액 − 시장 증감액 × 비교 기준 M/S) ÷ 기준일 시장 NAV (%p) — 유형별 합계 = M/S 변동(정확히 일치)
-        의미: 시장 증가분 중 운용사 몫(cap = 운용사 증감액 ÷ 시장 증감액)이 비교 기준 M/S 보다 작은 유형은 하락 요인, 큰 유형은 상승 요인
+        의미: 순증 M/S(cap = 운용사 증감액 ÷ 시장 증감액, v47 용어 통일 — 이전 '시장 증가분 중 운용사 몫')가 비교 기준 M/S 보다 작은 유형은 하락 요인, 큰 유형은 상승 요인
         (v24 의 '주력 유형 중 증감률 차이 최대'는 운용사 비중이 작은 유형을 빼고 증감률만 비교해, 비중이 작은 급성장 유형(예: 한투 국내주식형)을 놓쳤음) */
 function growthRows(d, g) {
   const mix = d.mix || { mkt: {}, mgr: {} }, mg = mix.mgr[g] || {}, types = (d.types || Object.keys(mix.mkt)).filter(t => mix.mkt[t]);
@@ -162,15 +162,15 @@ function msOffset(gr) {
   if (!sg) return null;
   return gr.rows.filter(r => r.c !== null && Math.sign(r.c) === -sg && Math.abs(r.c) >= 0.1).sort((a, b) => Math.abs(b.c) - Math.abs(a.c))[0] || null;
 }
-/* v26: 주요 유형 문구 — '하락 요인 국내주식형 −0.86%p · 파생형 −0.31%p (시장 증가분 중 한투 몫 3.9% · 1.4% vs 전년말 M/S 8.53%)'
-   v27: 반대 방향 최대 기여가 0.1%p 이상이면 ' · 상쇄 요인 국내주식형 −0.26%p (한투 몫 3.3%)' 추가 */
+/* v26: 주요 유형 문구 — '하락 요인 국내주식형 −0.86%p · 파생형 −0.31%p (순증 M/S 3.9% · 1.4% vs 전년말 M/S 8.53%)'
+   v27: 반대 방향 최대 기여가 0.1%p 이상이면 ' · 상쇄 요인 국내주식형 −0.26%p (순증 M/S 3.3%)' 추가. v47: '한투 몫' → '순증 M/S' */
 function msDriverText(A, gr, mgr, RL, brief) {   // v44: 줄 배열(요인 · 상쇄 요인 · 비교 기준 — 한 줄에 하나씩). brief = 비교 기준 줄 생략(아래 표 설명에 있음)
   const drv = msDrivers(gr), pp2 = v => A.pct(v, 2).replace('%', '%p'), cap = r => r.cap === null ? '시장 감소' : A.share(r.cap);
   if (!drv.length || gr.dms === null) return [];
   const word = gr.dms < -0.005 ? '하락 요인' : gr.dms > 0.005 ? '상승 요인' : '유형별 기여 최대', o = msOffset(gr);
-  return [`${word}: ` + drv.map(r => `${r.type} <b>${pp2(r.c)}</b> (${mgr} 몫 ${cap(r)})`).join(', '),
-    o ? `상쇄 요인: ${o.type} <b>${pp2(o.c)}</b> (${mgr} 몫 ${cap(o)})` : null,
-    brief ? null : `${mgr} 몫 = 시장 증가분 중 ${mgr} 비율 — ${RL} M/S ${A.share(gr.s0, 2)}보다 작으면 하락 요인`].filter(Boolean);
+  return [`${word}: ` + drv.map(r => `${r.type} <b>${pp2(r.c)}</b> (순증 M/S ${cap(r)})`).join(', '),
+    o ? `상쇄 요인: ${o.type} <b>${pp2(o.c)}</b> (순증 M/S ${cap(o)})` : null,
+    brief ? null : `순증 M/S = ${mgr} 증감액 ÷ 시장 증감액 — ${RL} M/S ${A.share(gr.s0, 2)}보다 작으면 하락 요인`].filter(Boolean);
 }
 /* v26: 개별 종목 유형(ETF 상세·NAV 상위 20 변천·신규상장·거래대금) 분류 주석
    v28: 화면 문구에 내부 시트·열 이름(범례_유형·유형최종2/3·신규상장용)을 쓰지 않음 — 일반 용어로만 설명 */
@@ -363,7 +363,7 @@ function flowSection(A, root, d, kind) {
         A.sub(hb, `${t.ym} 설정 상위·해지 상위 ETF — ${who} (설정 ${A.num(t.nIn)}종목 · 해지 ${A.num(t.nOut)}종목)`);
         const g2 = A.div(hb, 'grid grid-2 flow-g2'), eo = x => A.num(x, 0);
         const byMg = isM || !!type, cols = [{ h: '종목명', f: r => r[1], l: 1 }, { h: byMg ? '운용사' : '유형', f: r => byMg ? r[2] : r[3], l: 1 }, { h: '설정액(억원)', f: r => (r[4] > 0 ? '+' : '') + eo(r[4]), cls: r => r[4] < 0 ? 'neg' : '' }, { h: 'NAV(억원)', f: r => eo(r[6]) }];
-        [['설정 상위', t.inflow], ['해지 상위', t.outflow]].forEach(([h, xs]) => { const c = A.div(g2); A.sub(c, h); A.div(c, '', xs.length ? A.table(xs, cols, { compact: true, tools: false, attr: r => `data-top="${r[2]}" title="${r[0]} · 평가 증감 ${(r[5] > 0 ? '+' : '') + eo(r[5])}억원"` }) : '<div class="empty">해당 없음</div>'); });
+        [['설정 상위', t.inflow], ['해지 상위', t.outflow]].forEach(([h, xs]) => { const c = A.div(g2); A.sub(c, h); const tb = A.div(c, 'flow-topt', xs.length ? A.table(xs, cols, { compact: true, tools: false, attr: r => `data-top="${r[2]}" title="${r[0]} · 평가 증감 ${(r[5] > 0 ? '+' : '') + eo(r[5])}억원"` }) : '<div class="empty">해당 없음</div>'); A.stickRight(tb, 3); });   // v47: 운용사(유형)·설정액·NAV 고정, 종목명만 가로 스크롤
         A.note(hb, [`NAV: ${t.ym} 말 순자산 (진행 중인 달은 최근 영업일)`, '신규상장 종목은 첫 순자산 전체가 설정액', '종목명에 마우스를 올리면 종목코드와 평가 증감 표시', '위 연도 선택과 관계없이 기준월 기준']);
       }).catch(e => { hb.className = 'error'; hb.textContent = e.message; });
     };
@@ -386,7 +386,7 @@ function summaryModel(A, d) {
   const M = d.ov.monthly, m = M[M.length - 1], py = d.ov.prevYE, mkt = d.mgr, rows = mkt.rows.filter(r => r.mgr !== '기타').slice().sort((a, b) => b.nav - a.nav), f = rows.find(r => r.mgr === F) || rows[0];
   const rank = rows.indexOf(f) + 1, ahead = rows[rank - 2], behind = rows[rank];
   const gr = growthRows(mkt, f.mgr), dms = f.msPy === null || f.msPy === undefined ? null : f.ms - f.msPy;
-  // v26: M/S 변동 요인 = 유형별 M/S 기여가 큰 유형(시장 증가분 중 운용사 몫 vs 비교 기준 M/S) — v24 '주력 유형 중 증감률 차이 최대' 대체
+  // v26: M/S 변동 요인 = 유형별 M/S 기여가 큰 유형(순증 M/S vs 비교 기준 M/S) — v24 '주력 유형 중 증감률 차이 최대' 대체
   const drv = msDrivers(gr), pp2 = v => A.pct(v, 2).replace('%', '%p');
   const tp = d.type.rows.slice().sort((a, b) => (b.share - b.sharePy) - (a.share - a.sharePy)), tUp = tp[0], tDn = tp[tp.length - 1];
   const top50 = d.top.byMgr.find(x => x.top === F) || { n: 0, nav: 0, share: 0 };
@@ -512,10 +512,10 @@ App.registerTab({
     flowSection(A, root, d, 'mgr');   // v42: NAV 증감 = 설정액(자금 유출입) + 평가 증감 — 월별 막대·표, 운용사별 표, 설정·해지 상위 ETF
 
     // v24: M/S 변동 요인 — 운용사 NAV 증감률을 시장과 비교(전체·유형별)
-    // v26: 유형별 M/S 기여 = (운용사 증감액 − 시장 증감액 × 비교 기준 M/S) ÷ 기준일 시장 NAV · 시장 증가분 중 운용사 몫이 비교 기준 M/S 보다 작은 유형이 하락 요인. 유형별 합계 = M/S 변동
+    // v26: 유형별 M/S 기여 = (운용사 증감액 − 시장 증감액 × 비교 기준 M/S) ÷ 기준일 시장 NAV · 순증 M/S(운용사 증감액 ÷ 시장 증감액)가 비교 기준 M/S 보다 작은 유형이 하락 요인. 유형별 합계 = M/S 변동
     if (d.mix) {
       const sc = A.section(root, `M/S 변동 요인 — 유형별 M/S 기여 (${RL} 대비)`, [`M/S 기여 = (운용사 증감액 − 시장 증감액 × ${RL} M/S) ÷ 기준일 시장 NAV`,
-        `시장 증가분 중 운용사 몫이 ${RL} M/S보다 작은 유형은 하락 요인, 크면 상승 요인`, '유형별 기여를 모두 더하면 M/S 변동과 같음']);
+        '순증 M/S = 운용사 증감액 ÷ 시장 증감액', `순증 M/S가 ${RL} M/S보다 작은 유형은 하락 요인, 크면 상승 요인`, '유형별 기여를 모두 더하면 M/S 변동과 같음']);   // v47: 용어 '순증 M/S'
       const chipBox = A.div(sc), wrap = A.div(sc), pp2 = v => v === null || v === undefined ? '-' : A.pct(v, 2).replace('%', '%p');
       const draw = sel => {
         const who = sel || A.FOCUS, r0 = byK[who] || d.rows[0], gr = growthRows(d, r0.mgr);
@@ -527,11 +527,11 @@ App.registerTab({
           { h: '유형', f: r => A.swc(tc(r.type)) + r.type, l: 1 },
           { h: '시장 증감액(조원)', f: r => A.signed(r.dM), cls: r => A.cls(r.dM) },
           { h: `${r0.mgr} 증감액(조원)`, f: r => A.signed(r.dF), cls: r => A.cls(r.dF) },
-          { h: `시장 증가분 중 ${r0.mgr} 몫`, f: r => r.cap === null ? (r.dM < 0 ? '시장 감소' : '-') : A.share(r.cap), cls: capCls },
+          { h: '순증 M/S', f: r => r.cap === null ? (r.dM < 0 ? '시장 감소' : '-') : A.share(r.cap), cls: capCls },
           { h: 'M/S 기여(%p)', f: r => pp2(r.c), cls: r => r.c === null ? '' : A.clsP(r.c) },
           { h: `${r0.mgr} 내 비중`, f: r => A.share(r.w) }
-        ], { compact: true, tools: false, total: { '유형': '합계', '시장 증감액(조원)': A.signed(gr.dM), [`${r0.mgr} 증감액(조원)`]: A.signed(gr.dF), [`시장 증가분 중 ${r0.mgr} 몫`]: gr.cap === null ? '-' : A.share(gr.cap), 'M/S 기여(%p)': pp2(gr.dms), [`${r0.mgr} 내 비중`]: '100.0%' } }));
-        A.note(wrap, [`시장 증가분 중 ${r0.mgr} 몫: ${RL} M/S(${A.share(gr.s0, 2)})보다 작으면 빨강, 크면 파랑`, `${r0.mgr} 내 비중: 기준일 ${r0.mgr} NAV 중 그 유형의 비중`]);
+        ], { compact: true, tools: false, total: { '유형': '합계', '시장 증감액(조원)': A.signed(gr.dM), [`${r0.mgr} 증감액(조원)`]: A.signed(gr.dF), '순증 M/S': gr.cap === null ? '-' : A.share(gr.cap), 'M/S 기여(%p)': pp2(gr.dms), [`${r0.mgr} 내 비중`]: '100.0%' } }));
+        A.note(wrap, [`순증 M/S: ${r0.mgr} 증감액 ÷ 시장 증감액 (합계 행 = 전체 증감액 기준)`, `${RL} M/S(${A.share(gr.s0, 2)})보다 작으면 빨강, 크면 파랑`, `${r0.mgr} 내 비중: 기준일 ${r0.mgr} NAV 중 그 유형의 비중`]);
       };
       A.chips(chipBox, keys, { hint: '운용사 선택', selected: A.FOCUS, onSelect: sel => draw(sel) });
       draw(A.FOCUS);

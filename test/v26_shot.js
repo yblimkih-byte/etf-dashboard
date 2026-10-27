@@ -30,7 +30,7 @@ const OUT = __dirname + '/shots_v26';
       return { row, chk };
     });
     console.log('     M/S 변동 요인 | ' + sm.row[1]);
-    check('요약: M/S 변동 요인 = NAV 증감률 비교 + 유형별 M/S 기여 상위 유형(시장 증가분 중 몫 vs 비교 기준 M/S)', /(하락|상승) 요인/.test(sm.row[1]) && /시장 증가분 중 한투 비율/.test(sm.row[1]) && /M\/S \d/.test(sm.row[1]) && (sm.row[2].match(/class="nl"/g) || []).length >= 3);   // v44: 한 줄에 하나씩
+    check('요약: M/S 변동 요인 = NAV 증감률 비교 + 유형별 M/S 기여 상위 유형(순증 M/S vs 비교 기준 M/S)', /(하락|상승) 요인/.test(sm.row[1]) && /순증 M\/S = 한투 증감액 ÷ 시장 증감액/.test(sm.row[1]) && /M\/S \d/.test(sm.row[1]) && (sm.row[2].match(/class="nl"/g) || []).length >= 3);   // v44: 한 줄에 하나씩
     check('요약: v24 문구(주력 유형 중 차이 최대) 없음', !/주력 유형/.test(sm.row[1]));
     if (sm.chk) {
       check('계산: 운용사별 유형별 M/S 기여 합계 = M/S 변동(5개사)', sm.chk.length === 5 && sm.chk.every(x => Math.abs(x.sum - x.dms) < 1e-9 && Math.abs(x.dms - x.ms) < 1e-6), sm.chk.map(x => `${x.mgr} ${x.sum.toFixed(3)}/${x.ms.toFixed(3)}`).join(' · '));
@@ -43,8 +43,8 @@ const OUT = __dirname + '/shots_v26';
       return [msDriverText(App, gr, '한투', '전년말').join(' / ').replace(/<[^>]+>/g, ''), msDriverText(App, g2, '한투', '전년말').join(' / ').replace(/<[^>]+>/g, '')];   // v44: 줄 배열
     });
     console.log('     ' + off.join('\n     '));
-    check('상쇄 요인: M/S 상승(+0.23%p)이어도 국내주식형 −0.26%p 표시', /^상승 요인: 기타 \+0\.27%p \(한투 몫 [\d.]+%\), 해외주식형 \+0\.20%p .* \/ 상쇄 요인: 국내주식형 -0\.26%p \(한투 몫 3\.3%\) \/ /.test(off[0]), off[0]);
-    check('상쇄 요인: 반대 방향 0.1%p 미만이면 생략(09-30)', /^하락 요인: 국내주식형 -0\.86%p \(한투 몫 [\d.]+%\), 파생형 -0\.31%p /.test(off[1]) && !/상쇄/.test(off[1]), off[1]);
+    check('상쇄 요인: M/S 상승(+0.23%p)이어도 국내주식형 −0.26%p 표시', /^상승 요인: 기타 \+0\.27%p \(순증 M\/S [\d.]+%\), 해외주식형 \+0\.20%p .* \/ 상쇄 요인: 국내주식형 -0\.26%p \(순증 M\/S 3\.3%\) \/ /.test(off[0]), off[0]);
+    check('상쇄 요인: 반대 방향 0.1%p 미만이면 생략(09-30)', /^하락 요인: 국내주식형 -0\.86%p \(순증 M\/S [\d.]+%\), 파생형 -0\.31%p /.test(off[1]) && !/상쇄/.test(off[1]), off[1]);
     await freeze(); await p.screenshot({ path: `${OUT}/${name}_summary.png`, fullPage: true });
 
     // 운용사별
@@ -59,7 +59,7 @@ const OUT = __dirname + '/shots_v26';
     });
     console.log('     ' + mg.title + '\n     ' + mg.sub + '\n     ' + mg.drv + '\n     ' + mg.cols.join(' | ') + '\n     ' + mg.body.map(r => r.join(' | ')).join('\n     '));
     check('운용사별: 제목·설명(기여 산식·합계 = M/S 변동)', /유형별 M\/S 기여/.test(mg.title) && /시장 증감액 × 전년말 M\/S/.test(mg.desc) && /더하면 M\/S 변동과 같음/.test(mg.desc), mg.desc);   // v44 문구
-    check('운용사별: 6열(유형·시장 증감액·한투 증감액·시장 증가분 중 한투 몫·M/S 기여·한투 내 비중)', mg.cols.length === 6 && mg.cols[3] === '시장 증가분 중 한투 몫' && mg.cols[4] === 'M/S 기여(%p)', mg.cols.join('|'));
+    check('운용사별: 6열(유형·시장 증감액·한투 증감액·순증 M/S·M/S 기여·한투 내 비중)', mg.cols.length === 6 && mg.cols[3] === '순증 M/S' && mg.cols[4] === 'M/S 기여(%p)', mg.cols.join('|'));
     const ci = mg.cols.indexOf('M/S 기여(%p)'), last = mg.body[mg.body.length - 1];
     const sumC = mg.body.filter(r => r[0] !== '합계').reduce((s, r) => s + parseFloat(r[ci].replace('%p', '').replace('−', '-')), 0);
     check('운용사별: 합계 행 M/S 기여 = 소제목 M/S 변동, 유형 합(반올림 오차 이내)', last[0] === '합계' && mg.sub.indexOf('(' + last[ci] + ')') > 0 && Math.abs(sumC - parseFloat(last[ci])) < 0.03, last[ci] + ' / 유형 합 ' + sumC.toFixed(2));
@@ -69,7 +69,7 @@ const OUT = __dirname + '/shots_v26';
     const msSec = "[...document.querySelectorAll('#view > .section')].find(x => /^M\\/S 변동 요인/.test(x.querySelector('.h2').textContent))";   // v42: 앞에 'NAV 증감 요인' 섹션(칩 있음)
     await p.evaluate(q => { const c = [...eval(q).querySelectorAll('.chip-m')].find(b => b.dataset.k === '삼성'); c.click(); }, msSec);
     const sub2 = await p.evaluate(q => { const s = eval(q); return s.querySelector('.h3').textContent + ' / ' + [...s.querySelectorAll('table.tbl thead tr:last-child th')].map(th => th.textContent)[3]; }, msSec);
-    check('운용사별: 칩 선택 → 삼성 기준 표', /^삼성:/.test(sub2) && /삼성 몫/.test(sub2), sub2);
+    check('운용사별: 칩 선택 → 삼성 기준 표(열 이름 순증 M/S)', /^삼성:/.test(sub2) && /순증 M\/S$/.test(sub2), sub2);
     await p.evaluate(() => { const c = [...document.querySelectorAll('.chip-m')].find(b => b.dataset.k === '한투'); c.click(); });
     await freeze();
     await p.evaluate(() => { const s = [...document.querySelectorAll('#view > .section')][1]; window.scrollTo(0, s.getBoundingClientRect().top + window.scrollY - 80); }); await p.waitForTimeout(200);

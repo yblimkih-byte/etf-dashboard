@@ -276,6 +276,19 @@ const App = {
     return { el: w, get: () => sel };
   },
   /* 표 행 강조: attr 로 data-top 을 넣은 행 중 pred 에 맞는 행을 강조, 나머지는 흐리게 */
+  /* v47: 표 오른쪽 n열 고정 — 가로 스크롤 시 왼쪽 열(종목명)만 움직이고 오른쪽 n열은 제자리. 열 폭을 재서 right 지정, 표 크기·글꼴이 바뀌면 다시 계산 */
+  stickRight(host, n) {
+    const t = host && host.querySelector('table.tbl'); if (!t || !n) return;
+    const apply = () => {
+      const hr = t.tHead && t.tHead.rows[t.tHead.rows.length - 1]; if (!hr) return;
+      const N = hr.cells.length, off = []; let r = 0;
+      for (let i = N - 1; i >= Math.max(1, N - n); i--) { off[i] = r; r += hr.cells[i].getBoundingClientRect().width; }
+      [...t.rows].forEach(tr => { if (tr.cells.length !== N) return; for (let i = Math.max(1, N - n); i < N; i++) { const c = tr.cells[i]; c.classList.add('stk'); c.style.right = off[i] + 'px'; } tr.cells[Math.max(1, N - n)].classList.add('stk-edge'); });
+    };
+    apply();
+    if (window.ResizeObserver) new ResizeObserver(() => apply()).observe(t);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(apply).catch(() => {});
+  },
   highlightRows(container, sel) {
     container.querySelectorAll('tr[data-top]').forEach(tr => { tr.classList.toggle('hl', !!sel && tr.dataset.top === sel); tr.classList.toggle('dim', !!sel && tr.dataset.top !== sel); });
   },

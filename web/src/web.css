@@ -164,6 +164,7 @@ body.narrow-tab.web main{max-width:1040px;margin:0 auto;width:100%}
   .web .view>.chips{position:static}
   .web .tbl td:first-child,.web .tbl th:first-child{position:sticky;left:0;z-index:1}
   .web .tbl td:first-child{background:#fff}
+  .web .flow-topt .tbl td:first-child,.web .flow-topt .tbl th:first-child{position:static}   /* v47: 설정·해지 상위 표는 종목명이 스크롤, 오른쪽 3열 고정 */
 }
 @media print{.side,.top{display:none}.inset{border:0;box-shadow:none;margin:0}}
 /* v18: 상위 20 M/S 막대·소제목 */
