@@ -56,14 +56,15 @@ const INTERNAL = /범례_|유형최종|신규상장용|ETF마스터|agg_|raw_|�
           const MA = themeModel(App, d, { lens: 'theme', asset: 'A', region: '', exLev: false }), MS = themeModel(App, d, { lens: 'struct', asset: 'A', region: '', exLev: false });
           const MB = themeModel(App, d, { lens: 'theme', asset: 'B', region: '', exLev: false });
           const share = M.list.every(g => Math.abs(g.fShare - (g.nav ? g.fNav / g.nav * 100 : 0)) < 1e-9 && g.fShare <= 100.0000001);
-          const quad = M.list.every(g => g.nav <= 0 || g.quad === (g.chg >= M.xSplit ? (g.fShare >= M.ySplit ? 'a' : 'b') : (g.fShare >= M.ySplit ? 'c' : 'd')));
+          const relOk = M.list.every(g => { const comp = Math.max(0, ...Object.values(g.mg)); const r = g.fNav <= 0 ? 0 : comp ? g.fNav / comp : Infinity; return Math.abs(g.rel - r) < 1e-9 || g.rel === r; });   // v48: 상대 점유율 = 한투 ÷ 최대 경쟁사
+          const quad = relOk && M.list.every(g => g.nav <= 0 || g.quad === (g.chg >= M.xSplit ? (g.rel >= 1 ? 'a' : 'b') : (g.rel >= 1 ? 'c' : 'd')));   // v48: 위아래 = 한투 1위 여부
           const lev = themeModel(App, d, { lens: 'struct', asset: 'A', region: '', exLev: true }).list.every(g => g.key !== d.lev);
           return { tot: M.tot, raw, totB: M.totB, rawB, f: M.fTot, fRaw, all: MA.tot, allS: MS.tot, allB: MA.totB, allSB: MS.totB, bond: MB.list.every(g => g.group === '채권·금리' || g.group === '대체·자산배분'), share, quad, lev };
         });
         check('검산: 주식 등 NAV·비교 NAV·한투 NAV 합계 = 원자료', Math.abs(sumChk.tot - sumChk.raw) < 1 && Math.abs(sumChk.totB - sumChk.rawB) < 1 && Math.abs(sumChk.f - sumChk.fRaw) < 1);
         check('검산: 전체 자산 — 테마 보기 합계 = 상품구조 보기 합계', Math.abs(sumChk.all - sumChk.allS) < 1 && Math.abs(sumChk.allB - sumChk.allSB) < 1);
         check('검산: 채권·금리 보기는 채권·금리/대체 테마만', sumChk.bond);
-        check('검산: 한투 점유율·사분면 판정', sumChk.share && sumChk.quad);
+        check('검산: 한투 점유율·상대 점유율·사분면 판정(v48 1위 기준)', sumChk.share && sumChk.quad);
         check('레버리지·인버스 제외 → 상품구조 보기에서 해당 구조 없음', sumChk.lev);
         await freeze(); await p.screenshot({ path: `${OUT}/${name}_theme.png`, fullPage: true });
         // 표 행 클릭 → 상세 전환
