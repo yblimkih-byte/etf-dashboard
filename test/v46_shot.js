@@ -41,7 +41,7 @@ const { chromium } = require('playwright');
           tb.querySelectorAll('tbody tr, tfoot tr').forEach(tr => [...tr.children].forEach((td, i) => {
             const h = hs[i] || ''; if (!/조원/.test(h)) return;
             const v = td.textContent.trim().split(/\s/)[0]; if (v === '-' || v === '') return;
-            if (!/^[+\-−]?[\d,]+\.\d{2}$/.test(v)) out.badCell.push(h + ':' + v);
+            if (!/^[+\-−]?[\d,]+\.\d{2}$/.test(v) && !/^[+\-−]?0\.00\d$/.test(v)) out.badCell.push(h + ':' + v);   // 0.00으로 반올림되는 작은 값은 셋째 자리(navSmall, v39~ 설계)
           }));
         });
         return out;
