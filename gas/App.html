@@ -228,7 +228,7 @@ const App = {
   share(v, d) { return v === null || v === undefined || isNaN(v) ? '-' : v.toFixed(d === undefined ? 1 : d) + '%'; },
   num(v, d) { return v === null || v === undefined ? '-' : (+v).toLocaleString('ko-KR', { maximumFractionDigits: d || 0, minimumFractionDigits: d || 0 }); },
   signed(v, d) { if (v === null || v === undefined) return '-'; const t = this.eok(v, d); return (v > 0 && !/^-?0\.?0*$/.test(t) ? '+' : '') + t; },
-  cls(v) { return v < -5e10 ? 'neg' : ''; },          // 금액(원): 0.1조 미만 음수는 0.0 으로 표기되므로 색 없음
+  cls(v) { return v < -5e9 ? 'neg' : ''; },           // 금액(원): v48 — 소수 둘째 자리 표기(v46)에 맞춰 −0.005조 미만(−0.01 이하로 표기)부터 빨강
   clsP(v) { return v < -0.05 ? 'neg' : ''; },         // 비율(%)
   color(top) { return this.meta.colors[top] || this.meta.colors['기타']; },
   BOND_GRAY: '#c4c4cc',   // bar chart race 채권/금리형 막대색 (기타 회색보다 옅게)
@@ -515,9 +515,19 @@ const App = {
   bubble(canvas, points, opts) {
     opts = opts || {};
     const U = 1e12, tr = v => Math.sign(v) * Math.sqrt(Math.abs(v) / U), inv = t => Math.sign(t) * t * t;   // inv → 조원
+    // v48: opts.yLog — 세로 로그 눈금(배수). 0 → 맨 아래 '상품 없음' 줄, Infinity(단독) → 맨 위 눈금
+    const LY = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
+    let ty = v => v, yLo = 0, yHi = 0, yNone = null;
+    if (opts.yLog) {
+      const pos = points.map(p => p.y).filter(v => v > 0 && v < Infinity), mn = Math.min.apply(null, pos.concat([opts.ySplit || 1])), mx = Math.max.apply(null, pos.concat([opts.ySplit || 1]));
+      yLo = LY.filter(v => v <= mn).pop() || LY[0]; yHi = LY.find(v => v >= mx * 1.15) || LY[LY.length - 1];
+      if (points.some(p => p.y === Infinity)) yHi = LY.find(v => v > yHi) || yHi;
+      if (points.some(p => !(p.y > 0))) yNone = Math.log10(yLo) - 0.4;
+      ty = v => v === Infinity ? Math.log10(yHi) : v > 0 ? Math.log10(Math.min(Math.max(v, yLo), yHi)) : yNone;
+    }
     const maxS = Math.max.apply(null, points.map(p => p.size || 0).concat([1]));
     const rad = p => 4 + 24 * Math.sqrt(Math.max(p.size || 0, 0) / maxS);
-    const ds = [{ data: points.map(p => ({ x: tr(p.x), y: p.y, r: rad(p), p: p })), backgroundColor: points.map(p => this.fade(p.color, 0.38)), borderColor: points.map(p => p.color), borderWidth: 1.2, hoverBorderWidth: 2 }];
+    const ds = [{ data: points.map(p => ({ x: tr(p.x), y: ty(p.y), r: rad(p), p: p })), backgroundColor: points.map(p => this.fade(p.color, 0.38)), borderColor: points.map(p => p.color), borderWidth: 1.2, hoverBorderWidth: 2 }];
     const xs = points.map(p => tr(p.x)).concat([tr(opts.xSplit || 0), 0]), ys = points.map(p => p.y).concat([opts.ySplit || 0]);
     const xMin = Math.min.apply(null, xs), xMax = Math.max.apply(null, xs), padX = Math.max((xMax - xMin) * 0.08, 0.15);
     const yMax = Math.max.apply(null, ys.concat([1])) * 1.12;
@@ -532,7 +542,11 @@ const App = {
         afterBuildTicks: sc => { const lo = inv(sc.min), hi = inv(sc.max); let t = NICE.filter(v => v >= lo && v <= hi); if (t.length > 9) t = t.filter(v => Math.abs(v) >= 1 || v === 0); sc.ticks = t.map(v => ({ value: tr(v * U) })); },
         ticks: { callback: v => { const r = Math.round(inv(v) * 100) / 100; return (r > 0 ? '+' : '') + (Number.isInteger(r) ? r : r.toFixed(2)); }, autoSkip: false, maxRotation: 0 },   // v46: 소수 눈금은 둘째 자리까지
         title: { display: true, text: opts.xTitle || '증감액 (조원, 제곱근 눈금)', font: { size: 11 } } },
-      y: { min: 0, max: Math.ceil(yMax), grid: { color: '#f0f0f2' }, border: { display: false }, ticks: { callback: v => v + '%' },
+      y: opts.yLog ? { type: 'linear', min: (yNone !== null ? yNone : Math.log10(yLo)) - 0.12, max: Math.log10(yHi) + 0.08, grid: { color: '#f0f0f2' }, border: { display: false },
+        afterBuildTicks: sc => { sc.ticks = LY.filter(v => v >= yLo && v <= yHi).map(v => ({ value: Math.log10(v) })).concat(yNone !== null ? [{ value: yNone }] : []); },
+        ticks: { autoSkip: false, callback: v => yNone !== null && Math.abs(v - yNone) < 1e-9 ? '상품 없음' : (Math.round(Math.pow(10, v) * 100) / 100) + '배' },
+        title: { display: true, text: opts.yTitle || '배수 (로그 눈금)', font: { size: 11 } } }
+        : { min: 0, max: Math.ceil(yMax), grid: { color: '#f0f0f2' }, border: { display: false }, ticks: { callback: v => v + '%' },
         title: { display: true, text: opts.yTitle || '점유율 (%)', font: { size: 11 } } }
     };
     o.layout = { padding: { top: 8, right: 16 } };
@@ -541,7 +555,7 @@ const App = {
     const quad = {
       id: 'quadrants',
       beforeDatasetsDraw(ch) {
-        const { ctx, chartArea: a, scales: { x, y } } = ch, px = x.getPixelForValue(tr(opts.xSplit || 0)), py = y.getPixelForValue(opts.ySplit || 0);
+        const { ctx, chartArea: a, scales: { x, y } } = ch, px = x.getPixelForValue(tr(opts.xSplit || 0)), py = y.getPixelForValue(opts.yLog ? Math.log10(opts.ySplit || 1) : (opts.ySplit || 0));
         ctx.save(); ctx.strokeStyle = '#a1a1aa'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
         if (px > a.left && px < a.right) { ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); }
         if (py > a.top && py < a.bottom) { ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke(); }

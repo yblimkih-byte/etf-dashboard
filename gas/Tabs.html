@@ -745,10 +745,13 @@ App.registerTab({
 });
 
 /* 8. 테마 맵 (v29) — 종목명·기초지수명 규칙으로 분류한 테마별 NAV·증감·운용사 점유율. 사분면: 가로 = 증감액, 세로 = 한투 점유율
+   v48: 세로 = 상대 점유율(한투 NAV ÷ 최대 경쟁사 NAV, 로그 눈금), 기준선 1배 = 한투 1위 — '수성'은 성장 상위이면서 한투가 1위인 곳(이전: 한투 평균 점유율 이상)
    보기(테마/상품구조)·자산·지역·레버리지 제외 선택은 서버 재조회 없이 같은 자료로 다시 집계(App.state.th) */
 const TH_GROUP_COLORS = { '시장대표': '#17171c', '산업·테마': '#1863dc', '배당·스타일': '#2a9d8f', '채권·금리': '#75758a', '대체·자산배분': '#9b60aa', '기타': '#c4c4cc' };
 const TH_QUAD = { a: '수성', b: '기회', c: '점검', d: '관망' };
-const TH_QUAD_NOTE = { a: '증감 상위, 한투 점유율 평균 이상', b: '증감 상위, 한투 점유율 평균 미만', c: '증감 하위, 한투 점유율 평균 이상', d: '증감 하위, 한투 점유율 평균 미만' };
+const TH_QUAD_NOTE = { a: '증감 상위, 한투 1위 (상대 점유율 1배 이상)', b: '증감 상위, 한투 1위 아님 (상대 점유율 1배 미만)', c: '증감 하위, 한투 1위 (상대 점유율 1배 이상)', d: '증감 하위, 한투 1위 아님 (상대 점유율 1배 미만)' };
+/* v48: 상대 점유율 표기 — 한투 NAV ÷ 최대 경쟁사 NAV(배). 한투 상품 없음 '-', 경쟁사 없음 '단독' */
+const thRel = g => g.fNav <= 0 ? '-' : g.rel === Infinity ? '단독' : g.rel < 0.01 ? '0.01배 미만' : g.rel.toFixed(2) + '배';
 const thColor = (g, lens) => lens === 'struct' ? '#1863dc' : (TH_GROUP_COLORS[g] || '#c4c4cc');
 function thState(A) { return A.state.th || (A.state.th = { lens: 'theme', asset: 'S', region: '', exLev: false, sel: null }); }
 /* 행 배열 → 객체 (한 번만) */
@@ -782,6 +785,9 @@ function themeModel(A, d, o) {
     const ms = Object.keys(g.mg).map(m => ({ mgr: m, nav: g.mg[m] })).concat(g.fNav > 0 ? [{ mgr: F, nav: g.fNav, f: true }] : []).filter(x => x.nav > 0).sort((a, b) => b.nav - a.nav);
     g.lead = ms[0] || null; g.leadShare = g.lead && g.nav ? g.lead.nav / g.nav * 100 : 0; g.nMgr = ms.length;
     g.fRank = g.fNav > 0 ? ms.findIndex(x => x.f) + 1 : null;
+    // v48: 상대 점유율 = 한투 NAV ÷ 최대 경쟁사 NAV (1 이상이면 한투 1위). comp = 최대 경쟁사
+    const cp = ms.filter(x => !x.f)[0] || null; g.comp = cp; g.compShare = cp && g.nav ? cp.nav / g.nav * 100 : 0;
+    g.rel = g.fNav <= 0 ? 0 : cp ? g.fNav / cp.nav : Infinity;
     g.items.sort((a, b) => b.nav - a.nav);
   });
   const sum = (k) => list.reduce((s, g) => s + g[k], 0);
@@ -789,7 +795,7 @@ function themeModel(A, d, o) {
   const ySplit = tot ? fTot / tot * 100 : 0, yB = totB ? fTotB / totB * 100 : null;
   const xs = list.filter(g => g.nav > 0).map(g => g.chg).sort((a, b) => a - b);
   const xSplit = xs.length ? (xs.length % 2 ? xs[(xs.length - 1) / 2] : (xs[xs.length / 2 - 1] + xs[xs.length / 2]) / 2) : 0;
-  list.forEach(g => { g.quad = g.nav <= 0 ? 'd' : g.chg >= xSplit ? (g.fShare >= ySplit ? 'a' : 'b') : (g.fShare >= ySplit ? 'c' : 'd'); });
+  list.forEach(g => { const lead = g.rel >= 1; g.quad = g.nav <= 0 ? 'd' : g.chg >= xSplit ? (lead ? 'a' : 'b') : (lead ? 'c' : 'd'); });   // v48: 위아래 = 한투 1위 여부(상대 점유율 1배)
   const byChg = list.slice().sort((a, b) => b.chg - a.chg);
   return { lens: lens, list: list, byChg: byChg, tot: tot, totB: totB, fTot: fTot, fTotB: fTotB, ySplit: ySplit, yB: yB, xSplit: xSplit, six: six, n: items.filter(r => r.nav > 0).length,
     opp: byChg.filter(g => g.quad === 'b'), label: lens === 'theme' ? '테마' : '상품구조' };
@@ -820,7 +826,7 @@ function thDetail(A, host, d, M, key) {
   const s = A.section(host, `${M.label} 상세 — ${g.key}`, [`상품 ${g.n}종목, 운용사 ${g.nMgr}곳`, `기준일 ${dlabel(d.date)}, 비교 기준 ${RL}`]);
   A.kv(s, [['NAV·증감', `${A.eok(g.nav)}조원, ${RL} 대비 <b>${A.signed(g.chg)}조원</b> (${gpct(A, g.pct, g.nav)})`],
     ['1위 운용사', g.lead ? `${g.lead.mgr} ${A.share(g.leadShare)}` : '-'],
-    [`${F}`, g.fNav > 0 ? A.lines([`점유율 <b>${A.share(g.fShare)}</b>${g.fShareB === null ? '' : ` (${RL} ${A.share(g.fShareB)})`}`, `운용사 중 ${g.fRank}위, ${g.fN}종목`]) : '상품 없음'],
+    [`${F}`, g.fNav > 0 ? A.lines([`점유율 <b>${A.share(g.fShare)}</b>${g.fShareB === null ? '' : ` (${RL} ${A.share(g.fShareB)})`}`, `운용사 중 ${g.fRank}위, ${g.fN}종목`, `상대 점유율 <b>${thRel(g)}</b>` + (g.comp ? ` (최대 경쟁사 ${g.comp.mgr} ${A.share(g.compShare)})` : '')]) : '상품 없음'],
     ['최근 6개월 신규상장', `시장 ${g.new6}종목, ${F} ${g.fNew6}종목`], ['구분', `${TH_QUAD[g.quad]} — ${TH_QUAD_NOTE[g.quad]}`]]);
   A.div(s, 'sub-h', '운용사별 NAV·점유율 (상위 5개사 + 기타)');
   const dd = { date: d.date, ref: d.ref, refLabel: d.refLabel };
@@ -845,14 +851,15 @@ App.registerTab({
     const top = M.byChg[0];
     thBar(A, root, d, st);
     // ① 사분면
-    const s1 = A.section(root, `${L} 사분면`, [`가로: ${RL} 대비 NAV 증감액 · 세로: ${F} 점유율`, '원 크기: 기준일 NAV (원을 누르면 상세)']);   // v41: 제목 짧게(줄바꿈 방지), 점선·눈금 설명은 차트 아래
+    const s1 = A.section(root, `${L} 사분면`, [`가로: ${RL} 대비 NAV 증감액 · 세로: ${F} 상대 점유율 (최대 경쟁사 대비)`, '원 크기: 기준일 NAV (원을 누르면 상세)']);   // v48   // v41: 제목 짧게(줄바꿈 방지), 점선·눈금 설명은 차트 아래
     const detail = document.createElement('div');
     const pick = key => { st.sel = key; thDetail(A, detail, d, M, key); hl(); detail.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-    A.bubble(A.canvas(s1, 'tall'), M.list.filter(g => g.nav > 0).map(g => ({ key: g.key, label: g.key, x: g.chg, y: g.fShare, size: g.nav, color: thColor(g.group, M.lens) })), {
-      xSplit: M.xSplit, ySplit: M.ySplit, quads: { a: '수성', b: '기회', c: '점검', d: '관망' }, yTitle: `${F} 점유율 (%)`, xTitle: `${RL} 대비 NAV 증감액 (조원, 제곱근 눈금)`, onClick: pick, labelMax: 12,   // v41: 이름은 NAV 큰 12개만(겹침 완화, 나머지는 마우스 올리면)
-      tooltip: p => { const g = M.list.find(x => x.key === p.key); return [`NAV ${A.eok(g.nav)}조원 · 증감 ${A.signed(g.chg)}조원 (${gpct(A, g.pct, g.nav)})`, `${F} 점유율 ${A.share(g.fShare)}${g.fRank ? ` · ${g.fRank}위` : ''}`, g.lead ? `1위 ${g.lead.mgr} ${A.share(g.leadShare)}` : '', `${TH_QUAD[g.quad]} — ${TH_QUAD_NOTE[g.quad]}`].filter(Boolean); } });
+    A.bubble(A.canvas(s1, 'tall'), M.list.filter(g => g.nav > 0).map(g => ({ key: g.key, label: g.key, x: g.chg, y: g.rel, size: g.nav, color: thColor(g.group, M.lens) })), {
+      xSplit: M.xSplit, ySplit: 1, yLog: true, quads: { a: '수성', b: '기회', c: '점검', d: '관망' }, yTitle: `${F} 상대 점유율 (배, 로그 눈금)`, xTitle: `${RL} 대비 NAV 증감액 (조원, 제곱근 눈금)`, onClick: pick, labelMax: 12,   // v41: 이름은 NAV 큰 12개만(겹침 완화, 나머지는 마우스 올리면)
+      tooltip: p => { const g = M.list.find(x => x.key === p.key); return [`NAV ${A.eok(g.nav)}조원 · 증감 ${A.signed(g.chg)}조원 (${gpct(A, g.pct, g.nav)})`, g.fNav > 0 ? `${F} 점유율 ${A.share(g.fShare)} · ${g.fRank}위 · 상대 점유율 ${thRel(g)}` : `${F} 상품 없음`, g.comp ? `최대 경쟁사 ${g.comp.mgr} ${A.share(g.compShare)}` : '', `${TH_QUAD[g.quad]} — ${TH_QUAD_NOTE[g.quad]}`].filter(Boolean); } });
     if (M.lens === 'theme') A.div(s1, 'th-legend', thLegend(M));
-    A.note(s1, [`가로축은 제곱근 눈금 — 증감액 차이가 커도 작은 ${L}도 한쪽에 몰리지 않게 함`, `세로 점선 = 표시된 ${L} 증감액의 중앙값`, `가로 점선 = 표시 범위 전체의 ${F} 점유율 ${A.share(M.ySplit)}`, '원 이름은 NAV 큰 12개만 (나머지는 마우스를 올리면 표시)']);
+    A.note(s1, [`상대 점유율: ${F} NAV ÷ 최대 경쟁사 NAV — 1배 이상이면 ${F}가 1위`, `가로 점선 = 1배 (${F} 1위 기준선), 세로 점선 = 표시된 ${L} 증감액의 중앙값`,
+      `세로축은 로그 눈금(0.1배·1배·10배 간격이 같음), 가로축은 제곱근 눈금 — 값 차이가 커도 작은 ${L}가 한쪽에 몰리지 않게 함`, `${F} 상품이 없는 ${L}는 맨 아래 '상품 없음' 줄`, '원 이름은 NAV 큰 12개만 (나머지는 마우스를 올리면 표시)']);   // v48
     // ② 표
     const s2 = A.section(root, `${L}별 NAV·증감·${F} 점유율`, [`${RL} 대비 증감 큰 순`, '행을 누르면 상세']);
     const G = RL + ' 대비';
@@ -860,7 +867,7 @@ App.registerTab({
       { h: 'NAV(조원)', f: r => A.eok(r.nav) }, { h: '증감액', g: G, f: r => A.signed(r.chg), cls: r => A.cls(r.chg) }, { h: '증감률', g: G, f: r => gpct(A, r.pct, r.nav), cls: r => A.clsP(r.pct) },
       { h: '상품 수', f: r => A.num(r.n) }, { h: '1위 운용사', f: r => r.lead ? `${r.lead.mgr} ${A.share(r.leadShare)}` : '-', l: 1 },
       { h: '점유율', g: F, f: r => r.fNav > 0 ? A.share(r.fShare) : '-' }, { h: '변동', g: F, f: r => r.fShareB === null || (!r.fNav && !r.fBase) ? '-' : pp(r.fShare - r.fShareB), cls: r => r.fShareB === null ? '' : A.clsP(r.fShare - r.fShareB) },
-      { h: '순위', g: F, f: r => r.fRank ? r.fRank + '/' + r.nMgr : '-' }, { h: '상품 수', g: F, f: r => r.fN || '-' },
+      { h: '순위', g: F, f: r => r.fRank ? r.fRank + '/' + r.nMgr : '-' }, { h: '상대 점유율', g: F, f: r => r.fNav > 0 && r.rel >= 1 ? `<b>${thRel(r)}</b>` : thRel(r) },   // v48: 1배 이상(한투 1위) 굵게 { h: '상품 수', g: F, f: r => r.fN || '-' },
       { h: '시장', g: '최근 6개월 신규', f: r => r.new6 || '-' }, { h: F, g: '최근 6개월 신규', f: r => r.fNew6 || '-' },
       { h: '구분', f: r => `<span class="qd qd-${r.quad}">${TH_QUAD[r.quad]}</span>` }]);
     const host = A.div(s2, '', A.table(M.byChg, cols, { attr: r => `class="clk" data-key="${String(r.key).replace(/"/g, '&quot;')}"`,
@@ -868,7 +875,7 @@ App.registerTab({
         ['최근 6개월 신규|시장']: A.num(M.list.reduce((a, g) => a + g.new6, 0)), ['최근 6개월 신규|' + F]: A.num(M.list.reduce((a, g) => a + g.fNew6, 0)) }, M.yB === null ? {} : { [F + '|변동']: pp(M.ySplit - M.yB) }) }));
     host.querySelectorAll('tr.clk').forEach(tr => tr.onclick = () => pick(tr.dataset.key));
     const hl = () => host.querySelectorAll('tr.clk').forEach(tr => tr.classList.toggle('sel', tr.dataset.key === st.sel));
-    A.note(s2, ['<span class="nh">구분</span>', `수성: ${TH_QUAD_NOTE.a}`, `기회: ${TH_QUAD_NOTE.b}`, `점검: ${TH_QUAD_NOTE.c}`, `관망: ${TH_QUAD_NOTE.d}`, `증감 상위·하위는 표시된 ${L} 증감액의 중앙값으로 나눔`]);
+    A.note(s2, ['<span class="nh">구분</span>', `수성: ${TH_QUAD_NOTE.a}`, `기회: ${TH_QUAD_NOTE.b}`, `점검: ${TH_QUAD_NOTE.c}`, `관망: ${TH_QUAD_NOTE.d}`, `증감 상위·하위는 표시된 ${L} 증감액의 중앙값으로 나눔`, `상대 점유율: ${F} NAV ÷ 최대 경쟁사 NAV (${F}가 1위면 2위 대비 배수)`]);
     A.note(s2, ['<span class="nh">분류·계산</span>', '종목명·기초지수명의 키워드로 종목마다 테마·상품구조·지역을 하나씩 자동 부여 (규칙은 데이터 시트에서 수정)', '증감 = NAV 증감 (자금 유출입과 가격 변동 모두 포함)', `${RL} 이후 상장한 종목은 비교 시점 NAV를 0, 상장폐지 종목은 기준일 NAV를 0으로 계산`]);
     // ③ 상세
     root.appendChild(detail);
@@ -1155,11 +1162,11 @@ const TAB_HEAD = (() => {
       if (!M.list.length) return { lines: ['선택한 조건에 해당하는 종목 없음'] };
       const t = M.byChg[0], o = M.opp[0], scope = [st.asset === 'B' ? '채권·금리' : st.asset === 'A' ? '전체 자산' : '주식 등', st.region || '전 지역'].concat(st.exLev ? ['레버리지·인버스 제외'] : []).join(' · ');
       return { lines: [`${esc(scope)} 기준 ${L} ${M.list.length}개`, `${RL} 대비 증감 1위 <b>${esc(t.key)}</b> ${sj(t.chg)} (${FOCUS} 점유율 ${A.share(t.fShare)})`]
-          .concat(o ? [`기회 구간 ${M.opp.slice(0, 3).map(g => esc(g.key)).join(', ')} (NAV 증감 상위, ${FOCUS} 점유율 평균 미만)`] : []),
+          .concat(o ? [`기회 구간 ${M.opp.slice(0, 3).map(g => esc(g.key)).join(', ')} (NAV 증감 상위, ${FOCUS} 1위 아님)`] : []),
         cards: [{ k: '표시 범위 NAV', d: DEF.nav, v: U(A.eok(M.tot), '조원'), b: bd(M.totB ? chg(M.tot, M.totB) : null, A.pct(M.totB ? chg(M.tot, M.totB) : null)), l1: `${RL} 대비 ${sj(M.tot - M.totB)}`, l2: `표시 범위 ${A.num(M.n)}종목` },
           { k: `${FOCUS} 점유율`, c: A.meta.colors[FOCUS], f: true, v: U(M.ySplit.toFixed(1), '%'), b: M.yB === null ? null : bd(M.ySplit - M.yB, pp(M.ySplit - M.yB)), l1: `NAV ${A.eok(M.fTot)}조원`, l2: '표시 범위 전체 기준' },
           { k: `증감 1위 ${L}`, v: esc(t.key), txt: 1, l1: sj(t.chg), l2: `${FOCUS} 점유율 ${A.share(t.fShare)}` },
-          { k: '기회 구간', d: `NAV 증감 상위(표시 ${L} 중앙값 이상) · ${FOCUS} 점유율이 표시 범위 평균 미만인 ${L}`, v: U(M.opp.length, '개'), l1: o ? esc(o.key) + ' ' + sj(o.chg) : '-', l2: `NAV 증감 상위 · ${FOCUS} 점유율 평균 미만` }] };
+          { k: '기회 구간', d: `NAV 증감 상위(표시 ${L} 중앙값 이상) · ${FOCUS}가 1위가 아닌(상대 점유율 1배 미만) ${L}`, v: U(M.opp.length, '개'), l1: o ? esc(o.key) + ' ' + sj(o.chg) : '-', l2: `NAV 증감 상위 · ${FOCUS} 1위 아님` }] };
     },
     holders(d) {   // v29: 종목→ETF 찾기. v41: 기준일 경과(갱신 지연) 표시, '찾는 방법' 대신 구성종목 확인 비율
       if (!d.ready) return { lines: [] };
