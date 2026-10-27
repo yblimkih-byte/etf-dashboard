@@ -438,7 +438,7 @@ App.registerTab({
 
 /* 1. ETF 시장 개관 */
 App.registerTab({
-  id: 'overview', narrow: true, label: '개관', title: 'ETF 시장 개관', controls: ['date'], action: 'overview', params: s => ({ date: s.date }),   // v41: 탭 이름 짧게(제목은 title)
+  id: 'overview', narrow: true, label: '시장', title: 'ETF 시장', controls: ['date'], action: 'overview', params: s => ({ date: s.date }),   // v41: 탭 이름 짧게(제목은 title)
   render(d, root, A) {
 
     const s1 = A.section(root, '연도별 총 NAV 추이', '2021년부터 각 연도 말 기준 (올해는 기준월)');
@@ -988,7 +988,10 @@ function bzState(A) { return A.state.bz || (A.state.bz = { kind: 'theme', sel: n
 function bzModel(A, d, kind) {
   const F = A.FOCUS, th = d.th, TM = {}; let ySplit = null, RL = '';
   if (th && th.rows) { const M = themeModel(A, th, { lens: kind, asset: 'A', region: '', exLev: false }); M.list.forEach(g => TM[g.key] = g); ySplit = M.ySplit; RL = A.refLabel(th); }
-  const rows = (d.items || []).filter(x => x.kind === kind).map(x => Object.assign({}, x, { m: TM[x.key] || null }));
+  // v49: 보정 변화율 — 작은 값의 과장 완화. 검색 (최근 4주 + BZ_SK) ÷ (직전 4주 + BZ_SK) − 1, 뉴스 (최근 7일 + BZ_NK) ÷ (이전 7일 + BZ_NK) − 1. 원래 값은 chgRaw·newsChgRaw
+  const adj = (a, b, k) => a === null || a === undefined || b === null || b === undefined ? null : ((a + k) / (b + k) - 1) * 100;
+  const rows = (d.items || []).filter(x => x.kind === kind).map(x => Object.assign({}, x, { m: TM[x.key] || null, chgRaw: x.chg, newsChgRaw: x.newsChg,
+    chg: x.chg === null || x.low ? null : adj(x.s4, x.p4, BZ_SK), newsChg: x.newsP > 0 ? adj(x.news7, x.newsP, BZ_NK) : null }));
   rows.sort((a, b) => (b.chg === null ? -1e9 : b.chg) - (a.chg === null ? -1e9 : a.chg));
   rows.forEach(r => { r.opp = r.chg !== null && r.chg > 0 && ySplit !== null && (!r.m || r.m.nav <= 0 || r.m.fShare < ySplit); });
   // v41: 뉴스 증가 1위 = 이전 7일 기사가 BZ_NEWS_MIN 건 이상인 항목 중 증가율 최대(1건 → 9건 = +800% 같은 소표본 과장 제외). 없으면 건수 증가 최대
@@ -1001,6 +1004,7 @@ const bzWk = p => String(p || '').slice(5).replace('-', '/');
 /** v45: 검색 관심도 값 — 1 미만은 소수 둘째 자리(0.1 vs 0.1 인데 +53% 처럼 보이지 않게) */
 const bzNum = (A, v) => v === null || v === undefined ? '-' : A.num(v, Math.abs(v) < 1 ? 2 : 1);
 const BZ_NEWS_MIN = 5;   // v41: 증가율을 보여 주는 최소 기사 수(이전 7일)
+const BZ_SK = 1, BZ_NK = 5;   // v49: 보정 상수 — 검색 관심도 1('ETF' 검색량의 1%), 뉴스 기사 5건
 const bzNewsOk = r => r.newsChg !== null && r.newsChg !== undefined && r.newsP !== null && r.newsP !== undefined && r.newsP >= BZ_NEWS_MIN;
 /** v41: 뉴스 변화 표기 — 이전 기사가 적으면 증가율 대신 건수('1→9건') */
 const bzNewsChg = (A, r) => r.newsChg === null || r.newsChg === undefined ? '-' : bzNewsOk(r) ? A.pct(r.newsChg) : `${A.num(r.newsP || 0)}→${A.num(r.news7)}건`;
@@ -1009,9 +1013,9 @@ function bzDetail(A, host, d, Z, key) {
   (host._charts || []).forEach(c => { try { c.destroy(); } catch (e) {} A.charts = A.charts.filter(x => x !== c); }); host._charts = [];
   const F = A.FOCUS, m = r.m;
   const s = A.section(host, `${Z.label} 상세 — ${hdEsc(r.key)}`, `검색어 ${hdEsc((r.kw || []).join(', '))}`);
-  A.kv(s, [['검색 관심도', A.lines([`최근 4주 평균 <b>${bzNum(A, r.s4)}</b>, 직전 4주 ${bzNum(A, r.p4)} (${r.low ? '검색량 적음 — 변화율 계산 안 함' : A.pct(r.chg)})`, "'ETF' 검색량 = 100 기준",
+  A.kv(s, [['검색 관심도', A.lines([`최근 4주 평균 <b>${bzNum(A, r.s4)}</b>, 직전 4주 ${bzNum(A, r.p4)} (${r.low ? '검색량 적음 — 변화율 계산 안 함' : `보정 ${A.pct(r.chg)}, 단순 ${A.pct(r.chgRaw)}`})`, "'ETF' 검색량 = 100 기준",
       r.miss ? `값이 없는 주 ${r.miss}주 — 검색량이 아주 적어 네이버가 값을 주지 않음(0으로 계산)` : null])],   // v44: 한 줄에 하나씩 · v45: 값 없는 주
-    ['뉴스 기사', A.lines([`최근 7일 <b>${A.num(r.news7)}건</b>` + (r.newsP === null ? '' : `, 이전 7일 ${A.num(r.newsP)}건` + (bzNewsOk(r) ? ` (${A.pct(r.newsChg)})` : '')), r.newsEst ? '기사가 많아 일부 기간의 하루 평균으로 환산' : null])],
+    ['뉴스 기사', A.lines([`최근 7일 <b>${A.num(r.news7)}건</b>` + (r.newsP === null ? '' : `, 이전 7일 ${A.num(r.newsP)}건` + (bzNewsOk(r) ? ` (보정 ${A.pct(r.newsChg)}, 단순 ${A.pct(r.newsChgRaw)})` : '')), r.newsEst ? '기사가 많아 일부 기간의 하루 평균으로 환산' : null])],
     ['NAV', m ? A.lines([`${A.eok(m.nav)}조원, ${Z.RL} 대비 ${A.signed(m.chg)}조원`, `상품 ${A.num(m.n)}종목`]) : '해당 상품 없음'],
     [F, m && m.fNav > 0 ? A.lines([`점유율 <b>${A.share(m.fShare)}</b>`, `운용사 ${m.nMgr}곳 중 ${m.fRank}위, ${m.fN}종목`]) : '상품 없음'],
     ['1위 운용사', m && m.lead ? `${hdEsc(m.lead.mgr)} ${A.share(m.leadShare)}` : '-']]);
@@ -1021,7 +1025,8 @@ function bzDetail(A, host, d, Z, key) {
   if (r.miss) A.note(s, [`끊긴 구간 = 값이 없는 주(${r.miss}주) — 검색량이 아주 적어 네이버가 값을 주지 않은 주`]);   // v45
 }
 App.registerTab({
-  id: 'buzz', label: '관심도', controls: [], when: m => !!m.buzzDate,
+  id: 'buzz', label: '관심도 (베타)', controls: [],   // v49: 수집 원천(검색·뉴스 노출)에 따라 값이 크게 흔들려 베타 표기
+  when: m => !!m.buzzDate,
   load: (s, A) => Promise.all([A.call('buzz', {}), A.call('theme', { date: A.meta.defaultDate, ref: 'py' }).catch(() => null)]).then(([b, t]) => Object.assign({}, b, { th: t })),
   prefetch: () => [['buzz', {}]],   // v41: 웹 화면 선조회에 포함(이전엔 빠져 첫 열기 8초 이상)
   loadingMsg: '관심도를 불러오는 중…',
@@ -1037,17 +1042,17 @@ App.registerTab({
     const pick = key => { st.sel = key; bzDetail(A, detail, d, Z, key); hl(); detail.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     // ① 변화율 막대
     const R1 = Z.rows.filter(r => r.chg !== null);
-    const s1 = A.section(root, `${L}별 검색 관심도 변화 — 최근 4주 vs 직전 4주`, ['막대 = 네이버 주간 검색량 변화율, 색 = 테마군', '막대를 누르면 상세']);
+    const s1 = A.section(root, `${L}별 검색 관심도 변화(보정) — 최근 4주 vs 직전 4주`, ['막대 = 네이버 주간 검색량의 보정 변화율, 색 = 테마군', '막대를 누르면 상세']);
     const ch = A.bar(A.canvas(s1, R1.length > 16 ? 'xtall' : R1.length > 8 ? 'tall' : ''), R1.map(r => r.key), [{ label: '검색 관심도 변화', data: R1.map(r => r.chg), colors: R1.map(r => thColor(r.group, st.kind)) }],
-      { horizontal: true, noLegend: true, pctAxis: true, padRight: 50, labels: { mode: 'end', fmt: v => A.pct(v) }, tooltip: (c, v) => ` 변화 ${A.pct(v)} · 최근 4주 ${A.num(R1[c.dataIndex].s4, 1)} (ETF = 100)` });
+      { horizontal: true, noLegend: true, pctAxis: true, padRight: 50, labels: { mode: 'end', fmt: v => A.pct(v) }, tooltip: (c, v) => ` 보정 변화 ${A.pct(v)} (단순 ${A.pct(R1[c.dataIndex].chgRaw)}) · 최근 4주 ${bzNum(A, R1[c.dataIndex].s4)}, 직전 4주 ${bzNum(A, R1[c.dataIndex].p4)} (ETF = 100)` });
     ch.options.onClick = (e, els) => { if (els && els.length) pick(R1[els[0].index].key); }; ch.update('none');
     // ② 표
     const s2 = A.section(root, `${L}별 관심도 · NAV · ${F} 점유율`, ['검색 관심 변화 큰 순 (행을 누르면 상세)', `NAV·점유율은 테마 맵과 같은 분류 (전체 자산, ${Z.RL || '전년말'} 대비)`]);
     const G1 = '검색 관심도', G2 = '뉴스 기사', G3 = 'NAV', G4 = F;
     const cols = [{ h: L, f: r => A.swc(thColor(r.group, st.kind)) + hdEsc(r.key), l: 1 }].concat(st.kind === 'theme' ? [{ h: '테마군', k: 'group', l: 1 }] : []).concat([
       { h: '검색어', f: r => hdEsc((r.kw || []).slice(0, 2).join(', ')) + ((r.kw || []).length > 2 ? ' 외' : ''), l: 1 },
-      { h: '최근 4주', g: G1, f: r => bzNum(A, r.s4) }, { h: '변화', g: G1, f: r => r.low ? '검색량 적음' : A.pct(r.chg), cls: r => r.low ? '' : A.clsP(r.chg) },
-      { h: '최근 7일', g: G2, f: r => A.num(r.news7) + (r.newsEst ? '*' : '') }, { h: '변화', g: G2, f: r => bzNewsChg(A, r), cls: r => bzNewsOk(r) ? A.clsP(r.newsChg) : '' },
+      { h: '최근 4주', g: G1, f: r => bzNum(A, r.s4) }, { h: '변화(보정)', g: G1, f: r => r.low ? '검색량 적음' : A.pct(r.chg), cls: r => r.low ? '' : A.clsP(r.chg) },
+      { h: '최근 7일', g: G2, f: r => A.num(r.news7) + (r.newsEst ? '*' : '') }, { h: '변화(보정)', g: G2, f: r => bzNewsChg(A, r), cls: r => bzNewsOk(r) ? A.clsP(r.newsChg) : '' },
       { h: '조원', g: G3, f: r => r.m ? A.eok(r.m.nav) : '-' }, { h: '증감', g: G3, f: r => r.m ? A.signed(r.m.chg) : '-', cls: r => r.m ? A.cls(r.m.chg) : '' },
       { h: '점유율', g: G4, f: r => r.m && r.m.fNav > 0 ? A.share(r.m.fShare) : '-' }, { h: '상품 수', g: G4, f: r => r.m && r.m.fN ? r.m.fN : '-' },
       { h: '구분', f: r => r.opp ? '<span class="qd qd-b">관심 상승 후보</span>' : '' }]);   // v41: 테마 맵 '기회 구간'(NAV 증감 기준)과 이름 구분
@@ -1057,7 +1062,9 @@ App.registerTab({
     A.note(s2, [`<b>검색 관심도</b>: 네이버 데이터랩의 주간 검색량. 함께 조회한 'ETF' 검색량을 100으로 놓고 환산해 항목끼리 비교 가능`,
       '검색량이 아주 적은 주는 네이버가 값을 주지 않음 — 0으로 계산, 최근 8주 중 4주 이상 값이 없으면 변화율 대신 "검색량 적음"',
       '<b>뉴스</b>: 네이버 뉴스에서 검색어가 그대로 들어간 기사 수 (중복 제외)', '* 표시: 기사가 많아 일부 기간의 하루 평균으로 7일 치를 환산한 값',
-      `<b>변화</b>: 이전 7일 기사가 ${BZ_NEWS_MIN}건 미만이면 증가율 대신 건수로 표시 (예: 1→9건)`,
+      `<b>변화(보정)</b>: 값이 작을수록 변화율이 과장되지 않게 보정 — 검색은 (최근 4주 + ${BZ_SK}) ÷ (직전 4주 + ${BZ_SK}) − 1, 뉴스는 (최근 7일 + ${BZ_NK}건) ÷ (이전 7일 + ${BZ_NK}건) − 1`,
+      '예: 검색 0.2 → 0.8 은 단순 +300% 이지만 보정 +50%, 검색 20 → 30 은 단순 +50% · 보정 +48% (큰 항목은 거의 그대로)',
+      `이전 7일 기사가 ${BZ_NEWS_MIN}건 미만이면 증가율 대신 건수로 표시 (예: 1→9건)`, '상세에는 보정 전 단순 변화율도 함께 표시',
       `<b>관심 상승 후보</b>: 검색 관심이 오르는데 ${F} 점유율이 시장 전체 ${F} 점유율${Z.ySplit === null ? '' : `(${A.share(Z.ySplit)})`}보다 낮거나 ${F} 상품이 없는 항목`,
       '검색어는 데이터 시트에서 항목마다 수정 가능']);
     // ③ 상세
@@ -1067,9 +1074,17 @@ App.registerTab({
     // ④ 새 단어 (테마 보기에서만)
     if (st.kind === 'theme' && Z.words.length) {
       const wd = info.wordDays, t = d.titles || {};
-      const s4 = A.section(root, 'ETF 뉴스 제목에 자주 나온 단어', [`${wd ? `최근 ${wd}일 vs 그 전 ${wd}일` : '최근 vs 이전'}, 'ETF' 기사 제목 ${A.num(t.n7 || 0)}건 / ${A.num(t.nP || 0)}건`, '새 단어 = 테마 분류 키워드·관심도 검색어에 없는 단어 (테마 추가 후보)']);
-      A.div(s4, '', A.table(Z.words, [{ h: '단어', f: r => hdEsc(r.w), l: 1 }, { h: '최근', f: r => A.num(r.n7) }, { h: '이전', f: r => A.num(r.nP) },
-        { h: '변화', f: r => r.nP > 0 ? A.pct((r.n7 / r.nP - 1) * 100) : '신규', cls: r => r.nP > 0 && r.n7 < r.nP ? 'neg' : '' }, { h: '구분', f: r => r.dict ? '' : '<span class="qd qd-b">새 단어</span>' }], { compact: true }));
+      // v49: 두 구간의 기사 수가 다름(예: 793건 vs 206건 — 최근 구간이 평일, 그 전 구간이 주말) → 건수 대신 '제목 100건당 등장 수'로 비교, 변화 = 차이(건)
+      const N7 = t.n7 || 0, NP = t.nP || 0, per = (n, N) => N ? n / N * 100 : null, dpp = r => N7 && NP ? per(r.n7, N7) - per(r.nP, NP) : null, f1 = v => v === null ? '-' : A.num(v, 1);
+      const s4 = A.section(root, 'ETF 뉴스 제목에 자주 나온 단어', [`${wd ? `최근 ${wd}일 vs 그 전 ${wd}일` : '최근 vs 이전'}, 'ETF' 기사 제목 ${A.num(N7)}건 / ${A.num(NP)}건`, '새 단어 = 테마 분류 키워드·관심도 검색어에 없는 단어 (테마 추가 후보)']);
+      const G = '제목 100건당';
+      A.div(s4, '', A.table(Z.words, [{ h: '단어', f: r => hdEsc(r.w), l: 1 }, { h: '최근', g: '기사 수(건)', f: r => A.num(r.n7) }, { h: '이전', g: '기사 수(건)', f: r => A.num(r.nP) },
+        { h: '최근', g: G, f: r => f1(per(r.n7, N7)) }, { h: '이전', g: G, f: r => f1(per(r.nP, NP)) },
+        { h: '차이', g: G, f: r => { const v = dpp(r); return v === null ? '-' : (v > 0.05 ? '+' : '') + A.num(v, 1); }, cls: r => { const v = dpp(r); return v !== null && v < -0.05 ? 'neg' : ''; } },
+        { h: '구분', f: r => r.dict ? '' : '<span class="qd qd-b">새 단어</span>' }], { compact: true }));
+      A.note(s4, [`<b>제목 100건당</b>: 그 구간 'ETF' 기사 제목 100건 중 그 단어가 나온 제목 수 — 두 구간의 기사 수가 달라(${A.num(N7)}건 vs ${A.num(NP)}건) 건수를 그대로 비교하면 변화가 과장됨`,
+        '<b>차이</b>: 최근 − 이전 (제목 100건당 건수 차이). 이전 구간 기사가 적으면(주말 등) 단어 구성 차이가 크게 나타날 수 있음',
+        "네이버 뉴스 검색은 최근 기사 1,000건까지만 주므로 'ETF' 기사가 많은 날은 비교 구간이 1~2일로 짧아짐"]);
     }
   }
 });
@@ -1187,11 +1202,11 @@ const TAB_HEAD = (() => {
     buzz(d) {   // v29: 관심도. v41: 뉴스는 소표본(이전 7일 5건 미만) 증가율 제외, '관심 상승 후보'(테마 맵 '기회 구간'과 구분)
       if (!d.ready) return { lines: [] };
       const st = bzState(A), Z = bzModel(A, d, st.kind), info = d.info || {}, u = Z.up, n = Z.news;
-      return { lines: (u ? [`검색 관심 상승 1위 ${Z.label} <b>${esc(u.key)}</b> ${sg(u.chg, A.pct(u.chg))} (최근 4주 vs 직전 4주)`, u.m && u.m.fNav > 0 ? `${esc(u.key)}의 ${FOCUS} 점유율 ${A.share(u.m.fShare)}` : `${esc(u.key)}에 ${FOCUS} 상품 없음`] : [])
+      return { lines: (u ? [`검색 관심 상승 1위 ${Z.label} <b>${esc(u.key)}</b> ${sg(u.chg, A.pct(u.chg))} (최근 4주 vs 직전 4주, 보정)`, u.m && u.m.fNav > 0 ? `${esc(u.key)}의 ${FOCUS} 점유율 ${A.share(u.m.fShare)}` : `${esc(u.key)}에 ${FOCUS} 상품 없음`] : [])
           .concat(Z.opp.length ? [`관심 상승 후보 ${Z.opp.slice(0, 3).map(r => esc(r.key)).join(', ')} (검색 관심 상승, ${FOCUS} 점유율 평균 미만)`] : []),
         cards: [{ k: '관심도 기준', v: esc(info.at ? info.at.slice(0, 10) : d.date), txt: 1, l1: '검색: 주간 · 뉴스: 최근 7일', l2: '매일 07시대 갱신' },
-          { k: '검색 관심 상승 1위', v: u ? esc(u.key) : '-', txt: 1, b: u ? bd(u.chg, A.pct(u.chg)) : null, l1: u ? `최근 4주 ${A.num(u.s4, 1)} (ETF = 100)` : '', l2: u ? '직전 4주 대비' : '' },
-          { k: '뉴스 기사 증가 1위', d: `이전 7일 기사가 ${BZ_NEWS_MIN}건 이상인 항목 중 증가율 최대(없으면 건수 증가 최대)`, v: n ? esc(n.key) : '-', txt: 1, b: n && bzNewsOk(n) ? bd(n.newsChg, A.pct(n.newsChg)) : null, l1: n ? `최근 7일 ${A.num(n.news7)}건 · 이전 ${A.num(n.newsP || 0)}건` : '', l2: n ? (bzNewsOk(n) ? '이전 7일 대비' : '이전 기사가 적어 건수로 표시') : '' },
+          { k: '검색 관심 상승 1위', d: `보정 변화율 = (최근 4주 + ${BZ_SK}) ÷ (직전 4주 + ${BZ_SK}) − 1`, v: u ? esc(u.key) : '-', txt: 1, b: u ? bd(u.chg, A.pct(u.chg)) : null, l1: u ? `최근 4주 ${bzNum(A, u.s4)} (ETF = 100)` : '', l2: u ? '직전 4주 대비 (보정)' : '' },
+          { k: '뉴스 기사 증가 1위', d: `이전 7일 기사가 ${BZ_NEWS_MIN}건 이상인 항목 중 보정 증가율 최대(없으면 건수 증가 최대). 보정 = (최근 7일 + ${BZ_NK}) ÷ (이전 7일 + ${BZ_NK}) − 1`, v: n ? esc(n.key) : '-', txt: 1, b: n && bzNewsOk(n) ? bd(n.newsChg, A.pct(n.newsChg)) : null, l1: n ? `최근 7일 ${A.num(n.news7)}건 · 이전 ${A.num(n.newsP || 0)}건` : '', l2: n ? (bzNewsOk(n) ? '이전 7일 대비' : '이전 기사가 적어 건수로 표시') : '' },
           { k: '관심 상승 후보', d: `검색 관심 상승 · ${FOCUS} 점유율이 시장 전체 ${FOCUS} 점유율 미만(또는 상품 없음)`, v: U(Z.opp.length, '개'), l1: Z.opp[0] ? esc(Z.opp[0].key) : '-', l2: `검색 관심 상승 · ${FOCUS} 점유율 평균 미만` }] };
     }
   };
