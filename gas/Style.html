@@ -183,7 +183,12 @@ table.kv{width:100%;border-collapse:collapse;font-size:15px}
 /* v42: NAV 증감 요인(설정액·평가 증감) — 선택 줄(유형·운용사 칩 + 지표·연도) · v43: 그림 제목 줄(제목·단위·유입/유출 견본) · 월별 표 보기 */
 .flow-bar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 22px;margin:4px 0 8px}.flow-bar .chips{margin:0}.flow-rng{flex-direction:row;align-items:center;gap:8px}.flow-rng .seg button{padding:6px 12px;font-size:13px}
 .flow-ct{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;margin:14px 0 2px;font-size:13px;color:var(--ink-2)}.flow-ct b{font-weight:600;color:var(--black)}.flow-ct .u{font-size:12px;color:#898781}.flow-ct .lg{margin-left:auto;font-size:12px;display:inline-flex;align-items:center;gap:4px 6px}.flow-ct .lg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:8px}
-.flow-g2>div{min-width:0}.flow-tb{margin:8px 0 4px}.flow-tb summary{cursor:pointer;font-size:13px;color:var(--ink-2);padding:4px 0}.flow-tb[open] summary{margin-bottom:6px}
+.flow-g2>div{min-width:0}
+/* v47: 오른쪽 고정 열(A.stickRight) — 종목명만 가로 스크롤. 흐림(강조 모드·선택 외 행)은 투명도 대신 흰 덮개(밑에 지나가는 종목명이 비치지 않게) */
+.tbl td.stk,.tbl th.stk{position:sticky;z-index:1;background:#fff}
+.tbl .stk-edge{box-shadow:-10px 0 8px -8px rgba(0,0,0,.14)}
+body.focus-on .tbl tr[data-top]:not([data-top="한투"]) td.stk,.tbl tr.dim td.stk{opacity:1}
+body.focus-on .tbl tr[data-top]:not([data-top="한투"]) td.stk::after,.tbl tr.dim td.stk::after{content:'';position:absolute;inset:0;background:rgba(255,255,255,.6);pointer-events:none}.flow-tb{margin:8px 0 4px}.flow-tb summary{cursor:pointer;font-size:13px;color:var(--ink-2);padding:4px 0}.flow-tb[open] summary{margin-bottom:6px}
 .th-bar .seg button{padding:6px 12px;font-size:13px}
 .th-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 0;font-size:12px;color:var(--ink-2)}
 .th-lg{display:inline-flex;align-items:center}
