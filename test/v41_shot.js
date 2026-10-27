@@ -27,7 +27,7 @@ const OUT = __dirname + '/shots_v41';
     });
     // ① 탭 이름·제목
     const tabs = await p.evaluate(() => [...document.querySelectorAll('#tabs .tab')].map(t => t.textContent.trim()));
-    check('탭 이름 짧게: 개관·상위 5개사·신규상장', tabs.includes('개관') && tabs.includes('상위 5개사') && tabs.includes('신규상장') && !tabs.some(t => /ETF 시장 개관|시장 유형 비중|신규상장 ETF/.test(t)), tabs.join(' · '));
+    check('탭 이름 짧게: 시장(v49)·상위 5개사·신규상장', tabs.includes('시장') && tabs.includes('상위 5개사') && tabs.includes('신규상장') && !tabs.some(t => /ETF 시장 개관|시장 유형 비중|신규상장 ETF/.test(t)), tabs.join(' · '));
     if (name === 'gas') {
       const hd = await p.evaluate(() => { const t = document.getElementById('tabs'), first = t.querySelector('.tab'), last = [...t.querySelectorAll('.tab')].pop(), v = document.querySelector('#view > .head'); return { rows: Math.round((last.getBoundingClientRect().top - first.getBoundingClientRect().top) / first.offsetHeight) + 1, hdr: document.querySelector('.hdr-wrap').offsetHeight, top: v ? Math.round(v.getBoundingClientRect().top) : -1, viewW: Math.round(document.getElementById('view').getBoundingClientRect().width), mainW: Math.round(document.querySelector('main').getBoundingClientRect().width) }; });
       check('Apps Script 머리: 탭 한 줄 · 머리 높이 150px 이하 · 본문 시작이 화면 위 1/4 안', hd.rows === 1 && hd.hdr <= 150 && hd.top > 0 && hd.top <= 751 / 4, hd);
@@ -52,7 +52,7 @@ const OUT = __dirname + '/shots_v41';
       if (id === 'overview') {
         const ix = h.cards.filter(c => /KOSPI|S&P500|NASDAQ100/.test(c.k));
         check('개관: 지수 카드 아래 줄 = 지수 자체 전월 대비(ETF 총 NAV 반복 없음)', ix.length >= 1 && ix.every(c => /^전월 대비 [+-]?[\d.]+%$|^기준일 종가$/.test(c.l2)), ix.map(c => c.k + ':' + c.l2).join(' · '));
-        if (name === 'web') check('웹 상단 제목 = 전체 이름(ETF 시장 개관)', await p.evaluate(() => document.getElementById('topTitle').textContent) === 'ETF 시장 개관');
+        if (name === 'web') check('웹 상단 제목 = 전체 이름(v49 ETF 시장)', await p.evaluate(() => document.getElementById('topTitle').textContent) === 'ETF 시장');
       }
       if (id === 'mgr') {
         check('운용사별: (v44) 결론 두 줄(한투 M/S · 순위) + 운용사 카드 5개', h.lines.length === 2 && /한투 M\/S/.test(h.lines[0]) && /상위 5개사 중 \d위/.test(h.lines[1]) && h.cards.length === 5, h.lines.join(' / '));
