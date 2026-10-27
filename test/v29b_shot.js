@@ -30,7 +30,7 @@ const INTERNAL = /범례_|유형최종|신규상장용|ETF마스터|agg_|raw_|�
       let s = await snap();
       if (vw === 1440) {
         console.log('     탭: ' + s.tabs.join(' · ') + '\n     섹션: ' + s.titles.join(' / ') + '\n     타일: ' + s.tiles.join(' ‖ ') + (name === 'web' ? '\n     카드: ' + s.cards.join(' ‖ ') : ''));
-        check('탭: 테마 맵 다음에 종목→ETF 찾기·관심도(수집 뒤 표시)', s.tabs.slice(-3).join('|') === '테마 맵|종목→ETF 찾기|관심도' && /종목→ETF 찾기/.test(s.active), s.tabs.slice(-3).join('|'));
+        check('탭: 테마 맵 다음에 종목→ETF 찾기·관심도(수집 뒤 표시)', s.tabs.slice(-3).join('|') === '테마 맵|종목→ETF 찾기|관심도 (베타)' && /종목→ETF 찾기/.test(s.active), s.tabs.slice(-3).join('|'));
         check('첫 화면: 많이 담은 종목 막대 + 표(순위·종목명·코드·보유 추정·담은 ETF 수)', /많이 담은 종목 상위/.test(s.titles[0]) && s.charts.some(c => /^bar:/.test(c)) && s.t0.head.join('|') === '순위|종목명|종목코드|보유 추정(조원)|담은 ETF 수' && s.t0.rows[0][1] === '삼성전자', s.t0.rows.slice(0, 3).map(r => r[1] + ' ' + r[3]).join(', '));
         check('바로가기 칩(많이 담은 종목)', s.chips.length >= 5 && s.chips[0] === '삼성전자', s.chips.slice(0, 5).join(','));
         // v41: 카드 3개(구성종목 기준일·구성종목 확인 비율·최다 보유 종목) — 두 화면 같음('찾는 방법' 카드 없음)
@@ -76,13 +76,13 @@ const INTERNAL = /범례_|유형최종|신규상장용|ETF마스터|agg_|raw_|�
         console.log('     관심도 섹션: ' + s.titles.join(' / ') + '\n     표: ' + s.t1.head.join(' | ')); s.t1.rows.slice(0, 5).forEach(r => console.log('       ' + r.join(' | ')));
         console.log('     타일: ' + s.tiles.join(' ‖ ') + (name === 'web' ? '\n     문장: ' + s.lede.replace(/\n/g, ' / ') + '\n     카드: ' + s.cards.join(' ‖ ') : ''));
         check('관심도: 변화율 막대·표·상세·새 단어', /검색 관심도 변화/.test(s.titles[0]) && /관심도 · NAV/.test(s.titles[1]) && /상세 — /.test(s.titles[2]) && /자주 나온 단어/.test(s.titles[3]), s.titles.join(' / '));
-        check('표 머리글: 검색어·최근 4주·변화·최근 7일·NAV 조원·증감·점유율·상품 수·구분', ['검색어', '최근 4주', '변화', '최근 7일', '조원', '증감', '점유율', '상품 수', '구분'].every(h => s.t1.head.indexOf(h) >= 0), s.t1.head.join('|'));
+        check('표 머리글: 검색어·최근 4주·변화(보정)·최근 7일·NAV 조원·증감·점유율·상품 수·구분', ['검색어', '최근 4주', '변화(보정)', '최근 7일', '조원', '증감', '점유율', '상품 수', '구분'].every(h => s.t1.head.indexOf(h) >= 0), s.t1.head.join('|'));
         const bz = await p.evaluate(async () => { const b = await App.call('buzz', {}), t = await App.call('theme', { date: App.meta.defaultDate, ref: 'py' }); const Z = bzModel(App, Object.assign({}, b, { th: t }), 'theme');
           const M = themeModel(App, t, { lens: 'theme', asset: 'A', region: '', exLev: false });
           return { sorted: Z.rows.every((r, i) => !i || r.chg === null || Z.rows[i - 1].chg === null || r.chg <= Z.rows[i - 1].chg + 1e-9), navOk: Z.rows.every(r => !r.m || Math.abs(r.m.nav - M.list.find(g => g.key === r.key).nav) < 1),
             opp: Z.rows.every(r => r.opp === (r.chg !== null && r.chg > 0 && (!r.m || r.m.nav <= 0 || r.m.fShare < M.ySplit))), n: Z.rows.length, nOpp: Z.opp.length, words: Z.words.length, newW: Z.newWords.length }; });
         check('검산: 변화율 순 · NAV = 테마 맵(전체 자산) · 기회 후보 판정', bz.sorted && bz.navOk && bz.opp && bz.n > 20, JSON.stringify(bz));
-        check('새 단어 표: 사전에 없는 단어 표시', s.t3.rows.some(r => /새 단어/.test(r[4])) && s.t3.rows.some(r => r[0] === '스테이블코인' && /새 단어/.test(r[4])), s.t3.rows.slice(0, 4).map(r => r.join(' ')).join(', '));
+        check('새 단어 표: 사전에 없는 단어 표시', s.t3.rows.some(r => /새 단어/.test(r[r.length - 1])) && s.t3.rows.some(r => r[0] === '스테이블코인' && /새 단어/.test(r[r.length - 1]))   /* v49: 열 추가(제목 100건당) → 구분 = 마지막 열 */, s.t3.rows.slice(0, 4).map(r => r.join(' ')).join(', '));
         check('상세: 주간 추이 꺾은선', s.charts.some(c => /^line:2[5-7]$/.test(c)), s.charts.join(','));
         if (name === 'web') check('웹 카드 4개·문장', s.cards.length === 4 && /검색 관심 상승 1위/.test(s.lede), s.cards.join(' ‖ '));
         if (name === 'web') check('웹 자료 출처: 네이버', /네이버 데이터랩/.test(s.src[0]), s.src[0]);
