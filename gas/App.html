@@ -215,7 +215,7 @@ const App = {
     const nav = document.createElement('nav'); nav.className = 'toc'; nav.innerHTML = '<span class="toc-l">바로가기</span>';
     secs.forEach(sec => {
       const k = short(sec), b = document.createElement('button'); b.type = 'button'; b.className = 'toc-a'; b.textContent = k; b.title = sec.querySelector('.h2').textContent.trim();
-      b.onclick = () => { const x = sec.isConnected ? sec : list().find(y => short(y) === k); if (!x) return; const hdr = document.querySelector('.hdr-wrap, .top'); window.scrollTo({ top: Math.max(0, x.getBoundingClientRect().top + window.scrollY - (hdr ? hdr.offsetHeight : 0) - 8), behavior: 'smooth' }); };
+      b.onclick = () => { const x = sec.isConnected ? sec : list().find(y => short(y) === k); if (!x) return; if (x._open) x._open(); const hdr = document.querySelector('.hdr-wrap, .top'); window.scrollTo({ top: Math.max(0, x.getBoundingClientRect().top + window.scrollY - (hdr ? hdr.offsetHeight : 0) - 8), behavior: 'smooth' }); };
       nav.appendChild(b);
     });
     const head = view.querySelector(':scope > .head'); view.insertBefore(nav, head ? head.nextSibling : view.firstChild);
@@ -658,6 +658,19 @@ const App = {
     const nt = Array.isArray(note) ? (note.some(Boolean) ? `<div class="note note-lines">${this.lines(note)}</div>` : '') : note ? `<span class="note">${note}</span>` : '';   // v44: 배열 = 한 줄에 하나씩
     s.innerHTML = `<div class="section-h"><h2 class="h2">${title}</h2>${nt}</div>`;
     parent.appendChild(s); return s;
+  },
+  /** v50: 섹션 접기 — 제목 줄 오른쪽 '펼치기/접기' 버튼, 본문(반환값)은 처음 펼칠 때 onOpen(body) 로 그림(접힌 채로는 폭을 잴 수 없는 히트맵 등). 바로가기에서 누르면 펼침(sec._open) */
+  collapse(sec, opts) {
+    opts = opts || {};
+    const h = sec.querySelector('.section-h'), btn = document.createElement('button'), body = document.createElement('div');
+    btn.type = 'button'; btn.className = 'seg-one sec-tg'; body.className = 'sec-body'; sec.appendChild(body); h.appendChild(btn);
+    let drawn = false;
+    const set = open => { body.hidden = !open; sec.classList.toggle('collapsed', !open); btn.textContent = open ? '접기 ▴' : '펼치기 ▾'; btn.setAttribute('aria-expanded', open);
+      if (open && !drawn) { drawn = true; if (opts.onOpen) opts.onOpen(body); } };
+    btn.onclick = () => set(body.hidden);
+    sec._open = () => set(true);
+    set(!!opts.open);
+    return body;
   },
   /** v44: 여러 줄 설명 — 빈 값을 뺀 배열을 한 줄에 하나씩(<span class="nl">). 설명을 '·'로 길게 잇지 않음 */
   lines(arr) { return (Array.isArray(arr) ? arr : [arr]).filter(x => x !== null && x !== undefined && x !== false && x !== '').map(x => `<span class="nl">${x}</span>`).join(''); },
