@@ -80,6 +80,9 @@ body.side-off .inset{margin-left:8px}
 .web .view{padding-top:0;display:flex;flex-direction:column;gap:16px}
 .web .view>.section{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--sh-xs);padding:22px 24px 16px;overflow:hidden}
 .web .view>.section>.section-h{display:flex;flex-direction:column;align-items:flex-start;gap:3px;margin:0 0 20px;padding:0;border:0}
+.web .view>.section>.section-h:has(.sec-tg){flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:center}   /* v50: 접기 버튼은 제목 오른쪽 */
+.web .view>.section.collapsed>.section-h{margin-bottom:0}
+.web .section-h .sec-tg{height:28px;font-size:12px}
 .web .h2{font-size:16px;font-weight:600;letter-spacing:-.2px;line-height:1.35}
 .web .h3{font-size:13.5px;font-weight:600;color:var(--fg);margin-bottom:8px}
 .web .note{font-size:13.5px;color:var(--mut);line-height:1.5}
