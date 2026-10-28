@@ -184,6 +184,10 @@ table.kv{width:100%;border-collapse:collapse;font-size:15px}
 .flow-bar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 22px;margin:4px 0 8px}.flow-bar .chips{margin:0}.flow-rng{flex-direction:row;align-items:center;gap:8px}.flow-rng .seg button{padding:6px 12px;font-size:13px}
 .flow-ct{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;margin:14px 0 2px;font-size:13px;color:var(--ink-2)}.flow-ct b{font-weight:600;color:var(--black)}.flow-ct .u{font-size:12px;color:#898781}.flow-ct .lg{margin-left:auto;font-size:12px;display:inline-flex;align-items:center;gap:4px 6px}.flow-ct .lg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:8px}
 .flow-g2>div{min-width:0}
+/* v50: 섹션 접기(App.collapse) — 제목 줄 오른쪽 버튼, 접힌 동안 제목 줄 아래 여백 없음 */
+.section-h .sec-tg{align-self:center;padding:5px 12px;font-size:12px}
+.section.collapsed>.section-h{margin-bottom:0}
+.mgr-type{margin-bottom:18px}.mgr-type .tbl td small{margin-left:2px}
 /* v47: 오른쪽 고정 열(A.stickRight) — 종목명만 가로 스크롤. 흐림(강조 모드·선택 외 행)은 투명도 대신 흰 덮개(밑에 지나가는 종목명이 비치지 않게) */
 .tbl td.stk,.tbl th.stk{position:sticky;z-index:1;background:#fff}
 .tbl .stk-edge{box-shadow:-10px 0 8px -8px rgba(0,0,0,.14)}
