@@ -52,6 +52,7 @@ const OUT = __dirname + '/shots_v24';
 
     // 유형별
     await p.evaluate(() => App.show('type')); await wait();
+    await p.evaluate(() => { const s = [...document.querySelectorAll('#view > .section')].find(x => /히트맵/.test(x.querySelector('.h2').textContent)); if (s && s._open) s._open(); });   // v50: 히트맵 기본 접힘 → 펼쳐서 점검
     await p.waitForSelector('.tm-cell', { timeout: 60000 }); await p.waitForTimeout(400);
     const ty = await p.evaluate(() => {
       const view = document.getElementById('view'), cv = [...view.querySelectorAll(':scope > .section')][0].querySelectorAll('canvas'), host = view.querySelector('.treemap-host');
