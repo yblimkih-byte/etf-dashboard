@@ -549,70 +549,95 @@ App.registerTab({
 });
 
 /* 3. 유형별 NAV (v24: 폭 제한 · 두 막대를 위아래로 · 히트맵은 유형별 띠 배치, 화면을 그리기 전에 히트맵 자료 요청) */
-/* v50: 운용사별 유형별 M/S — 1~5위(기준일 NAV 순위) + 기타 소계(누르면 개별 운용사). 표 ① 유형별 M/S(기준일, 비교 기준 대비 변동) ② 잔고·전체 M/S(비교 기준 → 기준일)
-   M/S = 그 시장(전체 또는 유형) NAV 중 운용사 NAV 비중. 상위 5개사는 그룹 합계, 나머지는 개별 운용사. 자료 = byType.mgrTypes [{mgr, top, t: {유형: [기준일, 비교 기준]}}] */
-function mgrTypeSection(A, root, d) {
-  const RL = A.refLabel(d), mt = d.mgrTypes, N = 5;
-  const sec = A.section(root, `운용사별 유형별 M/S (${RL} 대비)`, ['M/S = 그 시장(전체·유형) NAV 중 운용사 NAV 비중', `1~${N}위 = 기준일 NAV 순위, 기타는 소계 — 누르면 개별 운용사`]);
-  if (!mt || !mt.length) { A.div(sec, 'empty', '운용사별 유형 자료를 받는 중 — 잠시 뒤 새로고침'); return; }
-  const types = d.rows.map(r => r.type), mk = {}; d.rows.forEach(r => mk[r.type] = [r.nav, r.navPy]);
+/* v51: 유형별 종합표 — '유형별 NAV 및 비중' 표와 v50 '운용사별 유형별 M/S' 표 ①을 하나로 (v50 표 ② 잔고·M/S 변동은 운용사별 NAV 탭과 겹쳐 뺌)
+   열 = 전체 · 상품유형 · 국내/해외. 위 = 시장(잔고 · 비교 기준 대비 증감 · 전월 대비 증감 · 시장 내 비중), 아래 = 운용사별 M/S(1~5위 + 기타 소계, 누르면 개별 운용사)
+   칸 = 위 큰 글자 값, 아래 작은 글자 변동. M/S = 그 열 시장 NAV 중 운용사 NAV 비중(열마다 운용사 합 100%). 굵게 = 그 열 1위(기타 소계 제외)
+   자료 = byType.rows · dom · total/totalPy/totalPm · mgrTypes [{mgr, top, t: {유형: [기준일, 비교 기준]}, d: {국내·해외: [..]}}] */
+function typeMatrix(A, host, d) {
+  const RL = A.refLabel(d), N = 5, mt = d.mgrTypes || [];
+  const pp = v => v === null || v === undefined || isNaN(v) ? '' : A.pct(v, 1).replace('%', '%p');
+  const sm = (t, c) => `<small>${c ? `<span class="${c}">${t}</span>` : t}</small>`;   // 아래 작은 글자(감소 = 빨강)
+  const tot = { nav: d.total, navPy: d.totalPy, share: 100, sharePy: 100, ytd: { amt: d.total - d.totalPy, pct: d.totalPy ? (d.total / d.totalPy - 1) * 100 : null },
+    mom: d.totalPm === null || d.totalPm === undefined ? { amt: null, pct: null } : { amt: d.total - d.totalPm, pct: d.totalPm ? (d.total / d.totalPm - 1) * 100 : null }, all: true };
+  // 열: 시장 자료(m) · 운용사 [기준일, 비교 기준] 꺼내기(get)
+  const C = [{ h: '전체', g: '', m: tot, get: r => [r.nav, r.navPy], sw: '' }]
+    .concat(d.rows.map(m => ({ h: m.type, g: '상품유형', m: m, get: r => r.t[m.type], sw: A.swc(tc(m.type)) })))
+    .concat(d.dom.map(m => ({ h: m.dom, g: '국내/해외', m: m, get: r => (r.d || {})[m.dom], sw: A.swc(DOM_COLORS[m.dom] || '#c4c4cc') })));
+  const msOf = (r, c, i) => { const mk = i ? c.m.navPy : c.m.nav; if (!mk) return null; const x = c.get(r); return (x ? x[i] : 0) / mk * 100; };
+  // 운용사 행: 1~5위(기준일 NAV) + 기타 소계 + 개별(접힘)
+  const m0 = list => list.every(m => m.d);   // 국내/해외 자료가 없는 응답(이전 캐시)이면 '-'
   const mkRow = (name, top, list) => {
-    const t = {}; list.forEach(m => Object.keys(m.t).forEach(k => { const y = t[k] = t[k] || [0, 0]; y[0] += m.t[k][0]; y[1] += m.t[k][1]; }));
-    const o = { mgr: name, top: top, t: t }; o.nav = Object.keys(t).reduce((a, k) => a + t[k][0], 0); o.navPy = Object.keys(t).reduce((a, k) => a + t[k][1], 0);
-    o.ms = d.total ? o.nav / d.total * 100 : null; o.msPy = d.totalPy ? o.navPy / d.totalPy * 100 : null; return o;
+    const t = {}, dd = {}, add = (o, src) => Object.keys(src || {}).forEach(k => { const y = o[k] = o[k] || [0, 0]; y[0] += src[k][0]; y[1] += src[k][1]; });
+    list.forEach(m => { add(t, m.t); add(dd, m.d); });
+    const o = { kind: 'mgr', mgr: name, top: top, t: t, d: m0(list) ? dd : null };
+    o.nav = Object.keys(t).reduce((a, k) => a + t[k][0], 0); o.navPy = Object.keys(t).reduce((a, k) => a + t[k][1], 0); return o;
   };
   const all = mt.map(m => mkRow(m.mgr, m.top, [m])).filter(r => r.nav > 0 || r.navPy > 0).sort((a, b) => b.nav - a.nav || b.navPy - a.navPy);
   all.forEach((r, i) => r.rank = r.nav > 0 ? i + 1 : null);
   const tops = all.slice(0, N), etcs = all.slice(N);
   const etc = mkRow('기타', '기타', etcs); etc.etc = true; etc.n = etcs.length;
   etcs.forEach(r => r.hidden = true);
-  const rows = tops.concat(etcs.length ? [etc] : []).concat(etcs);
-  const pp = v => v === null || v === undefined || isNaN(v) ? '-' : A.pct(v, 1).replace('%', '%p');
-  const tms = (r, t, i) => { const x = r.t[t], m = mk[t]; return m && m[i] ? (x ? x[i] : 0) / m[i] * 100 : null; };
-  const head = [{ h: '순위', f: r => r.etc ? '' : r.rank || '-' },
-    { h: '운용사', f: r => r.etc ? `<span class="fold-btn" aria-expanded="false">▸</span>기타 ${r.n}개사` : (A.meta.colors[r.mgr] ? A.sw(r.mgr) : '') + hdEsc(r.mgr), l: 1 }];
-  const attr = r => (r.etc ? 'class="fold-head"' : r.hidden ? 'class="fold-item" hidden' : '') + ` data-top="${hdEsc(r.top)}"`;
-  const fold = tb => { const fh = tb.querySelector('.fold-head'); if (fh) fh.onclick = () => { const open = fh.classList.toggle('open'), b = fh.querySelector('.fold-btn'); b.textContent = open ? '▾' : '▸'; b.setAttribute('aria-expanded', open); tb.querySelectorAll('.fold-item').forEach(tr => { tr.hidden = !open; }); }; };
-  // ① 유형별 M/S
-  A.sub(sec, `유형별 M/S — 기준일, 작은 글자 = ${RL} 대비 변동`);
-  const G3 = '유형별 M/S';
-  const c1 = head.concat(types.map(t => ({ h: t, g: G3, f: r => { const c = tms(r, t, 0), b = tms(r, t, 1); if (c === null) return '-'; const dv = b === null ? null : c - b, x = r.t[t] || [0, 0];
-    return `<span title="${hdEsc(r.mgr)} · ${t}: ${A.eok(x[0])}조원 (${RL} ${A.eok(x[1])}조원)">${A.share(c)} <small>${dv === null ? '' : `<span class="${A.clsP(dv)}">${pp(dv)}</span>`}</small></span>`; } })));
-  const t1 = { '순위': '', '운용사': '시장 전체' }; types.forEach(t => t1[G3 + '|' + t] = `<span title="${t} 시장 ${A.eok(mk[t][0])}조원 (${RL} ${A.eok(mk[t][1])}조원)">100.0%</span>`);
-  const tb1 = A.div(sec, 'mgr-type', A.table(rows, c1, { compact: true, tools: false, total: t1, attr })); fold(tb1);
-  // ② 잔고·전체 M/S
-  A.sub(sec, `잔고·M/S 변동 — ${RL} → 기준일`);
-  const G1 = '잔고(조원)', G2 = '전체 M/S';
-  const c2 = head.concat([{ h: RL, g: G1, f: r => A.eok(r.navPy) }, { h: '기준일', g: G1, f: r => A.eok(r.nav) }, { h: '증감', g: G1, f: r => A.signed(r.nav - r.navPy), cls: r => A.cls(r.nav - r.navPy) },
-    { h: RL, g: G2, f: r => A.share(r.msPy, 2) }, { h: '기준일', g: G2, f: r => A.share(r.ms, 2) },
-    { h: '변동', g: G2, f: r => r.msPy === null ? '-' : pp(r.ms - r.msPy), cls: r => r.msPy === null ? '' : A.clsP(r.ms - r.msPy) }]);
-  const t2 = { '순위': '', '운용사': '시장 전체', [G1 + '|' + RL]: A.eok(d.totalPy), [G1 + '|기준일']: A.eok(d.total), [G1 + '|증감']: A.signed(d.total - d.totalPy), [G2 + '|' + RL]: '100.00%', [G2 + '|기준일']: '100.00%', [G2 + '|변동']: '' };
-  const tb2 = A.div(sec, 'mgr-type', A.table(rows, c2, { compact: true, tools: false, total: t2, attr })); fold(tb2);
-  A.note(sec, [`잔고 = 순자산총액(NAV). ${RL} ${dlabel(d.ref.py) || '-'}, 기준일 ${dlabel(d.date)}`, '상위 5개사는 그룹 합계, 그 밖은 개별 운용사 (순위도 같은 기준)', '유형별 칸에 마우스를 올리면 그 유형의 운용사 잔고 표시']);
+  const mgrs = tops.concat(etcs.length ? [etc] : []).concat(etcs);
+  // 열마다 1위(기타 소계 제외)
+  const lead = C.map((c, ci) => { let best = null, bv = -1; mgrs.forEach(r => { if (r.etc) return; const v = msOf(r, c, 0); if (v !== null && v > bv) { bv = v; best = r; } }); return best; });
+  const lab = (t, sm) => `${t}${sm ? `<small>${sm}</small>` : ''}`;
+  const mkt = [
+    { kind: 'mkt', key: 'nav', label: lab('잔고', '조원') },
+    { kind: 'mkt', key: 'ytd', label: lab(`${RL} 대비 증감`, '조원 · 증감률') },
+    { kind: 'mkt', key: 'mom', label: lab('전월 대비 증감', '조원 · 증감률') },
+    { kind: 'mkt', key: 'share', label: lab('시장 내 비중', `${RL} 대비 변동`) }].filter(r => !(r.key === 'mom' && d.ref.pm && d.ref.pm === d.ref.py));   // 비교 기준 = 전월말이면 같은 줄 한 번만
+  const sep = { kind: 'lab', label: `운용사별 M/S <small>열마다 그 시장 = 100% · 작은 글자 = ${RL} 대비 변동 · 굵게 = 그 열 1위</small>` };
+  const rows = mkt.concat(mt.length ? [sep] : []).concat(mgrs);
+  const tip = (r, c) => { const x = c.get(r) || [0, 0]; return `${hdEsc(r.mgr)} · ${c.h}: ${A.eok(x[0])}조원 (${RL} ${A.eok(x[1])}조원)`; };
+  const cell = (r, c, ci) => {
+    if (r.kind === 'lab') return '';
+    if (r.kind === 'mkt') {
+      const m = c.m;
+      if (r.key === 'nav') return `<span title="${c.h} 시장 ${RL} ${A.eok(m.navPy)}조원">${A.eok(m.nav)}</span>`;
+      if (r.key === 'ytd' || r.key === 'mom') { const x = m[r.key] || {}; return x.amt === null || x.amt === undefined ? '-' : A.signed(x.amt) + sm(A.pct(x.pct), x.pct === null ? '' : A.clsP(x.pct)); }
+      if (m.all) return '100.0%';
+      const dv = m.sharePy === null || m.sharePy === undefined ? null : m.share - m.sharePy;
+      return A.share(m.share) + sm(pp(dv), dv === null ? '' : A.clsP(dv));
+    }
+    const v = msOf(r, c, 0); if (v === null) return '-';
+    if (c.g === '국내/해외' && !r.d) return '-';
+    const b = msOf(r, c, 1), dv = b === null ? null : v - b, s = A.share(v);
+    return `<span title="${tip(r, c)}">${lead[ci] === r ? `<b>${s}</b>` : s}</span>` + sm(pp(dv), dv === null ? '' : A.clsP(dv));
+  };
+  const ccls = (r, c) => r.kind === 'mkt' && (r.key === 'ytd' || r.key === 'mom') ? A.cls((c.m[r.key] || {}).amt) : '';
+  const cols = [{ h: '구분', l: 1, f: r => {
+      if (r.kind !== 'mgr') return r.label;
+      if (r.etc) return `<span class="fold-btn" aria-expanded="false">▸</span>기타 ${r.n}개사 <small class="mx-in">소계</small>`;
+      return `<span class="mx-rk">${r.rank || '-'}</span>${A.meta.colors[r.mgr] ? A.sw(r.mgr) : ''}${hdEsc(r.mgr)}`; } }]
+    .concat(C.map((c, ci) => ({ h: c.sw + c.h, g: c.g, f: r => cell(r, c, ci), cls: r => ccls(r, c) })));
+  const attr = r => r.kind === 'mkt' ? `class="mx-mkt" data-k="${r.key}"` : r.kind === 'lab' ? 'class="mx-lab"' : (r.etc ? 'class="mx-mgr fold-head"' : r.hidden ? 'class="mx-mgr fold-item" hidden' : 'class="mx-mgr"') + ` data-top="${hdEsc(r.top)}"`;
+  const tb = A.div(host, 'type-mx', A.table(rows, cols, { compact: true, tools: false, attr }));
+  tb.querySelectorAll('tr.mx-lab').forEach(tr => { tr.cells[0].colSpan = tr.cells.length; while (tr.cells.length > 1) tr.deleteCell(1); });   // 구분 줄: 한 칸으로 합침
+  const fh = tb.querySelector('.fold-head');
+  if (fh) fh.onclick = () => { const open = fh.classList.toggle('open'), bt = fh.querySelector('.fold-btn'); bt.textContent = open ? '▾' : '▸'; bt.setAttribute('aria-expanded', open); tb.querySelectorAll('.fold-item').forEach(tr => { tr.hidden = !open; }); };
+  if (!mt.length) A.div(host, 'empty', '운용사별 유형 자료를 받는 중 — 잠시 뒤 새로고침');
+  A.note(host, [`잔고 = 순자산총액(NAV). ${RL} ${dlabel(d.ref.py) || '-'} · 전월 ${dlabel(d.ref.pm) || '-'} · 기준일 ${dlabel(d.date)}`,
+    'M/S = 그 열 시장(전체 · 유형 · 국내/해외) NAV 중 운용사 NAV 비중 — 열마다 운용사 합계 100%',
+    `1~${N}위 = 기준일 전체 NAV 순위 (상위 5개사는 그룹 합계, 그 밖은 개별 운용사) · 기타는 소계 — 누르면 개별 운용사`,
+    '운용사 칸에 마우스를 올리면 그 열의 운용사 잔고 표시']);
+  return tb;
 }
 App.registerTab({
   id: 'type', narrow: true, label: '유형별 NAV', controls: ['date', 'ref'], action: 'byType', params: s => ({ date: s.date, ref: s.ref }),
   prefetch: (s, A) => [['treemap', { date: s.date, ref: s.ref }], ['flows', {}], ['flowTop', { ym: String(s.date || '').slice(0, 7), f2: A.meta.typeOrder[0] }]],   // v43: 설정액 기본 선택(첫 유형)의 설정·해지 상위 ETF
   render(d, root, A) {
-    const RL = A.refLabel(d), G = RL + ' 대비';
-    const s1 = A.section(root, '유형별 NAV 및 비중', [`두 막대 사이 숫자 = ${RL} 대비 증감액, 비중 변동`]);
+    const RL = A.refLabel(d);
+    const s1 = A.section(root, '유형별 NAV·비중 및 운용사별 M/S', [`두 막대 사이 숫자 = ${RL} 대비 증감액, 비중 변동`]);   // v51: 아래 종합표에 운용사별 M/S 포함
     const types = d.rows.map(r => r.type), byT = {}; d.rows.forEach(r => byT[r.type] = r);
     A.sub(s1, '상품유형별');
     twoRowStack(A, A.canvas(s1), d, types, k => byT[k].navPy, k => byT[k].nav, tc, 'paren');
     const doms = d.dom.map(r => r.dom), byD = {}; d.dom.forEach(r => byD[r.dom] = r);
     A.sub(s1, '국내/해외');
     twoRowStack(A, A.canvas(s1), d, doms, k => byD[k].navPy, k => byD[k].nav, k => DOM_COLORS[k] || '#c4c4cc', 'paren');
-    const cols = [
-      { h: '구분', f: r => A.swc(r.type ? tc(r.type) : (DOM_COLORS[r.dom] || '#c4c4cc')) + (r.type || r.dom), l: 1 }, { h: '잔고(조원)', f: r => A.eok(r.nav) },
-      { h: '증감액', g: G, f: r => A.signed(r.ytd.amt), cls: r => A.cls(r.ytd.amt) }, { h: '증감률', g: G, f: r => A.pct(r.ytd.pct), cls: r => A.clsP(r.ytd.pct) },
-      { h: '증감액', g: '전월 대비', f: r => A.signed(r.mom.amt), cls: r => A.cls(r.mom.amt) }, { h: '증감률', g: '전월 대비', f: r => A.pct(r.mom.pct), cls: r => A.clsP(r.mom.pct) },
-      { h: '기준일', g: '비중', f: r => A.share(r.share) }, { h: RL, g: '비중', f: r => A.share(r.sharePy) }, { h: '변동(%p)', g: '비중', f: r => r.sharePy === null ? '-' : A.pct(r.share - r.sharePy).replace('%', '%p'), cls: r => A.clsP(r.share - (r.sharePy || 0)) }
-    ];
-    A.div(s1, '', A.table(d.rows.concat(d.dom), cols, { compact: true, tools: false, attr: r => r === d.dom[0] ? 'class="sep"' : '', total: { '구분': '합계', '잔고(조원)': A.eok(d.total), [G + '|증감액']: A.signed(d.total - d.totalPy), [G + '|증감률']: A.pct(d.totalPy ? (d.total / d.totalPy - 1) * 100 : null), '비중|기준일': '100.0%', ['비중|' + RL]: '100.0%' } }));
+    A.sub(s1, '유형별 종합 — 시장 잔고·증감·비중 · 운용사별 M/S');
+    typeMatrix(A, s1, d);   // v51: 유형별 표 + 운용사별 유형별 M/S 합침
 
     flowSection(A, root, d, 'type');   // v42: 유형별 설정액(자금 유출입)·평가 증감 — 운용사 선택
-
-    mgrTypeSection(A, root, d);   // v50: 운용사별 유형별 M/S(1~5위 + 기타 펼치기) · 잔고·M/S 변동
 
     // v14/v15: 유형 > 운용사 > 개별 ETF 히트맵(트리맵). 넓이 = 기준일 NAV, 색·숫자 = 비교 기준 대비 NAV 증감. v24: 폭이 좁으면 유형을 위아래 띠로
     // v50: 기본 접힘 — 처음 펼칠 때 그림(자료는 선조회로 미리 받아 둠)
