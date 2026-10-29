@@ -48,7 +48,7 @@ const CACHE_GEN_ = 'a26';   // v26: 개별 종목 유형 = 유형최종3 → 이
 function cacheKey_(action, params, P) {
   const h = md5_(stableStr_(params));   // v31: UTF-8(한글 파라미터 캐시 충돌 해소)
   P = P || PropertiesService.getScriptProperties().getProperties();
-  const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : /^flow/.test(action) ? '.f' + (P[PROP.FLOW_VER] || '0') : action === 'buzz' ? '.b45' : action === 'byType' ? '.y50' : '';   // v50: 유형별 NAV 응답에 운용사별 유형 NAV(mgrTypes) 추가   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산 · v42: 설정액은 계산할 때마다 · v45: 관심도 응답 형식 변경(주 위치 맞춤) → 관심도 캐시만 새로
+  const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : /^flow/.test(action) ? '.f' + (P[PROP.FLOW_VER] || '0') : action === 'buzz' ? '.b45' : action === 'byType' ? '.y51' : '';   // v50: 유형별 NAV 응답에 운용사별 유형 NAV(mgrTypes) 추가 · v51: 국내/해외별 NAV·전월 합계 추가   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산 · v42: 설정액은 계산할 때마다 · v45: 관심도 응답 형식 변경(주 위치 맞춤) → 관심도 캐시만 새로
   return CACHE_GEN_ + ':' + verFor_(action, params, P) + tv + ':' + action + ':' + h;
 }
 function stableStr_(p) { p = p || {}; return '{' + Object.keys(p).sort().filter(k => p[k] !== undefined).map(k => JSON.stringify(k) + ':' + JSON.stringify(p[k])).join(',') + '}'; }
@@ -399,10 +399,12 @@ function apiByType_(p) {
   const trend = {};
   aggRows_(CFG.SHEET.AGG_TYPE).forEach(r => { const m = ymstr_(r[0]); if (wanted.indexOf(m) < 0) return; const t = trend[m] = trend[m] || {}; t[String(r[2])] = (t[String(r[2])] || 0) + toNum_(r[4]); });
   // v50: 운용사별 유형별 NAV [기준일, 비교 기준] — 상위 5개사는 그룹, 나머지는 개별 운용사(화면에서 '기타' 소계·펼치기)
+  // v51: 국내/해외별(d)도 같은 형식 — 유형별 종합표의 국내·해외 열 M/S
   const MT = {};
-  [[S, 0], [Py, 1]].forEach(([rs, i]) => rs.forEach(r => { const top = topOf_(r.top), g = top === '기타' ? r.mgr : top; const x = MT[g] = MT[g] || { mgr: g, top: top, t: {} }; const y = x.t[r.f2] = x.t[r.f2] || [0, 0]; y[i] += r.nav; }));
-  const mgrTypes = Object.keys(MT).map(k => { const x = MT[k]; Object.keys(x.t).forEach(t => { x.t[t] = x.t[t].map(Math.round); }); return x; });
-  return { date: date, ref: ref, refLabel: ref.label, total: total, totalPy: totalPy, rows: rows, dom: domRows, mgrTypes: mgrTypes, trend: wanted.filter(m => trend[m]).map(m => Object.assign({ ym: m, isBase: prevYE && m === prevYE.ym }, trend[m])) };
+  [[S, 0], [Py, 1]].forEach(([rs, i]) => rs.forEach(r => { const top = topOf_(r.top), g = top === '기타' ? r.mgr : top; const x = MT[g] = MT[g] || { mgr: g, top: top, t: {}, d: {} }; const y = x.t[r.f2] = x.t[r.f2] || [0, 0]; y[i] += r.nav; const z = x.d[r.dom] = x.d[r.dom] || [0, 0]; z[i] += r.nav; }));
+  const mgrTypes = Object.keys(MT).map(k => { const x = MT[k]; ['t', 'd'].forEach(f => Object.keys(x[f]).forEach(t => { x[f][t] = x[f][t].map(Math.round); })); return x; });
+  const totalPm = ref.pm ? Object.keys(pm).reduce((s, k) => s + pm[k], 0) : null;   // v51: 종합표 '전체' 열의 전월 대비 증감
+  return { date: date, ref: ref, refLabel: ref.label, total: total, totalPy: totalPy, totalPm: totalPm, rows: rows, dom: domRows, mgrTypes: mgrTypes, trend: wanted.filter(m => trend[m]).map(m => Object.assign({ ym: m, isBase: prevYE && m === prevYE.ym }, trend[m])) };
 }
 
 /** 원 → 억원(소수 첫째 자리). v24 큰 응답(히트맵·변천) 축소용 — 화면은 조원 소수 첫째 자리로 표시하므로 정밀도 충분 */

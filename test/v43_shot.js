@@ -96,7 +96,9 @@ const num = t => { const m = String(t || '').replace(/,/g, '').match(/[-+−]?\d
     await p.evaluate(() => App.show('type')); await wait();
     const TT = '유형별 설정액(자금 유출입)';
     s = await sec(TT); [L, B] = s.ch;
-    const tTop = await p.evaluate(() => { const tb = document.querySelector('#view .section table.tbl'); return { rows: [...tb.querySelectorAll('tbody tr:not(.total)')].map(tr => [...tr.children].map(td => td.textContent.trim())), total: [...tb.querySelector('tr.total').children].map(td => td.textContent.trim()) }; });
+    // v51: 유형별 표가 종합표(열 = 전체·유형·국내/해외, 행 = 시장 지표)로 바뀜 → '전년말 대비 증감' 줄에서 [이름, '', 증감액] 형태로 읽음
+    const tTop = await p.evaluate(() => { const tb = document.querySelector('#view .type-mx table.tbl'), hs = [...tb.tHead.rows[tb.tHead.rows.length - 1].cells].map(c => c.textContent.trim()), v = [...tb.querySelector('tr.mx-mkt[data-k="ytd"]').cells].map(td => td.textContent.trim());
+      return { rows: hs.slice(2).map((h, i) => [h, '', v[i + 2]]), total: ['합계', '', v[1]] }; });
     check('유형별 NAV: 유형 칩(전체 유형 + 유형, 기본 국내주식형) · 운용사 칩(시장 전체* + 6) · 그림 2개', !!s && s.chips[0] === '전체 유형' && s.chips.includes('국내주식형*') && s.chips.includes('시장 전체*') && s.chips.length >= 13 && s.ch.length === 2, s && s.chips);
     check('위 = 유형별 누적 선(국내주식형 강조) · 아래 = 국내주식형 월별 막대 · 같은 가로 위치', L.ds.filter(d => d.on).map(d => d.k).join() === '국내주식형' && L.ds.length >= 4 && s.cts[1].indexOf('월별 설정액 — 국내주식형 · 시장 전체') === 0 && L.xs.join() === B.xs.join(), L.ds.map(d => d.k));
     const tt = s.tbls[1], tChg = Object.fromEntries(tTop.rows.map(r => [r[0], num(r[2])]));

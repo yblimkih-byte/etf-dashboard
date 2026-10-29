@@ -142,6 +142,7 @@ body.narrow-tab.web main{max-width:1040px;margin:0 auto;width:100%}
 .web .fold-head:hover td{background:var(--muted-bg)}
 .web .fold-btn{display:inline-block;width:14px;margin-right:4px;font-size:11px;color:var(--mut)}
 .web .fold-item td{color:var(--mut)}
+.web .type-mx .tbl tr.mx-lab td{border-top:1px solid var(--bd);padding-top:14px}.web .type-mx .mx-rk{color:var(--mut)}   /* v51 유형별 종합표 */
 .web .view>.section.sticky-sec{overflow:visible}
 .web .sticky-sec .section-h{position:sticky;top:var(--hdr-h,52px);z-index:5;background:var(--card,#fff);padding-top:6px;margin-bottom:0}
 .web .sticky-chips{position:sticky;top:calc(var(--hdr-h,52px) + var(--sec-h,44px));z-index:5;background:var(--card,#fff);padding:6px 0 2px;border-bottom:1px solid var(--bd);margin-bottom:8px}
@@ -168,6 +169,7 @@ body.narrow-tab.web main{max-width:1040px;margin:0 auto;width:100%}
   .web .tbl td:first-child,.web .tbl th:first-child{position:sticky;left:0;z-index:1}
   .web .tbl td:first-child{background:#fff}
   .web .flow-topt .tbl td:first-child,.web .flow-topt .tbl th:first-child{position:static}   /* v47: 설정·해지 상위 표는 종목명이 스크롤, 오른쪽 3열 고정 */
+  .web .type-mx .tbl tr.mx-lab td small{display:block;margin:2px 0 0;white-space:normal;max-width:calc(100vw - 90px)}   /* v51: 종합표 구분 줄 설명은 화면 폭 안에서 줄바꿈 */
 }
 @media print{.side,.top{display:none}.inset{border:0;box-shadow:none;margin:0}}
 /* v18: 상위 20 M/S 막대·소제목 */
