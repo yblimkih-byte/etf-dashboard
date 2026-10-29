@@ -441,7 +441,7 @@ App.registerTab({
   id: 'overview', narrow: true, label: '시장', title: 'ETF 시장', controls: ['date'], action: 'overview', params: s => ({ date: s.date }),   // v41: 탭 이름 짧게(제목은 title)
   render(d, root, A) {
 
-    const s1 = A.section(root, '연도별 총 NAV 추이', '2021년부터 각 연도 말 기준 (올해는 기준월)');
+    const s1 = A.section(root, '연도별 총 NAV 추이', '2021년부터 각 연도 말 기준 (올해는 기준일)');
     const g1 = A.div(s1, 'grid grid-2');
     A.bar(A.canvas(g1), d.yearly.map(y => y.label), [{ label: '총 NAV', data: d.yearly.map(y => y.nav), color: '#17171c' }],
       { intTicks: true, tickFmt: v => A.eok(v, 0), padTop: true, labels: { mode: 'end', fmt: v => A.eok(v) } });
@@ -450,7 +450,7 @@ App.registerTab({
       { h: '전년대비', f: r => { const i = d.yearly.indexOf(r); return i ? A.pct((r.nav / d.yearly[i - 1].nav - 1) * 100) : '-'; }, cls: r => { const i = d.yearly.indexOf(r); return i && r.nav < d.yearly[i - 1].nav ? 'neg' : ''; } }
     ]));
 
-    const y = d.date.slice(0, 4), M = d.monthly, labels = M.map(m => m.ym);
+    const y = d.date.slice(0, 4), M = d.monthly, labels = M.map(m => m.day ? m.date : m.ym);   // v52: 월 중 기준일이면 마지막 막대 = 기준일(일자 표시)
     const s2 = A.section(root, `${y}년 월별 총 NAV 추이 및 주요 지수 비교`, ['위 선: 전년말을 0%로 놓은 누적 증감률', '아래 막대: 월별 총 NAV(조원)']);
     // (위) 지수 비교 꺾은선 — X축은 아래 막대와 동일, Y축은 별도(%)
     const has = k => M.some(m => m[k] !== null && m[k] !== undefined);
@@ -465,7 +465,7 @@ App.registerTab({
     if (series.length < 4) A.div(s2, 'note', '지수 값이 없는 구간은 표시되지 않음');
     const ytd = (r, k) => r.isBase || r[k] === null || r[k] === undefined ? '-' : A.pct(r[k]);
     A.div(s2, '', A.table(M, [
-      { h: '월', k: 'ym', l: 1 }, { h: 'NAV(조원)', f: r => A.eok(r.nav) }, { h: '종목수', f: r => A.num(r.n) },
+      { h: '월', f: r => r.day ? `${r.ym} <small>(${r.date.slice(5)} 기준)</small>` : r.ym, l: 1 }, { h: 'NAV(조원)', f: r => A.eok(r.nav) }, { h: '종목수', f: r => A.num(r.n) },
       { h: '증감액', g: '연초 대비', f: r => r.isBase ? '-' : A.signed(r.ytd.amt), cls: r => A.cls(r.ytd.amt) }, { h: '증감률', g: '연초 대비', f: r => r.isBase ? '-' : A.pct(r.ytd.pct), cls: r => A.clsP(r.ytd.pct) },
       { h: '증감액', g: '전월 대비', f: r => r.isBase ? '-' : A.signed(r.mom.amt), cls: r => A.cls(r.mom.amt) }, { h: '증감률', g: '전월 대비', f: r => r.isBase ? '-' : A.pct(r.mom.pct), cls: r => A.clsP(r.mom.pct) },
       { h: 'KOSPI', g: '지수 (연초 대비)', f: r => r.k ? A.num(r.k, 2) : '-' }, { h: '연초대비', g: '지수 (연초 대비)', f: r => ytd(r, 'kYtd'), cls: r => A.clsP(r.kYtd) },

@@ -48,7 +48,7 @@ const CACHE_GEN_ = 'a26';   // v26: 개별 종목 유형 = 유형최종3 → 이
 function cacheKey_(action, params, P) {
   const h = md5_(stableStr_(params));   // v31: UTF-8(한글 파라미터 캐시 충돌 해소)
   P = P || PropertiesService.getScriptProperties().getProperties();
-  const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : /^flow/.test(action) ? '.f' + (P[PROP.FLOW_VER] || '0') : action === 'buzz' ? '.b45' : action === 'byType' ? '.y51' : '';   // v50: 유형별 NAV 응답에 운용사별 유형 NAV(mgrTypes) 추가 · v51: 국내/해외별 NAV·전월 합계 추가   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산 · v42: 설정액은 계산할 때마다 · v45: 관심도 응답 형식 변경(주 위치 맞춤) → 관심도 캐시만 새로
+  const tv = action === 'theme' ? '.t' + (P[PROP.THEME_VER] || '0') : /^flow/.test(action) ? '.f' + (P[PROP.FLOW_VER] || '0') : action === 'buzz' ? '.b45' : action === 'byType' ? '.y51' : action === 'overview' ? '.o52' : '';   // v50: 유형별 NAV 응답에 운용사별 유형 NAV(mgrTypes) 추가 · v51: 국내/해외별 NAV·전월 합계 추가 · v52: 시장 개관 — 월 중 기준일 값   // v29: 테마 규칙·기초지수명이 바뀌면 테마 맵만 새로 계산 · v42: 설정액은 계산할 때마다 · v45: 관심도 응답 형식 변경(주 위치 맞춤) → 관심도 캐시만 새로
   return CACHE_GEN_ + ':' + verFor_(action, params, P) + tv + ':' + action + ':' + h;
 }
 function stableStr_(p) { p = p || {}; return '{' + Object.keys(p).sort().filter(k => p[k] !== undefined).map(k => JSON.stringify(k) + ':' + JSON.stringify(p[k])).join(',') + '}'; }
@@ -326,15 +326,18 @@ function apiMeta_() {
 
 /** ETF 시장 개관 */
 function apiOverview_(p) {
-  const months = aggMarket_();
-  const date = p.date || defaultDate_(months);
+  const months0 = aggMarket_();
+  const date = p.date || defaultDate_(months0);
   const ym = ym_(date), y = ym.slice(0, 4);
+  // v52: 기준일이 그 달 집계 일자(그 달 마지막 적재일)와 다르면(월 중 일별 기준일) 그 달 행을 기준일 값(일별 요약 합계·기준일 이하 최근 지수)으로 바꿈
+  //      v51 까지는 그 달 마지막 적재일 값이 나와 '시장'·'요약' 탭에서 기준일을 바꿔도 시장 NAV·종목 수·지수가 그대로였음(전월말 등 월말 일자를 골라야 바뀜)
+  const months = months0.map(m => m.ym === ym && m.date !== date ? marketDay_(m.ym, date) : m);
   // 연도별: 각 연도 12월(없으면 그 해 마지막 월), 당해년도는 기준월
   const yearly = [];
   const years = months.map(m => m.ym.slice(0, 4)).filter((v, i, a) => a.indexOf(v) === i).filter(v => v <= y);
   years.forEach(yy => {
     const rows = months.filter(m => m.ym.slice(0, 4) === yy && (yy < y || m.ym <= ym));
-    if (rows.length) { const r = rows[rows.length - 1]; yearly.push({ label: yy === y ? yy + '.' + ym.slice(5) : yy, ym: r.ym, date: r.date, nav: r.nav, n: r.n, k: r.k, s: r.s, q: r.q }); }
+    if (rows.length) { const r = rows[rows.length - 1]; yearly.push({ label: yy === y ? yy + '.' + ym.slice(5) + (r.day ? '.' + date.slice(8) : '') : yy, ym: r.ym, date: r.date, nav: r.nav, n: r.n, k: r.k, s: r.s, q: r.q, day: !!r.day }); }
   });
   // 당해년도 월별: 전년말(기준점) + 당해년도 각 월
   const prevYE = months.filter(m => m.ym < y + '-01').pop() || null;
@@ -347,6 +350,12 @@ function apiOverview_(p) {
       navYtd: prevYE ? pct(m.nav, prevYE.nav) : null, kYtd: prevYE ? pct(m.k, prevYE.k) : null, sYtd: prevYE ? pct(m.s, prevYE.s) : null, qYtd: prevYE ? pct(m.q, prevYE.q) : null });
   });
   return { date: date, yearly: yearly, monthly: monthly, prevYE: prevYE };
+}
+
+/** v52: 일별 기준일의 시장 행 — agg_시장월별 행과 같은 형식 {ym, date, nav, n, k, s, q} + day 표시. NAV·종목 수 = 일별 요약(snapRows_) 합계, 지수 = 기준일 이하 최근 값 */
+function marketDay_(ym, date) {
+  const S = snapRows_(date), ix = nearestIndex_(indexSeries_(), date);
+  return { ym: ym, date: date, nav: S.reduce((a, r) => a + r.nav, 0), n: S.reduce((a, r) => a + (r.n || 0), 0), k: ix.k || 0, s: ix.s || 0, q: ix.n || 0, day: true };
 }
 
 /** 운용사별 NAV (상위 5개사 + 기타) — 일자별 요약 사용 */
