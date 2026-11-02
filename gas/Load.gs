@@ -76,12 +76,12 @@ function typeLegend_() {
  *  개별 종목 유형 표시(ETF 상세 목록·NAV 상위 20 변천·신규상장·거래대금)에 사용. 유형별 NAV 합계 집계(agg_*·유형별 NAV·운용사별·시장 유형 비중·히트맵)는 유형최종2 유지 */
 function typeF3_(f2, neu) {
   const T = CFG.TYPE_F3;
-  return String(f2 || '').trim() === T.FROM && String(neu || '').trim() === T.NEU ? T.TO : f2;
+  return T.FROM.indexOf(String(f2 || '').trim()) >= 0 && String(neu || '').trim() === T.NEU ? T.TO : f2;   // v53: 파생형·기타(재간접형·특별자산) + 채권/금리 → 채권형
 }
 /** v26: 범례_유형 '유형최종3' 머리글 메모(분류 설명) */
 const TYPE_F3_NOTE = [
-  '유형최종3 (자동 계산 · v26)',
-  '= 유형최종2와 같음. 단, 유형최종2가 \'파생형\'이고 신규상장용이 \'채권/금리\'인 종목(KOFR·CD금리 액티브(합성) 등 금리 추종 상품)은 \'채권형\'으로 분류.',
+  '유형최종3 (자동 계산 · v26, v53 확대)',
+  '= 유형최종2와 같음. 단, 유형최종2가 \'파생형\' 또는 \'기타\'(재간접형·특별자산)이고 신규상장용이 \'채권/금리\'인 종목은 \'채권형\'으로 분류 — KOFR·CD금리 액티브(합성), 미국국채 액티브(H)·iShares 채권·KOFR금리 등.',
   '사용처: 개별 종목 유형 표시 — ETF 상세 탭(종목 목록) · 운용사별 NAV 탭(NAV 상위 20 변천의 유형별 M/S 막대) · 신규상장 ETF 탭(유형별 합계·목록) · 거래대금 탭 목록.',
   '유형별 NAV 합계(유형별 NAV 탭·히트맵 · 운용사별 M/S 변동 요인 · 상위 5개사·시장 유형 비중)는 유형최종2 기준.',
   '갱신: 신규 종목 추가 시·매일 05시대 점검 시 자동. 이 열을 직접 고쳐도 다음 갱신 때 덮어쓰므로, 분류를 바꾸려면 유형최종2·신규상장용을 수정할 것.'
@@ -144,19 +144,64 @@ function mgrFromBrand_(name, ctx) {
   return best ? brands[best] : '';
 }
 
-/** 규칙 기반 유형 부여 → {f1, f2, dom, neu} */
-function inferType_(name, mkt, asset) {
-  const n = String(name || ''), a = String(asset || ''), m = String(mkt || '');
-  const dom = (/해외|글로벌|미국|중국|차이나|일본|인도|유럽|베트남|선진|신흥|S&P|나스닥|NASDAQ|다우|니케이|TOPIX|CSI|항셍|HSCEI|MSCI/i.test(n) || /해외/.test(m)) && !/국내/.test(m) ? '해외' : '국내';
-  let f2;
-  if (/혼합/.test(n) || /혼합/.test(a)) f2 = '혼합채권형';
-  else if (/레버리지|인버스|선물|합성|커버드콜|2X|3X/i.test(n)) f2 = '파생형';
-  else if (/채권|국채|회사채|통안채|금리|KOFR|CD|SOFR|단기자금|머니마켓|MMF|은행채|국고채/i.test(n) || /채권/.test(a)) f2 = '채권형';
-  else if (/원자재|부동산|통화|특별자산/.test(a) || /실물|리츠|달러|엔화|위안|골드|금현물/.test(n)) f2 = '기타';
-  else f2 = (dom === '해외') ? '해외주식형' : '국내주식형';
-  const f1 = f2 === '국내주식형' || f2 === '해외주식형' ? '주식형' : f2 === '채권형' ? '채권형' : '기타';
-  const neu = (f2 === '채권형' || (f2 === '파생형' && /채권|국채|금리|달러|KOFR|CD/i.test(n))) ? '채권/금리' : '주식 등';
-  return { f1: f1, f2: f2, dom: dom, neu: neu };
+/** v53: 신규 종목 유형 자동 분류 — 종목명 규칙(기준안 2026-11-02: 사용자 'ETF 분류 범례'(KOFIA 펀드유형) 2026-07 이전 상장 1,174종목으로 수립, 2026-08~09 상장 24종목으로 검증)
+ *  KRX 정보데이터시스템 기본정보(기초시장·기초자산)는 회원 로그인 의무화로 2026-09-16 이후 조회 실패(HTTP 400) → 쓰지 않음
+ *  위에서부터 처음 맞는 규칙 적용. conf: H 확정 · M 자동(확인 권장) · L 확인필요(이름만으로 주식형/파생상품이 갈리는 유형)
+ *  반환 { t1·t2(세부펀드), t3(펀드유형 KOFIA), t4(유형C), f1(유형최종1), f2(유형최종2), dom, neu(신규상장용), rule, conf } */
+const TYPE_RULE_ = (() => {
+  const BOND = /채권|국채|국고채|통안채|회사채|금융채|은행채|특수채|국공채|여전채|공사채|전단채|머니마켓|단기자금|물가채|WGBI|크레딧|하이일드|\d{2}-\d{2}|만기자동연장|금리/i;
+  return {
+    // 금·은·원자재 상품은 해외(KRX금현물 포함) — v53 사용자 결정
+    COMMODITY: /KRX금|금현물|국제금|(^|\s)(금|은)(액티브|채권혼합|선물)|골드|금은|은선물|구리|원유|WTI|브렌트|농산물|콩선물|팔라듐|탄소배출권|원자재/i,
+    // 국내 우선: 한국 시장 표시가 있으면 해외 단어가 있어도 국내(단 (H)·미국채가 함께 있으면 아님)
+    DOM_FIRST: /코리아|Korea|\sK-|\sK(?=[가-힣])|코스피|코스닥|KRX|\s200(?!\d)|국고채|KOFR|CD\d?금리|소비테마/i,
+    OVERSEAS: /미국|중국|차이나|본토|홍콩|항셍|HSCEI|일본|니케이(?!션)|Nikkei|TOPIX|인도(?!네시아)|Nifty|인도네시아|베트남|VN30|대만|유럽|유로|독일|영국|싱가포르|필리핀|멕시코|러시아|브라질|라틴|아시아|선진국|신흥국|이머징|글로벌|Global|월드|World|ACWI|MSCI|S&P|나스닥|NASDAQ|다우존스|러셀|NYSE|필라델피아|INDXX|SOLACTIVE|FACTSET|CSI|A50|STAR50|과창판|ChiNext|차이넥스트|심천|WTI|원유|금은|골드|구리|은선물|팔라듐|농산물|콩|탄소배출권|달러|엔화|엔선물|위안|SOFR|iShares|하이일드|테슬라|엔비디아|애플|아마존|알파벳|구글|팔란티어|알리바바|샤오미|BYD|버크셔|일라이릴리|샌디스크|브로드컴|마이크로소프트|TSMC|스페이스X|SPCX|빅테크|한중|한미|국제금|\(H\)|합성 H|TDF\d{4}|TRF\d{4}|자산배분|멀티에셋/i,
+    RULES: [
+      ['R01', /TDF\d{4}|TRF(5050|7030)|자산배분|주식분산|iShares/i, '재간접형', 'H'],
+      ['R02', /레버리지|인버스|선물|2X|롱.*숏/i, '파생상품', 'H'],
+      ['R03', /합성/, '파생상품', 'H'],
+      ['R04', /^TIGER .*타겟(데일리|위클리)커버드콜/i, '주식형', 'M'],
+      ['R05', /커버드콜|버퍼\d*월|목표헤지|변동성확대/, '파생상품', 'M'],
+      ['R06', /금현물|실물|국제금/, '특별자산', 'H'],
+      ['R07', /(^|\s)(금|은)(액티브|채권혼합)/, '재간접형', 'L'],
+      ['R08', /리츠.*\(H\)|\(H\).*리츠/, '파생상품', 'M'],
+      ['R09', /채권혼합|국채혼합|미국채혼합|우선증권|TIF|TRF3070/i, '혼합채권형', 'H'],
+      ['R10', /리츠|부동산|리얼티/, '부동산', 'M'],
+      ['R11', BOND, '채권형', 'H'],
+      ['R12', /엔화노출/, '파생상품', 'M']
+    ],
+    // 이름만으로는 주식형/파생상품(스왑·선물 운용) 등록이 갈리는 해외 지수 → 주식형으로 두고 확인필요
+    AMBIG: /CSI|A50|본토|ChiNext|STAR50|과창판|심천|인도(?!네시아)|Nifty|니케이(?!션)|Nikkei|TOPIX|\(H\)|SOLACTIVE|FACTSET|INDXX|유로스탁스|러셀|글로벌.*액티브/i,
+    BONDLIKE: new RegExp(BOND.source + '|KOFR|CD\\d?|SOFR|달러선물|엔선물', 'i')
+  };
+})();
+function typeDom_(n) {
+  const T = TYPE_RULE_;
+  if (T.COMMODITY.test(n) || /한중|한미|한국대만/.test(n)) return '해외';
+  if (T.DOM_FIRST.test(n) && !/\(H\)|미국채|미국국채/.test(n)) return '국내';
+  return T.OVERSEAS.test(n) ? '해외' : '국내';
+}
+function inferType_(name) {
+  const T = TYPE_RULE_, n = String(name || '').trim();
+  let hit = T.RULES.find(x => x[1].test(n)), t3, rule, conf;
+  if (hit) { t3 = hit[2]; rule = hit[0]; conf = hit[3]; }
+  else if (T.AMBIG.test(n) && typeDom_(n) === '해외') { t3 = '주식형'; rule = 'R13'; conf = 'L'; }
+  else { t3 = '주식형'; rule = 'R14'; conf = 'H'; }
+  let dom = typeDom_(n);
+  if (t3 === '재간접형' && dom === '국내' && !T.DOM_FIRST.test(n) && !/리츠|부동산/.test(n)) dom = '해외';   // 재간접형은 해외 ETF 편입이 대부분(코리아 TDF 등 국내 표시는 국내)
+  const t2 = t3 === '주식형' ? dom + '주식형' : t3 === '파생상품' ? '파생형' : t3;
+  const f2 = ['국내주식형', '해외주식형', '채권형', '파생형', '혼합채권형'].indexOf(t2) >= 0 ? t2 : '기타';
+  const t4 = { '국내주식형': ' - 국내주식형', '해외주식형': ' - 해외주식형', '파생형': ' - 파생 등', '채권형': '채권', '혼합채권형': '혼합형', '혼합자산': '혼합형' }[t2] || '기타';
+  const f1 = t3 === '주식형' || t3 === '채권형' ? t3 : '기타';
+  let neu;   // 신규상장용(채권제외)
+  if (t3 === '채권형') neu = '채권/금리';
+  else if (['주식형', '혼합채권형', '부동산', '혼합자산'].indexOf(t3) >= 0) neu = '주식 등';
+  else if (/레버리지|인버스|2X/i.test(n)) neu = '주식 등';                                   // 배수·역방향 상품은 기초가 채권·통화여도 주식 등
+  else if (/커버드콜/.test(n)) neu = /\d+년국채(타겟)?커버드콜/.test(n) ? '채권/금리' : '주식 등';   // 국채만 담은 커버드콜 → 채권/금리, 주식 + 미국채 → 주식 등
+  else if (/채권혼합|미국채혼합|국채혼합/.test(n)) neu = '주식 등';
+  else neu = T.BONDLIKE.test(n) ? '채권/금리' : '주식 등';
+  return { t1: t2, t2: t2, t3: t3, t4: t4, f1: f1, f2: f2, dom: dom, neu: neu, rule: rule, conf: conf,
+           check: (conf === 'L' ? '확인필요(' : '자동 분류(') + rule + ')' };
 }
 
 /**
@@ -199,10 +244,11 @@ function ensureMaster_(records, ctx, asOf) {
     mRows.push(row);
 
     if (!types[r.code]) {
-      const t = inferType_(r.name, b ? b.mkt : '', b ? b.asset : '');
+      const t = inferType_(r.name);   // v53: 종목명 규칙(기초시장·기초자산 미사용)
       types[r.code] = { name: r.name, listDd: listDd, f1: t.f1, f2: t.f2, f3: typeF3_(t.f2, t.neu), dom: t.dom, neu: t.neu };
       // 범례_유형 컬럼: 종목코드/ETF명/설정일/유형1/유형2/유형3/유형4/유형최종1/유형최종2/국내해외/신규상장용/확인필요 (+ v26 유형최종3, 머리글명으로 찾은 열)
-      tRows.push([r.code, r.name, listDd, t.f2, t.f2, t.f1, '', t.f1, t.f2, t.dom, t.neu, '확인필요']);
+      // v53: 사용자 파일과 같은 형식(유형3 = KOFIA 펀드유형, 유형4 = 유형C). 확인필요 열 = '확인필요(R13)'(이름만으로 판정 불가) 또는 '자동 분류(R11)'
+      tRows.push([r.code, r.name, listDd, t.t1, t.t2, t.t3, t.t4, t.f1, t.f2, t.dom, t.neu, t.check]);
     }
     if (!entry && webMgr && !mgrs[webMgr]) {   // 범례에 없는 새 운용사 → 상위 '기타' 로 추가 (사용자 검토)
       const short = webMgr.replace(/자산운용|투자신탁운용|에셋/g, '') || webMgr;

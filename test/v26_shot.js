@@ -89,7 +89,7 @@ const OUT = __dirname + '/shots_v26';
     tp.listTypes = await p.evaluate(() => [...document.querySelectorAll('#view table.tbl tbody tr')].filter(tr => /KOFR|CD금리/.test(tr.textContent)).map(tr => tr.textContent).slice(0, 3));
     console.log('     ' + tp.bars.map(x => x.l + ': ' + x.segs.join(', ')).join('\n     '));
     const RAW = /범례|유형최종|신규상장용|시트/;   // v28: 화면에 내부 시트·열 이름 금지
-    check('변천(운용사별 NAV 탭): 유형별 M/S 막대 바로 아래 주석(내부 용어 없음)', tp.after && !RAW.test(tp.note) && /채권·금리를 기초로 하는 합성\(파생\) 상품/.test(tp.note) && /채권형으로 분류/.test(tp.note), tp.note);
+    check('변천(운용사별 NAV 탭): 유형별 M/S 막대 바로 아래 주석(내부 용어 없음)', tp.after && !RAW.test(tp.note) && /채권·금리를 기초로 하는 합성\(파생\)(·재간접)? 상품/.test(tp.note)   /* v53: 재간접 포함 */ && /채권형으로 분류/.test(tp.note), tp.note);
     check('ETF 상세 목록: 금리 합성 종목 유형 = 채권형', tp.listTypes.length > 0 && tp.listTypes.every(t => /채권형/.test(t) && !/파생형/.test(t)), tp.listTypes.length + '종목');
     await p.screenshot({ path: `${OUT}/${name}_top.png`, fullPage: false });
 

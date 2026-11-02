@@ -224,6 +224,9 @@ function fullAggFinished_(hash) {
   props.deleteProperty(PROP.FULL_AGG);
   clearTriggers_('cont_fullAgg');
   try { if (flowReady_() && !flowBusy_() && ss_().getSheetByName(CFG.SHEET.FLOW_ETF)) { flowSummary_(); props.setProperty(PROP.FLOW_VER, String(Date.now())); } } catch (e) { log_('설정액 요약 다시 쓰기 실패: ' + e.message, 'WARN'); }   // v42: 범례(운용사·유형) 변경 반영
+  // v53: agg_일별요약(2026 일별 기준일 화면 — 유형별·운용사별 NAV 등의 원천)도 처음부터 다시 씀. 이전에는 적재 때 기록한 분류가 남아
+  //      범례_유형 수정이 일별 기준일 화면에 반영되지 않았음(예: 0254C0 수기 수정 뒤에도 10월 기준일 유형별 NAV 에서 국내주식형)
+  try { props.deleteProperty(PROP.SNAP_CURSOR); scheduleContinue_('rebuildDailySummary', 1); log_('일별 요약 재작성 예약(범례 반영)'); } catch (e) { log_('일별 요약 재작성 예약 실패: ' + e.message, 'WARN'); }
 }
 
 /** 전체 재계산 예약(분할 실행). 이미 진행 중이면 예약만 확인. 오늘 중단된 적이 있으면 예약하지 않음(내일 야간 점검·메뉴로) → 반환 true/false */

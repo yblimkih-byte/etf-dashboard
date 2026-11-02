@@ -151,11 +151,11 @@ function notify_(msg) {
 // ─────────────────────────── README 시트 (v18) ───────────────────────────
 
 const README = {
-  SHEET: 'README', VER: 'v51',
+  SHEET: 'README', VER: 'v53',
   /* [시트명, 구분, 내용·주요 열, 갱신 방식, 사용하는 대시보드 탭] */
   SHEETS: [
     ['README', '안내', '이 시트. 시트별 역할과 대시보드 탭별 원천 설명', '메뉴 [ETF Dashboard] › README 시트 갱신 (코드 변경 시 자동 1회)', '-'],
-    ['범례_유형', '사용자 작성 (자동 보강)', '종목코드 · ETF명 · 설정일 · 유형1~4 · 유형최종1 · 유형최종2 · 국내해외 · 신규상장용 · 확인필요 · 유형최종3(v26 자동 계산: 유형최종2, 단 파생형 중 신규상장용 채권/금리 → 채권형. 머리글 메모에 설명)', '사용자 관리. 신규 종목은 적재 시 규칙 기반 유형으로 자동 추가되고 확인필요 표시됨. 유형최종3은 신규 종목 추가·매일 05시대 점검 시 자동 갱신(직접 수정 대신 유형최종2·신규상장용 수정)', '유형최종2: 유형별 NAV(히트맵 포함) · 운용사별 M/S 변동 요인 · 상위 5개사·시장 유형 비중 — 유형별 NAV 합계 기준 / 유형최종3: 상위 ETF(목록 유형, 변천의 유형별 M/S 막대) · 신규상장 ETF(유형별 합계·목록) · 거래대금 목록 — 개별 종목 유형 표시 / 신규상장용: 채권/금리 구분(변천 회색·신규상장 채권/금리 제외)'],
+    ['범례_유형', '사용자 작성 (자동 보강)', '종목코드 · ETF명 · 설정일 · 유형1~4 · 유형최종1 · 유형최종2 · 국내해외 · 신규상장용 · 확인필요 · 유형최종3(v26 자동 계산: 유형최종2, 단 파생형·기타(v53 재간접형·특별자산 추가) 중 신규상장용 채권/금리 → 채권형. 머리글 메모에 설명)', '사용자 관리. 신규 종목은 적재 시 종목명 규칙(v53 기준안 R01~R14)으로 자동 추가 — 확인필요 열: 확인필요(R13 등, 이름만으로 판정 불가 → 확인 후 수정) / 자동 분류(R11 등) / 수기 수정 / 확인 완료 / 공란(사용자 파일). 범례를 고치면 다음 날 05시대 점검(또는 메뉴 집계 재계산)이 월별 집계와 일별 요약을 모두 다시 씀. 유형최종3은 신규 종목 추가·매일 05시대 점검 시 자동 갱신(직접 수정 대신 유형최종2·신규상장용 수정)', '유형최종2: 유형별 NAV(히트맵 포함) · 운용사별 M/S 변동 요인 · 상위 5개사·시장 유형 비중 — 유형별 NAV 합계 기준 / 유형최종3: 상위 ETF(목록 유형, 변천의 유형별 M/S 막대) · 신규상장 ETF(유형별 합계·목록) · 거래대금 목록 — 개별 종목 유형 표시 / 신규상장용: 채권/금리 구분(변천 회색·신규상장 채권/금리 제외)'],
     ['범례_운용사', '사용자 작성 (자동 보강)', '운용사명 · 브랜드 · 약식_한글 · 약식_정식 · 약식_상위 · 운용사명_상위', '사용자 관리. 처음 보는 운용사는 적재 시 자동 추가됨', '전 탭 — 운용사 약식명, 상위 5개사(삼성·미래·KB·한투·신한)/기타 구분과 고유색, 개별 운용사 선택 목록'],
     ['ETF마스터', '자동 적재', '종목코드 · 종목명 · 운용사명 · 브랜드 · 상장일 · 기초시장 · 기초자산 · 출처 · 기초지수(v29: KRX 기초지수명)', '일별 적재 시 신규 종목 추가·기초지수명 갱신. 메뉴 운용사 보정·상장일 보정·기초지수명 채우기로 보완', '전 탭(운용사 매칭) · 신규상장 ETF(상장일) · 유형별 NAV 히트맵(상장일 이후 증감) · 테마 맵(기초지수명으로 테마 분류)'],
     ['범례_테마', '사용자 수정 (v29, 없으면 기본 규칙으로 생성)', '순서 · 구분(상품구조/테마/지역) · 값 · 테마군 · 자산(전체/주식/채권) · 키워드 · 제외 키워드 · 찾는 곳(종목명/종목명·기초지수) · 메모 · 관심도 검색어. 구분별로 순서가 작은 행부터 검사해 처음 맞는 값 적용(키워드 문법은 키워드 머리글 메모)', '사용자 관리. 고친 뒤 메뉴 테마 분류 검수표 실행 → 화면 즉시 반영(야간 점검도 변경 감지)', '테마 맵(테마·상품구조·지역 분류) · 관심도(관심도 검색어)'],
@@ -262,4 +262,138 @@ function writeReadme() {
   ss.setActiveSheet(sh); ss.moveActiveSheet(1);
   PropertiesService.getScriptProperties().setProperty(PROP.README_VER, R.VER);
   log_('README 시트 갱신 (' + sheetRows.length + '개 시트, ' + tabRows.length + '개 탭)');
+}
+
+// ─────────────────────────── v53: 범례_유형 정비(2026-11-02 사용자 Q&A 결정) ───────────────────────────
+/** 열 이름: T1~T4 유형1~4 · F1 유형최종1 · F2 유형최종2 · DOM 국내해외 · NEW 신규상장용 · CHECK 확인필요
+ *  Q1·Q2 TIGER 달러선물 레버리지·인버스2X·일본엔선물 → 해외 / Q3 KODEX 국채선물10년인버스 → 주식 등(레버리지·인버스 원칙) / Q4 KODEX SOFR → 채권/금리
+ *  Q5 국채 커버드콜 → 채권/금리 / Q6 금·은·원자재 → 해외(KRX금현물 포함) / Q7 #N/A 2건 → 주식 등 / Q8 PLUS 은채권혼합 유형1 → 혼합채권형
+ *  Q11 만기매칭 채권 3종 → 채권형 / Q12 456100 → 해외 / Q13 9월 상장 13종 → 사용자 파일 값(확인필요 해제)
+ *  Q14·Q15 10월 상장 14종 확정(FOCUS 스페이스X밸류체인 → 해외주식형) / 0254C0 수기 수정 값을 같은 형식으로 정리 */
+const LEGEND_FIX_53 = {
+  "261110": {"DOM": "해외"},
+  "261120": {"DOM": "해외"},
+  "292560": {"DOM": "해외"},
+  "0189B0": {"DOM": "해외"},
+  "0184N0": {"DOM": "해외", "T1": "혼합채권형"},
+  "411060": {"DOM": "해외"},
+  "0072R0": {"DOM": "해외"},
+  "176950": {"NEW": "주식 등"},
+  "455030": {"NEW": "채권/금리"},
+  "472830": {"NEW": "채권/금리"},
+  "473330": {"NEW": "채권/금리"},
+  "394350": {"NEW": "주식 등"},
+  "426330": {"NEW": "주식 등"},
+  "447780": {"T1": "채권형", "T2": "채권형", "T3": "채권형", "T4": "채권", "F1": "채권형", "F2": "채권형", "DOM": "국내", "NEW": "채권/금리", "CHECK": "수기 수정"},
+  "470260": {"T1": "채권형", "T2": "채권형", "T3": "채권형", "T4": "채권", "F1": "채권형", "F2": "채권형", "DOM": "국내", "NEW": "채권/금리", "CHECK": "수기 수정"},
+  "494900": {"T1": "채권형", "T2": "채권형", "T3": "채권형", "T4": "채권", "F1": "채권형", "F2": "채권형", "DOM": "국내", "NEW": "채권/금리", "CHECK": "수기 수정"},
+  "456100": {"DOM": "해외", "CHECK": "수기 수정"},
+  "0234N0": {"T1": "국내주식형", "T2": "국내주식형", "T3": "주식형", "T4": " - 국내주식형", "F1": "주식형", "F2": "국내주식형", "DOM": "국내", "NEW": "주식 등", "CHECK": ""},
+  "0232A0": {"T1": "채권형", "T2": "채권형", "T3": "채권형", "T4": "채권", "F1": "채권형", "F2": "채권형", "DOM": "국내", "NEW": "채권/금리", "CHECK": ""},
+  "0233N0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": ""},
+  "0229F0": {"T1": "국내주식형", "T2": "국내주식형", "T3": "주식형", "T4": " - 국내주식형", "F1": "주식형", "F2": "국내주식형", "DOM": "국내", "NEW": "주식 등", "CHECK": ""},
+  "0238P0": {"T1": "혼합채권형", "T2": "혼합채권형", "T3": "혼합채권형", "T4": "혼합형", "F1": "기타", "F2": "혼합채권형", "DOM": "해외", "NEW": "주식 등", "CHECK": ""},
+  "0227L0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": ""},
+  "0238F0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": ""},
+  "0239Z0": {"T1": "국내주식형", "T2": "국내주식형", "T3": "주식형", "T4": " - 국내주식형", "F1": "주식형", "F2": "국내주식형", "DOM": "국내", "NEW": "주식 등", "CHECK": ""},
+  "0239Y0": {"T1": "국내주식형", "T2": "국내주식형", "T3": "주식형", "T4": " - 국내주식형", "F1": "주식형", "F2": "국내주식형", "DOM": "국내", "NEW": "주식 등", "CHECK": ""},
+  "0238C0": {"T1": "혼합채권형", "T2": "혼합채권형", "T3": "혼합채권형", "T4": "혼합형", "F1": "기타", "F2": "혼합채권형", "DOM": "해외", "NEW": "주식 등", "CHECK": ""},
+  "0240J0": {"T1": "국내주식형", "T2": "국내주식형", "T3": "주식형", "T4": " - 국내주식형", "F1": "주식형", "F2": "국내주식형", "DOM": "국내", "NEW": "주식 등", "CHECK": ""},
+  "0241R0": {"T1": "국내주식형", "T2": "국내주식형", "T3": "주식형", "T4": " - 국내주식형", "F1": "주식형", "F2": "국내주식형", "DOM": "국내", "NEW": "주식 등", "CHECK": ""},
+  "0242S0": {"T1": "국내주식형", "T2": "국내주식형", "T3": "주식형", "T4": " - 국내주식형", "F1": "주식형", "F2": "국내주식형", "DOM": "국내", "NEW": "주식 등", "CHECK": ""},
+  "0246X0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0254W0": {"T1": "채권형", "T2": "채권형", "T3": "채권형", "T4": "채권", "F1": "채권형", "F2": "채권형", "DOM": "국내", "NEW": "채권/금리", "CHECK": "확인 완료"},
+  "0243M0": {"T1": "국내주식형", "T2": "국내주식형", "T3": "주식형", "T4": " - 국내주식형", "F1": "주식형", "F2": "국내주식형", "DOM": "국내", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0247S0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0241D0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0256C0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0252V0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0254S0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0254H0": {"T1": "국내주식형", "T2": "국내주식형", "T3": "주식형", "T4": " - 국내주식형", "F1": "주식형", "F2": "국내주식형", "DOM": "국내", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0255E0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0236J0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0258B0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0255D0": {"T1": "해외주식형", "T2": "해외주식형", "T3": "주식형", "T4": " - 해외주식형", "F1": "주식형", "F2": "해외주식형", "DOM": "해외", "NEW": "주식 등", "CHECK": "수기 수정"},
+  "0252P0": {"T1": "혼합채권형", "T2": "혼합채권형", "T3": "혼합채권형", "T4": "혼합형", "F1": "기타", "F2": "혼합채권형", "DOM": "국내", "NEW": "주식 등", "CHECK": "확인 완료"},
+  "0254C0": {"T1": "채권형", "T2": "채권형", "T3": "채권형", "T4": "채권", "F1": "채권형", "F2": "채권형", "DOM": "국내", "NEW": "채권/금리", "CHECK": "수기 수정"}
+};
+/** 1회 실행(편집기): LEGEND_FIX_53 + 이름이 금·은·원자재인 행의 국내해외 → 해외. 같은 값이면 건너뜀(다시 실행해도 결과 같음) */
+function applyLegendFix53() {
+  const sh = sheet_(CFG.SHEET.TYPE_LEGEND), C = CFG.TYPE_COL, lr = sh.getLastRow();
+  const vals = sh.getRange(2, 1, lr - 1, C.CHECK + 1).getValues(), pos = {};
+  vals.forEach((r, i) => { const c = padCode_(r[C.CODE]); if (c && pos[c] === undefined) pos[c] = i; });
+  const fix = JSON.parse(JSON.stringify(LEGEND_FIX_53));
+  vals.forEach(r => { const c = padCode_(r[C.CODE]); if (c && TYPE_RULE_.COMMODITY.test(String(r[C.NAME])) && String(r[C.DOM]).trim() !== '해외') (fix[c] = fix[c] || {}).DOM = '해외'; });
+  const out = [], miss = [];
+  Object.keys(fix).forEach(code => {
+    const i = pos[code]; if (i === undefined) { miss.push(code); return; }
+    Object.keys(fix[code]).forEach(k => {
+      const col = C[k], old = vals[i][col], nv = fix[code][k];
+      if (String(old) !== String(nv)) { sh.getRange(i + 2, col + 1).setValue(nv); out.push(code + ' ' + vals[i][C.NAME] + ' ' + k + ': ' + old + ' → ' + nv); }
+    });
+  });
+  const n = syncTypeF3_();
+  log_('v53 범례_유형 반영: ' + out.length + '칸 · ' + Object.keys(fix).length + '종목' + (miss.length ? ' · 시트에 없는 종목 ' + miss.join(',') : '') + ' · 유형최종3 ' + n + '행');
+  for (let i = 0; i < out.length; i += 40) console.log(out.slice(i, i + 40).join('\n'));
+  return { cells: out.length, codes: Object.keys(fix).length, miss: miss };
+}
+/** 읽기 전용(편집기): 확인필요 행(과거 자동 추가분)을 v53 규칙으로 다시 판정해 유형최종2·국내해외·신규상장용이 다른 행 목록 → Q&A(A16) */
+function reviewLegend53() {
+  const sh = sheet_(CFG.SHEET.TYPE_LEGEND), C = CFG.TYPE_COL, lr = sh.getLastRow();
+  const vals = sh.getRange(2, 1, lr - 1, C.CHECK + 1).getValues();
+  const rows = vals.filter(r => String(r[C.CHECK]).trim() === '확인필요');
+  const diff = rows.map(r => { const t = inferType_(r[C.NAME]), cur = [r[C.F2], r[C.DOM], r[C.NEW]].map(x => String(x).trim()), nw = [t.f2, t.dom, t.neu];
+    return cur.join('/') === nw.join('/') ? null : [padCode_(r[C.CODE]), String(r[C.NAME]).trim(), cur.join('/'), nw.join('/'), t.rule + t.conf].join(' | '); }).filter(Boolean);
+  console.log('REVIEW 확인필요 ' + rows.length + '행 · 다름 ' + diff.length + '행');
+  for (let i = 0; i < diff.length; i += 30) console.log('REVIEW\n' + diff.slice(i, i + 30).join('\n'));
+  return { rows: rows.length, diff: diff.length };
+}
+
+// ─────────────────────────── v53 후속: 과거 자동 추가분(확인필요 행) 정리 — 2026-11-02 Q&A A19~A24 ───────────────────────────
+/** A19 국채선물 인버스·2X 8종 → 신규상장용 주식 등(레버리지·인버스 원칙) / A20 해외 기초 4종 → 해외 / A22 ARIRANG TDF 3종 → 기타(재간접형)·해외
+ *  A21(315480·467540)·A23(319870) → 지금 값 유지(상장폐지, NAV 원자료 재확인 후 사용자 결정), 확인 완료 / A24 나머지(새 규칙과 같은 행) → '확인 완료' */
+const TDF_53B_ = { T1: '재간접형', T2: '재간접형', T3: '재간접형', T4: '기타', F1: '기타', F2: '기타', DOM: '해외', NEW: '주식 등', CHECK: '수기 수정' };
+const LEGEND_FIX_53B = {
+  '342600': { NEW: '주식 등', CHECK: '수기 수정' }, '342620': { NEW: '주식 등', CHECK: '수기 수정' }, '267500': { NEW: '주식 등', CHECK: '수기 수정' },
+  '299070': { NEW: '주식 등', CHECK: '수기 수정' }, '299080': { NEW: '주식 등', CHECK: '수기 수정' }, '302180': { NEW: '주식 등', CHECK: '수기 수정' },
+  '302170': { NEW: '주식 등', CHECK: '수기 수정' }, '397410': { NEW: '주식 등', CHECK: '수기 수정' },
+  '342140': { DOM: '해외', CHECK: '수기 수정' }, '291660': { DOM: '해외', CHECK: '수기 수정' }, '139310': { DOM: '해외', CHECK: '수기 수정' }, '469580': { DOM: '해외', CHECK: '수기 수정' },
+  '433850': TDF_53B_, '433860': TDF_53B_, '433870': TDF_53B_,
+  '315480': { CHECK: '확인 완료' }, '467540': { CHECK: '확인 완료' }, '319870': { CHECK: '확인 완료' }
+};
+function applyLegendFix53b() {
+  const sh = sheet_(CFG.SHEET.TYPE_LEGEND), C = CFG.TYPE_COL, lr = sh.getLastRow();
+  const vals = sh.getRange(2, 1, lr - 1, C.CHECK + 1).getValues(), pos = {};
+  vals.forEach((r, i) => { const c = padCode_(r[C.CODE]); if (c && pos[c] === undefined) pos[c] = i; });
+  const out = [], miss = [], set = (i, k, nv, code) => { const col = C[k], old = vals[i][col]; if (String(old) !== String(nv)) { sh.getRange(i + 2, col + 1).setValue(nv); vals[i][col] = nv; out.push(code + ' ' + vals[i][C.NAME] + ' ' + k + ': ' + old + ' → ' + nv); } };
+  Object.keys(LEGEND_FIX_53B).forEach(code => { const i = pos[code]; if (i === undefined) { miss.push(code); return; } Object.keys(LEGEND_FIX_53B[code]).forEach(k => set(i, k, LEGEND_FIX_53B[code][k], code)); });
+  // A24: 남은 '확인필요' 행 중 새 규칙과 유형최종2·국내해외·신규상장용이 같은 행 → '확인 완료' (다른 행은 그대로 두고 목록 보고)
+  let done = 0; const left = [];
+  vals.forEach((r, i) => {
+    if (String(r[C.CHECK]).trim() !== '확인필요') return;
+    const code = padCode_(r[C.CODE]);
+    const t = inferType_(r[C.NAME]), same = [r[C.F2], r[C.DOM], r[C.NEW]].map(x => String(x).trim()).join('/') === [t.f2, t.dom, t.neu].join('/');
+    if (same) { sh.getRange(i + 2, C.CHECK + 1).setValue('확인 완료'); vals[i][C.CHECK] = '확인 완료'; done++; } else left.push(code);
+  });
+  const n = syncTypeF3_();
+  log_('v53 후속 범례_유형 반영: ' + out.length + '칸 · ' + Object.keys(LEGEND_FIX_53B).length + '종목 · 확인 완료 ' + done + '행 · 확인필요 남음 ' + left.join(',') + (miss.length ? ' · 시트에 없는 종목 ' + miss.join(',') : '') + ' · 유형최종3 ' + n + '행');
+  for (let i = 0; i < out.length; i += 40) console.log(out.slice(i, i + 40).join('\n'));
+  return { cells: out.length, codes: Object.keys(LEGEND_FIX_53B).length, done: done, left: left, miss: miss };
+}
+/** 읽기 전용(편집기): A21 'NAV 다시 확인' — raw_월말·raw_일별 원자료(순자산총액·1좌당 NAV·상장좌수)와 검산(좌수 × 1좌당 NAV) */
+const NAV_CHECK_53 = ['315480', '467540', '319870'];
+function navCheck53() {
+  const out = {}; NAV_CHECK_53.forEach(c => out[c] = []);
+  const shM = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), lm = shM.getLastRow();
+  if (lm >= 2) shM.getRange(2, 1, lm - 1, CFG.RAW_HEADER.length).getValues().forEach(v => { const r = rowToRec_(v); if (out[r.code]) out[r.code].push(['M', r.date, r.name, r.nav, r.ps, r.sh]); });
+  // 일별(2026~): 종목코드 열만 읽어 등장 행이 있으면 그 행만 읽음
+  const shD = sheet_(CFG.SHEET.RAW_DAILY, CFG.RAW_HEADER), ld = shD.getLastRow();
+  if (ld >= 2) shD.getRange(2, 2, ld - 1, 1).getValues().forEach((v, i) => { if (out[padCode_(v[0])]) { const r = rowToRec_(shD.getRange(i + 2, 1, 1, CFG.RAW_HEADER.length).getValues()[0]); out[r.code].push(['D', r.date, r.name, r.nav, r.ps, r.sh]); } });
+  const E = v => (v / 1e8).toFixed(1);
+  NAV_CHECK_53.forEach(c => {
+    const a = out[c].sort((x, y) => x[1] < y[1] ? -1 : 1), mx = a.reduce((m, x) => x[3] > m[3] ? x : m, a[0] || [0, '', '', 0]);
+    const lines = a.map(x => [x[0], x[1], x[2], E(x[3]) + '억', x[4] || '', x[5] || '', x[4] && x[5] ? E(x[4] * x[5]) + '억' : ''].join(' | '));
+    console.log('NAV ' + c + ' · ' + a.length + '건 · ' + (a[0] ? a[0][1] + ' ~ ' + a[a.length - 1][1] : '없음') + ' · 최대 ' + E(mx[3]) + '억(' + mx[1] + ')\n' + lines.join('\n'));
+  });
+  return Object.keys(out).map(c => c + ' ' + out[c].length);
 }
