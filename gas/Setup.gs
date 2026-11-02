@@ -351,27 +351,27 @@ function reviewLegend53() {
 
 // ─────────────────────────── v53 후속: 과거 자동 추가분(확인필요 행) 정리 — 2026-11-02 Q&A A19~A24 ───────────────────────────
 /** A19 국채선물 인버스·2X 8종 → 신규상장용 주식 등(레버리지·인버스 원칙) / A20 해외 기초 4종 → 해외 / A22 ARIRANG TDF 3종 → 기타(재간접형)·해외
- *  A21(315480·467540)·A23(319870)은 사용자 확인 중 → 확인필요 유지 / A24 나머지(새 규칙과 같은 행) → '확인 완료' */
+ *  A21(315480·467540)·A23(319870) → 지금 값 유지(상장폐지, NAV 원자료 재확인 후 사용자 결정), 확인 완료 / A24 나머지(새 규칙과 같은 행) → '확인 완료' */
 const TDF_53B_ = { T1: '재간접형', T2: '재간접형', T3: '재간접형', T4: '기타', F1: '기타', F2: '기타', DOM: '해외', NEW: '주식 등', CHECK: '수기 수정' };
 const LEGEND_FIX_53B = {
   '342600': { NEW: '주식 등', CHECK: '수기 수정' }, '342620': { NEW: '주식 등', CHECK: '수기 수정' }, '267500': { NEW: '주식 등', CHECK: '수기 수정' },
   '299070': { NEW: '주식 등', CHECK: '수기 수정' }, '299080': { NEW: '주식 등', CHECK: '수기 수정' }, '302180': { NEW: '주식 등', CHECK: '수기 수정' },
   '302170': { NEW: '주식 등', CHECK: '수기 수정' }, '397410': { NEW: '주식 등', CHECK: '수기 수정' },
   '342140': { DOM: '해외', CHECK: '수기 수정' }, '291660': { DOM: '해외', CHECK: '수기 수정' }, '139310': { DOM: '해외', CHECK: '수기 수정' }, '469580': { DOM: '해외', CHECK: '수기 수정' },
-  '433850': TDF_53B_, '433860': TDF_53B_, '433870': TDF_53B_
+  '433850': TDF_53B_, '433860': TDF_53B_, '433870': TDF_53B_,
+  '315480': { CHECK: '확인 완료' }, '467540': { CHECK: '확인 완료' }, '319870': { CHECK: '확인 완료' }
 };
-const LEGEND_HOLD_53B = ['315480', '467540', '319870'];
 function applyLegendFix53b() {
   const sh = sheet_(CFG.SHEET.TYPE_LEGEND), C = CFG.TYPE_COL, lr = sh.getLastRow();
   const vals = sh.getRange(2, 1, lr - 1, C.CHECK + 1).getValues(), pos = {};
   vals.forEach((r, i) => { const c = padCode_(r[C.CODE]); if (c && pos[c] === undefined) pos[c] = i; });
   const out = [], miss = [], set = (i, k, nv, code) => { const col = C[k], old = vals[i][col]; if (String(old) !== String(nv)) { sh.getRange(i + 2, col + 1).setValue(nv); vals[i][col] = nv; out.push(code + ' ' + vals[i][C.NAME] + ' ' + k + ': ' + old + ' → ' + nv); } };
   Object.keys(LEGEND_FIX_53B).forEach(code => { const i = pos[code]; if (i === undefined) { miss.push(code); return; } Object.keys(LEGEND_FIX_53B[code]).forEach(k => set(i, k, LEGEND_FIX_53B[code][k], code)); });
-  // A24: 남은 '확인필요' 행 중 새 규칙과 유형최종2·국내해외·신규상장용이 같은 행 → '확인 완료' (보류 3종목·다른 행은 그대로 두고 목록 보고)
+  // A24: 남은 '확인필요' 행 중 새 규칙과 유형최종2·국내해외·신규상장용이 같은 행 → '확인 완료' (다른 행은 그대로 두고 목록 보고)
   let done = 0; const left = [];
   vals.forEach((r, i) => {
     if (String(r[C.CHECK]).trim() !== '확인필요') return;
-    const code = padCode_(r[C.CODE]); if (LEGEND_HOLD_53B.indexOf(code) >= 0) { left.push(code + '(보류)'); return; }
+    const code = padCode_(r[C.CODE]);
     const t = inferType_(r[C.NAME]), same = [r[C.F2], r[C.DOM], r[C.NEW]].map(x => String(x).trim()).join('/') === [t.f2, t.dom, t.neu].join('/');
     if (same) { sh.getRange(i + 2, C.CHECK + 1).setValue('확인 완료'); vals[i][C.CHECK] = '확인 완료'; done++; } else left.push(code);
   });
