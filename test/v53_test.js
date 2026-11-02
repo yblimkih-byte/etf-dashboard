@@ -2,7 +2,8 @@
  *  A) 종목명 규칙 R01~R14: 펀드유형(KOFIA)·유형최종2·국내해외·신규상장용·규칙·신뢰 — 사례는 사용자 분류 파일(KOFIA)과 v53 사용자 결정 기준
  *  B) 신규 종목 기록: 사용자 파일과 같은 열 형식(유형3 = 펀드유형, 유형4 = 유형C), 확인필요 열 = '확인필요(R13)' / '자동 분류(R11)', 기초자산 미사용
  *  C) 유형최종3: 파생형·기타 + 채권/금리 → 채권형   D) applyLegendFix53: 지정 칸 + 금·은·원자재 → 해외, 다시 실행하면 0칸
- *  E) 전체 재계산 뒤 일별 요약 재작성 예약 → 범례 변경이 일별 기준일 화면(유형별 NAV)에 반영   F) reviewLegend53: 확인필요 행 재판정 목록 */
+ *  E) 전체 재계산 뒤 일별 요약 재작성 예약 → 범례 변경이 일별 기준일 화면(유형별 NAV)에 반영   F) reviewLegend53: 확인필요 행 재판정 목록
+ *  G) applyLegendFix53b: 과거 자동 추가분 정리(A19~A24) · navCheck53(원자료 NAV 검산, 읽기 전용) */
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const ctx = { console: { log: () => {} }, Date, Math, JSON, Object, Array, String, Number, RegExp, Error, isNaN, setTimeout, globalThis: null, __zlib: require('zlib'), __Buffer: Buffer };
 ctx.globalThis = ctx; vm.createContext(ctx);
@@ -73,5 +74,23 @@ kd[8] = '국내주식형';
 console.log('[F] reviewLegend53');
 const rv = J('reviewLegend53()');
 check('확인필요 행 재판정: 행 수·다른 행 수 반환', rv.rows > 0 && rv.diff >= 0 && rv.diff <= rv.rows, JSON.stringify(rv));
+
+console.log('[G] applyLegendFix53b (A19~A24) · navCheck53');
+row('299070', 'KINDEX 국채선물10년인버스', '파생형', '파생형', '국내', '채권/금리', '확인필요');
+row('469580', 'KBSTAR KP달러채권액티브', '채권형', '채권형', '국내', '채권/금리', '확인필요');
+row('433850', 'ARIRANG TDF2030액티브', '국내주식형', '국내주식형', '국내', '주식 등', '확인필요');
+row('315480', 'KBSTAR 200커뮤니케이션서비스', '해외주식형', '해외주식형', '해외', '주식 등', '확인필요');
+row('0777A0', 'KODEX 200', '국내주식형', '국내주식형', '국내', '주식 등', '확인필요');            // 새 규칙과 같음 → 확인 완료
+row('0777B0', 'TIGER 차이나CSI300', '파생형', '파생형', '해외', '주식 등', '확인필요');          // 새 규칙과 다름·지정 없음 → 그대로
+const g1 = J('applyLegendFix53b()');
+const td = get('433850');
+check('A19 국채선물10년인버스 신규상장용 주식 등 · A20 KP달러채권 해외 · 둘 다 수기 수정', get('299070')[10] === '주식 등' && get('299070')[11] === '수기 수정' && get('469580')[9] === '해외' && get('469580')[11] === '수기 수정');
+check('A22 TDF: 유형1~3 재간접형 · 유형4 기타 · 유형최종1·2 기타 · 해외 · 주식 등 · 유형최종3 기타', td[3] === '재간접형' && td[5] === '재간접형' && td[6] === '기타' && td[7] === '기타' && td[8] === '기타' && td[9] === '해외' && td[10] === '주식 등' && td[12] === '기타', td.join('|'));
+check("A24 새 규칙과 같은 행 → '확인 완료' · 보류(315480)·다른 행은 확인필요 유지", get('0777A0')[11] === '확인 완료' && get('315480')[11] === '확인필요' && get('0777B0')[11] === '확인필요' && g1.left.indexOf('315480(보류)') >= 0 && g1.left.indexOf('0777B0') >= 0, JSON.stringify(g1.left));
+const g2 = J('applyLegendFix53b()');
+check('다시 실행하면 바뀌는 칸 0 · 확인 완료 0', g2.cells === 0 && g2.done === 0, JSON.stringify({ cells: g2.cells, done: g2.done }));
+S['raw_월말'].rows.push(['2021-05-31', '315480', 'KBSTAR 200커뮤니케이션서비스', 12200000000, 0, 0, 0, 0, 12200, 1000000]);
+const nc = J('navCheck53()');
+check('navCheck53: 읽기 전용 · 종목별 원자료 건수', nc[0] === '315480 1' && nc.length === 3, nc.join(' · '));
 
 console.log(fails ? `FAIL ${fails}` : '전부 통과'); process.exit(fails ? 1 : 0);

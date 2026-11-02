@@ -348,3 +348,52 @@ function reviewLegend53() {
   for (let i = 0; i < diff.length; i += 30) console.log('REVIEW\n' + diff.slice(i, i + 30).join('\n'));
   return { rows: rows.length, diff: diff.length };
 }
+
+// ─────────────────────────── v53 후속: 과거 자동 추가분(확인필요 행) 정리 — 2026-11-02 Q&A A19~A24 ───────────────────────────
+/** A19 국채선물 인버스·2X 8종 → 신규상장용 주식 등(레버리지·인버스 원칙) / A20 해외 기초 4종 → 해외 / A22 ARIRANG TDF 3종 → 기타(재간접형)·해외
+ *  A21(315480·467540)·A23(319870)은 사용자 확인 중 → 확인필요 유지 / A24 나머지(새 규칙과 같은 행) → '확인 완료' */
+const TDF_53B_ = { T1: '재간접형', T2: '재간접형', T3: '재간접형', T4: '기타', F1: '기타', F2: '기타', DOM: '해외', NEW: '주식 등', CHECK: '수기 수정' };
+const LEGEND_FIX_53B = {
+  '342600': { NEW: '주식 등', CHECK: '수기 수정' }, '342620': { NEW: '주식 등', CHECK: '수기 수정' }, '267500': { NEW: '주식 등', CHECK: '수기 수정' },
+  '299070': { NEW: '주식 등', CHECK: '수기 수정' }, '299080': { NEW: '주식 등', CHECK: '수기 수정' }, '302180': { NEW: '주식 등', CHECK: '수기 수정' },
+  '302170': { NEW: '주식 등', CHECK: '수기 수정' }, '397410': { NEW: '주식 등', CHECK: '수기 수정' },
+  '342140': { DOM: '해외', CHECK: '수기 수정' }, '291660': { DOM: '해외', CHECK: '수기 수정' }, '139310': { DOM: '해외', CHECK: '수기 수정' }, '469580': { DOM: '해외', CHECK: '수기 수정' },
+  '433850': TDF_53B_, '433860': TDF_53B_, '433870': TDF_53B_
+};
+const LEGEND_HOLD_53B = ['315480', '467540', '319870'];
+function applyLegendFix53b() {
+  const sh = sheet_(CFG.SHEET.TYPE_LEGEND), C = CFG.TYPE_COL, lr = sh.getLastRow();
+  const vals = sh.getRange(2, 1, lr - 1, C.CHECK + 1).getValues(), pos = {};
+  vals.forEach((r, i) => { const c = padCode_(r[C.CODE]); if (c && pos[c] === undefined) pos[c] = i; });
+  const out = [], miss = [], set = (i, k, nv, code) => { const col = C[k], old = vals[i][col]; if (String(old) !== String(nv)) { sh.getRange(i + 2, col + 1).setValue(nv); vals[i][col] = nv; out.push(code + ' ' + vals[i][C.NAME] + ' ' + k + ': ' + old + ' → ' + nv); } };
+  Object.keys(LEGEND_FIX_53B).forEach(code => { const i = pos[code]; if (i === undefined) { miss.push(code); return; } Object.keys(LEGEND_FIX_53B[code]).forEach(k => set(i, k, LEGEND_FIX_53B[code][k], code)); });
+  // A24: 남은 '확인필요' 행 중 새 규칙과 유형최종2·국내해외·신규상장용이 같은 행 → '확인 완료' (보류 3종목·다른 행은 그대로 두고 목록 보고)
+  let done = 0; const left = [];
+  vals.forEach((r, i) => {
+    if (String(r[C.CHECK]).trim() !== '확인필요') return;
+    const code = padCode_(r[C.CODE]); if (LEGEND_HOLD_53B.indexOf(code) >= 0) { left.push(code + '(보류)'); return; }
+    const t = inferType_(r[C.NAME]), same = [r[C.F2], r[C.DOM], r[C.NEW]].map(x => String(x).trim()).join('/') === [t.f2, t.dom, t.neu].join('/');
+    if (same) { sh.getRange(i + 2, C.CHECK + 1).setValue('확인 완료'); vals[i][C.CHECK] = '확인 완료'; done++; } else left.push(code);
+  });
+  const n = syncTypeF3_();
+  log_('v53 후속 범례_유형 반영: ' + out.length + '칸 · ' + Object.keys(LEGEND_FIX_53B).length + '종목 · 확인 완료 ' + done + '행 · 확인필요 남음 ' + left.join(',') + (miss.length ? ' · 시트에 없는 종목 ' + miss.join(',') : '') + ' · 유형최종3 ' + n + '행');
+  for (let i = 0; i < out.length; i += 40) console.log(out.slice(i, i + 40).join('\n'));
+  return { cells: out.length, codes: Object.keys(LEGEND_FIX_53B).length, done: done, left: left, miss: miss };
+}
+/** 읽기 전용(편집기): A21 'NAV 다시 확인' — raw_월말·raw_일별 원자료(순자산총액·1좌당 NAV·상장좌수)와 검산(좌수 × 1좌당 NAV) */
+const NAV_CHECK_53 = ['315480', '467540', '319870'];
+function navCheck53() {
+  const out = {}; NAV_CHECK_53.forEach(c => out[c] = []);
+  const shM = sheet_(CFG.SHEET.RAW_MONTHLY, CFG.RAW_HEADER), lm = shM.getLastRow();
+  if (lm >= 2) shM.getRange(2, 1, lm - 1, CFG.RAW_HEADER.length).getValues().forEach(v => { const r = rowToRec_(v); if (out[r.code]) out[r.code].push(['M', r.date, r.name, r.nav, r.ps, r.sh]); });
+  // 일별(2026~): 종목코드 열만 읽어 등장 행이 있으면 그 행만 읽음
+  const shD = sheet_(CFG.SHEET.RAW_DAILY, CFG.RAW_HEADER), ld = shD.getLastRow();
+  if (ld >= 2) shD.getRange(2, 2, ld - 1, 1).getValues().forEach((v, i) => { if (out[padCode_(v[0])]) { const r = rowToRec_(shD.getRange(i + 2, 1, 1, CFG.RAW_HEADER.length).getValues()[0]); out[r.code].push(['D', r.date, r.name, r.nav, r.ps, r.sh]); } });
+  const E = v => (v / 1e8).toFixed(1);
+  NAV_CHECK_53.forEach(c => {
+    const a = out[c].sort((x, y) => x[1] < y[1] ? -1 : 1), mx = a.reduce((m, x) => x[3] > m[3] ? x : m, a[0] || [0, '', '', 0]);
+    const lines = a.map(x => [x[0], x[1], x[2], E(x[3]) + '억', x[4] || '', x[5] || '', x[4] && x[5] ? E(x[4] * x[5]) + '억' : ''].join(' | '));
+    console.log('NAV ' + c + ' · ' + a.length + '건 · ' + (a[0] ? a[0][1] + ' ~ ' + a[a.length - 1][1] : '없음') + ' · 최대 ' + E(mx[3]) + '억(' + mx[1] + ')\n' + lines.join('\n'));
+  });
+  return Object.keys(out).map(c => c + ' ' + out[c].length);
+}
