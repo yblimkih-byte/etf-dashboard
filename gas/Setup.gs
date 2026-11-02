@@ -397,3 +397,35 @@ function navCheck53() {
   });
   return Object.keys(out).map(c => c + ' ' + out[c].length);
 }
+
+// ─────────────────────────── v53 후속 2: 리츠 ETF → 부동산·기타 일괄 (2026-11-02 사용자 결정) ───────────────────────────
+/** 등록 유형(KOFIA) 원칙의 예외: 리츠 ETF 는 등록 유형(파생상품·혼합자산·재간접형 등)과 관계없이 유형1~3 부동산 · 유형4·유형최종1·2 기타.
+ *  상장폐지 종목 포함(범례_유형 전체, 이름에 '리츠' — 레버리지·인버스 제외). 국내해외·신규상장용은 그대로.
+ *  유형3이 바뀌는 행은 확인필요 열에 이전 유형3 기록('수기 수정(리츠 → 부동산, 이전 유형3: 파생상품)') — 원래 등록값 추적용 */
+const REIT_53C_ = { T1: '부동산', T2: '부동산', T3: '부동산', T4: '기타', F1: '기타', F2: '기타' };
+function reitRows53c_() {
+  const sh = sheet_(CFG.SHEET.TYPE_LEGEND), C = CFG.TYPE_COL, lr = sh.getLastRow();
+  const vals = sh.getRange(2, 1, lr - 1, C.CHECK + 1).getValues();
+  const rows = []; vals.forEach((r, i) => { const n = String(r[C.NAME]).trim(); if (/리츠/.test(n) && !/레버리지|인버스/.test(n)) rows.push(i); });
+  return { sh: sh, C: C, vals: vals, rows: rows };
+}
+/** 읽기 전용: 대상 행과 바뀔 칸 */
+function previewReit53c() {
+  const x = reitRows53c_(), C = x.C;
+  const lines = x.rows.map(i => { const r = x.vals[i], ch = Object.keys(REIT_53C_).filter(k => String(r[C[k]]).trim() !== REIT_53C_[k]);
+    return [padCode_(r[C.CODE]), String(r[C.NAME]).trim(), '유형3 ' + r[C.T3], '유형최종2 ' + r[C.F2], r[C.DOM], r[C.NEW], ch.length ? '바뀜 ' + ch.join(',') : '변경 없음'].join(' | '); });
+  console.log('REIT 대상 ' + x.rows.length + '행\n' + lines.join('\n'));
+  return { rows: x.rows.length, change: lines.filter(l => !/변경 없음$/.test(l)).length };
+}
+function applyLegendFix53c() {
+  const x = reitRows53c_(), C = x.C, out = [];
+  x.rows.forEach(i => {
+    const r = x.vals[i], code = padCode_(r[C.CODE]), oldT3 = String(r[C.T3]).trim();
+    Object.keys(REIT_53C_).forEach(k => { const old = r[C[k]], nv = REIT_53C_[k]; if (String(old).trim() !== nv) { x.sh.getRange(i + 2, C[k] + 1).setValue(nv); out.push(code + ' ' + r[C.NAME] + ' ' + k + ': ' + old + ' → ' + nv); } });
+    if (oldT3 !== '부동산') { const nv = '수기 수정(리츠 → 부동산, 이전 유형3: ' + (oldT3 || '공란') + ')'; x.sh.getRange(i + 2, C.CHECK + 1).setValue(nv); out.push(code + ' CHECK: ' + r[C.CHECK] + ' → ' + nv); }
+  });
+  const n = syncTypeF3_();
+  log_('v53 리츠 → 부동산·기타: 대상 ' + x.rows.length + '행 · ' + out.length + '칸 · 유형최종3 ' + n + '행');
+  for (let i = 0; i < out.length; i += 40) console.log(out.slice(i, i + 40).join('\n'));
+  return { rows: x.rows.length, cells: out.length };
+}
