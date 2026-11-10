@@ -7,6 +7,8 @@ const TYPE_COLORS = { '국내주식형': '#17171c', '해외주식형': '#1863dc'
 const DOM_COLORS = { '국내': '#17171c', '해외': '#1863dc' };
 const tc = t => TYPE_COLORS[t] || '#c4c4cc';
 const GROUPS = () => App.meta.top5.concat(['기타']);
+/** v54: 상위 5개사를 기준일 NAV 큰 순으로(같으면 기본 순서) + '기타'(항상 끝) — 순위가 바뀌면 카드·막대·표 순서도 따라감. get(k) = 기준일 NAV. 색은 운용사별 고정 */
+const RANKED = get => GROUPS().filter(k => k !== '기타').map((k, i) => ({ k, i, v: +get(k) || 0 })).sort((a, b) => b.v - a.v || a.i - b.i).map(x => x.k).concat(['기타']);
 const isQ = ym => /-(03|06|09|12)$/.test(ym);
 /* 기준일 표기: 월말 스냅샷은 '연-월', 당월 영업일은 날짜 */
 const dlabel = d => (d && d.slice(0, 7) < App.meta.curMonth) ? d.slice(0, 7) : d;
@@ -423,7 +425,7 @@ App.registerTab({
     }).catch(() => {});
     const s1 = A.section(root, '상위 5개사 NAV 및 M/S', [`두 막대 사이 숫자 = ${RL} 대비 증감액, M/S 변동`]);
     const byK = {}; d.mgr.rows.forEach(r => byK[r.mgr] = r);
-    twoRowStack(A, A.canvas(s1, 'mid'), d.mgr, GROUPS(), k => byK[k].navPy, k => byK[k].nav, k => A.color(k), true);
+    twoRowStack(A, A.canvas(s1, 'mid'), d.mgr, RANKED(k => byK[k] && byK[k].nav), k => byK[k].navPy, k => byK[k].nav, k => A.color(k), true);
     if (S.g && S.mk) {
       const s2 = A.section(root, `${F} 유형 구성 vs 시장 전체`, ['유형별 NAV 비중(%)', `차이 = ${F} 비중 − 시장 비중`]);
       A.div(s2, '', A.table(S.g.types.map(t => ({ type: t.type, nav: t.nav, s: t.share, m: (S.mk.types.find(x => x.type === t.type) || { share: 0 }).share })), [
@@ -500,9 +502,10 @@ App.registerTab({
   render(d, root, A) {
     const keys = GROUPS(), RL = A.refLabel(d), G = RL + ' 대비', pp = v => A.pct(v).replace('%', '%p');
     const byK = {}; d.rows.forEach(r => byK[r.mgr] = r);
+    const rk = RANKED(k => byK[k] && byK[k].nav);   // v54: 막대·표 = 기준일 NAV 순위 순(기타 끝)
     const s1 = A.section(root, '상위 5개사 NAV 및 M/S', [`두 막대 사이 숫자 = ${RL} 대비 증감액, M/S 변동`]);
-    twoRowStack(A, A.canvas(s1, 'mid'), d, keys, k => byK[k].navPy, k => byK[k].nav, k => A.color(k), true);
-    A.div(s1, '', A.table(d.rows, [
+    twoRowStack(A, A.canvas(s1, 'mid'), d, rk, k => byK[k].navPy, k => byK[k].nav, k => A.color(k), true);
+    A.div(s1, '', A.table(rk.map(k => byK[k]).filter(Boolean), [
       { h: '운용사', f: r => A.sw(r.mgr) + r.mgr, l: 1 }, { h: '잔고(조원)', f: r => A.eok(r.nav) },
       { h: '증감액', g: G, f: r => A.signed(r.ytd.amt), cls: r => A.cls(r.ytd.amt) }, { h: '증감률', g: G, f: r => A.pct(r.ytd.pct), cls: r => A.clsP(r.ytd.pct) },
       { h: '증감액', g: '전월 대비', f: r => A.signed(r.mom.amt), cls: r => A.cls(r.mom.amt) }, { h: '증감률', g: '전월 대비', f: r => A.pct(r.mom.pct), cls: r => A.clsP(r.mom.pct) },
@@ -901,7 +904,7 @@ function thDetail(A, host, d, M, key) {
     ['최근 6개월 신규상장', `시장 ${g.new6}종목, ${F} ${g.fNew6}종목`], ['구분', `${TH_QUAD[g.quad]} — ${TH_QUAD_NOTE[g.quad]}`]]);
   A.div(s, 'sub-h', '운용사별 NAV·점유율 (상위 5개사 + 기타)');
   const dd = { date: d.date, ref: d.ref, refLabel: d.refLabel };
-  host._charts.push(twoRowStack(A, A.canvas(s, 'short'), dd, GROUPS(), k => g.topsB[k] || 0, k => g.tops[k] || 0, k => A.color(k), true));
+  host._charts.push(twoRowStack(A, A.canvas(s, 'short'), dd, RANKED(k => g.tops[k]), k => g.topsB[k] || 0, k => g.tops[k] || 0, k => A.color(k), true));
   const subL = A.div(s, 'sub-h', `종목 목록 (${g.items.length}종목, NAV 순)`);
   const chipBox = A.div(s, 'sticky-chips');
   const tb = A.div(s, '', A.table(g.items, [{ h: '종목코드', k: 'code', l: 1 }, { h: '종목명', k: 'name', l: 1 }, { h: '운용사', f: r => A.sw(r.top) + r.mgr, l: 1 },
@@ -1201,7 +1204,7 @@ const TAB_HEAD = (() => {
       let lines = [`1위 ${esc(R[0].mgr)} ${A.share(R[0].ms)}, 2위 ${esc(R[1].mgr)} ${A.share(R[1].ms)} (합산 ${A.share(R[0].ms + R[1].ms)})`];
       if (f) { const rank = R.indexOf(f) + 1, dv = f.msPy === null || f.msPy === undefined ? null : f.ms - f.msPy, ahead = R[rank - 2];   // v44: 한 줄에 하나씩
         lines = [`${FOCUS} M/S <b>${A.share(f.ms)}</b>` + (dv === null ? '' : ` (${RL} 대비 ${sg(dv, pp(dv))})`), `상위 5개사 중 ${rank}위` + (ahead ? ` — ${rank - 1}위 ${esc(ahead.mgr)}와 ${(ahead.ms - f.ms).toFixed(1)}%p 차이` : '')]; }
-      return { lines, cards: d.rows.filter(r => r.mgr !== '기타').map(r => ({ k: esc(r.mgr) + ' M/S', d: DEF.ms + '. ' + DEF.ref, c: A.meta.colors[r.mgr], f: r.mgr === FOCUS, v: U(r.ms.toFixed(1), '%'), b: r.msPy === null || r.msPy === undefined ? null : bd(r.ms - r.msPy, pp(r.ms - r.msPy)),
+      return { lines, cards: R.map(r => ({ k: esc(r.mgr) + ' M/S', d: DEF.ms + '. ' + DEF.ref, c: A.meta.colors[r.mgr], f: r.mgr === FOCUS, v: U(r.ms.toFixed(1), '%'), b: r.msPy === null || r.msPy === undefined ? null : bd(r.ms - r.msPy, pp(r.ms - r.msPy)),
           l1: `잔고 ${A.eok(r.nav)}조원`, l2: `${RL} 대비 ${sj(r.nav - r.navPy)}` })) };
     },
     type(d) {
